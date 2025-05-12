@@ -1,10 +1,48 @@
+# Help file
 HELP.md
+
+# Compiled class files
+*.class
+
+# Log files
+*.log
+logs/
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Maven
 target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
 
-### STS ###
+# Gradle (if switching to Gradle later)
+.gradle
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### IDE files ###
+# IntelliJ IDEA
+.idea/
+*.iws
+*.iml
+*.ipr
+.idea_modules/
+
+# Eclipse STS
 .apt_generated
 .classpath
 .factorypath
@@ -13,21 +51,94 @@ target/
 .springBeans
 .sts4-cache
 
-### IntelliJ IDEA ###
-.idea
-*.iws
-*.iml
-*.ipr
-
-### NetBeans ###
+# NetBeans
 /nbproject/private/
 /nbbuild/
 /dist/
 /nbdist/
 /.nb-gradle/
-build/
-!**/src/main/**/build/
-!**/src/test/**/build/
 
-### VS Code ###
+# VS Code
 .vscode/
+*.code-workspace
+
+### Spring Boot ###
+# Application properties (keep default, ignore environment-specific)
+application-local.properties
+application-dev.properties
+application-prod.properties
+application-test.properties
+application-staging.properties
+
+# Database specific
+*.db
+*.sqlite
+*.mv.db
+*.trace.db
+
+# Logs
+spring.log
+*.log
+
+### Security ###
+# JWT secret keys
+jwt-secret.txt
+*.p12
+*.jks
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+### Temporary files ###
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# PlantUML files (auto-generated diagrams)
+*.plantuml
+*.puml
+*.uml
+# Sauf si vous voulez garder les diagrammes métier
+!diagramme_classes.puml
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Testing
+.scannerwork/
+coverage/
+.nyc_output
+test-results/
+
+# Docker
+.docker/
+Dockerfile.local
+
+# Mobile Tools for Java (J2ME)
+.mtj.tmp/
+
+# Package Files
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# virtual machine crash logs
+hs_err_pid*
+replay_pid*
+
+# API documentation
+/api-docs/
