@@ -1,0 +1,305 @@
+@startuml
+' Définition des classes
+
+abstract class Utilisateur {
+  - id: Long
+  - nom: String
+  - prenom: String
+  - password: String
+  - numeroCni: String
+  - adresseMail: String
+  - telephone: String
+  - role: String
+  - version: Long
+}
+
+class Admin {
+}
+
+class Collecteur {
+  - ancienneteEnMois: int
+  - montantMaxRetrait: Double
+  - dateModificationMontantMax: LocalDateTime
+  - modifiePar: String
+  - active: boolean
+}
+
+class Client {
+  - id: Long
+  - nom: String
+  - prenom: String
+  - numeroCni: String
+  - ville: String
+  - quartier: String
+  - telephone: String
+  - photoPath: String
+  - valide: boolean
+}
+
+class Agence {
+  - id: Long
+  - codeAgence: String
+  - nomAgence: String
+}
+
+abstract class Compte {
+  - id: Long
+  - nomCompte: String
+  - numeroCompte: String
+  - solde: double
+  - typeCompte: String
+  - version: Long
+}
+
+class CompteClient {
+}
+
+class CompteCollecteur {
+}
+
+class CompteLiaison {
+}
+
+class Journal {
+  - id: Long
+  - dateDebut: LocalDate
+  - dateFin: LocalDate
+  - estCloture: boolean
+  - dateCloture: LocalDateTime
+  - version: Long
+}
+
+class Mouvement {
+  - id: Long
+  - montant: double
+  - libelle: String
+  - sens: String
+  - dateOperation: LocalDateTime
+  - version: Long
+}
+
+class Commission {
+  - id: Long
+  - montant: double
+  - tva: double
+  - type: String
+  - valeur: double
+  - dateCalcul: LocalDateTime
+  - dateFinValidite: LocalDateTime
+}
+
+class CommissionParameter {
+  - id: Long
+  - valeur: double
+  - codeProduit: String
+  - validFrom: LocalDate
+  - validTo: LocalDate
+  - active: boolean
+}
+
+class CommissionTier {
+  - id: Long
+  - montantMin: double
+  - montantMax: double
+  - taux: double
+}
+
+class CommissionRepartition {
+  - id: Long
+  - montantTotalCommission: double
+  - montantTVAClient: double
+  - partCollecteur: double
+  - partEMF: double
+  - tvaSurPartEMF: double
+  - dateRepartition: LocalDateTime
+}
+
+class RapportCommission {
+  - id: Long
+  - dateDebut: LocalDate
+  - dateFin: LocalDate
+  - totalCommissions: double
+  - totalTVA: double
+  - remunerationCollecteur: double
+  - partEMF: double
+  - tvaSurPartEMF: double
+  - estValide: boolean
+}
+
+class RemunerationCollecteur {
+  - id: Long
+  - montantFixe: double
+  - totalCommissions: double
+  - montantRemuneration: double
+  - montantTVA: double
+  - dateDebut: LocalDate
+  - dateFin: LocalDate
+  - estPaye: boolean
+}
+
+class HistoriqueMontantMax {
+  - id: Long
+  - ancienMontant: Double
+  - dateModification: LocalDateTime
+  - modifiePar: String
+  - justification: String
+}
+
+class TransfertCompte {
+  - id: Long
+  - sourceCollecteurId: Long
+  - targetCollecteurId: Long
+  - dateTransfert: LocalDateTime
+  - nombreComptes: int
+  - montantTotal: double
+  - montantCommissions: double
+  - createdBy: String
+  - isInterAgence: boolean
+}
+
+class TransfertCompteClient {
+  - id: Long
+  - clientId: Long
+  - oldSolde: double
+  - newSolde: double
+  - status: String
+}
+
+class AuditLog {
+  - id: Long
+  - username: String
+  - action: String
+  - entityType: String
+  - entityId: Long
+  - details: String
+  - timestamp: LocalDateTime
+  - ipAddress: String
+  - userAgent: String
+  - version: Long
+}
+
+' Enumérations
+enum CommissionType {
+  FIXED
+  PERCENTAGE
+  TIER
+}
+
+enum CommissionMethode {
+  FIXE
+  POURCENTAGE
+  PALIER
+}
+
+enum StatutCommission {
+  EN_ATTENTE
+  CALCULEE
+  REPARTIE
+  VALIDEE
+  ANNULEE
+}
+
+enum TypeCommission {
+  FIXE
+  POURCENTAGE
+  PALIER
+  MIXTE
+}
+
+enum TypeOperation {
+  DEBIT
+  CREDIT
+  TRANSFERT
+  COMPENSATION
+}
+
+' Héritage
+Utilisateur <|-- Admin
+Utilisateur <|-- Collecteur
+Compte <|-- CompteClient
+Compte <|-- CompteCollecteur
+Compte <|-- CompteLiaison
+
+' Relations
+Admin "*" --o "1" Agence
+Collecteur "*" --o "1" Agence
+Collecteur "1" --o "0..1" RapportCommission
+Client "*" --o "0..1" Collecteur
+Client "*" --o "1" Agence
+
+CompteClient "1" --* "1" Client
+CompteCollecteur "*" --* "1" Collecteur
+CompteLiaison "1" --* "1" Agence
+
+Journal "*" --* "1" Collecteur
+Journal "1" *-- "*" Mouvement
+
+Mouvement "*" --o "0..1" Compte : compteSource
+Mouvement "*" --o "0..1" Compte : compteDestination
+Mouvement "*" --o "0..1" TransfertCompte
+
+Commission "*" --o "0..1" Client
+Commission "*" --o "0..1" Collecteur
+Commission "*" --o "0..1" Compte
+Commission "*" --o "0..1" CommissionParameter
+Commission "*" --o "0..1" RapportCommission
+
+CommissionParameter "0..1" --* "0..1" Client
+CommissionParameter "0..1" --* "0..1" Collecteur
+CommissionParameter "0..1" --* "0..1" Agence
+CommissionParameter "1" *-- "*" CommissionTier
+CommissionParameter -- CommissionType
+
+CommissionRepartition "*" --* "1" Collecteur
+CommissionRepartition "1" *-- "*" Mouvement
+
+RapportCommission "*" --* "1" Collecteur
+RapportCommission "1" *-- "*" Commission
+
+RemunerationCollecteur "*" --* "1" Collecteur
+RemunerationCollecteur "*" --* "1" CompteCollecteur
+
+HistoriqueMontantMax "*" --* "1" Collecteur
+
+TransfertCompte "1" *-- "*" Mouvement
+TransfertCompte "1" *-- "*" TransfertCompteClient
+
+' Liaison avec les énumérations
+CommissionMethode -- Commission
+StatutCommission -- Commission
+TypeCommission -- Commission
+TypeOperation -- Mouvement
+
+' Notes
+note top of Utilisateur
+  **Classe abstraite**
+  Héritage JOINED
+end note
+
+note top of Compte
+  **Classe abstraite**
+  Héritage JOINED
+end note
+
+note left of CommissionType
+  **Base enum pour paramètres**
+end note
+
+note right of CommissionMethode
+  **Type de calcul**
+end note
+
+note right of StatutCommission
+  **Statut du cycle de vie**
+end note
+
+note left of RapportCommission
+  **Résumé de commissions
+  par collecteur**
+end note
+
+note left of Collecteur
+  **Collecteur journalier
+  Peut être actif ou inactif**
+end note
+@enduml

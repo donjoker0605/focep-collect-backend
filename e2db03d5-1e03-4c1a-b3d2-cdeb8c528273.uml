@@ -1,0 +1,305 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Diagram>
+  <ID>DATABASE</ID>
+  <OriginalElement>e2db03d5-1e03-4c1a-b3d2-cdeb8c528273</OriginalElement>
+  <nodes>
+    <node x="307.0" y="1612.0">e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.transferts_compte_client</node>
+    <node x="-71.5" y="1660.0">e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.compte_liaison</node>
+    <node x="-18.5" y="816.0">e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.transferts_compte</node>
+    <node x="-257.0" y="560.0">e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.admin</node>
+    <node x="-184.0" y="1112.0">e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.clients</node>
+    <node x="669.0" y="852.0">e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.historique_montant_max</node>
+    <node x="-323.5" y="1884.0">e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.commission_parameter</node>
+    <node x="133.5" y="1980.0">e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.compte_collecteur</node>
+    <node x="-305.5" y="2344.0">e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.commission_tiers</node>
+    <node x="-68.0" y="-164.0">e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.utilisateurs</node>
+    <node x="532.5" y="1980.0">e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.compte_client</node>
+    <node x="774.5" y="2260.0">e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.commission</node>
+    <node x="668.5" y="1552.0">e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.mouvements</node>
+    <node x="1040.0" y="536.0">e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.transactions</node>
+    <node x="-329.5" y="208.0">e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.agence</node>
+    <node x="136.5" y="1160.0">e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.journaux</node>
+    <node x="-68.5" y="488.0">e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.collecteurs</node>
+    <node x="489.5" y="2284.0">e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.remuneration_collecteur</node>
+    <node x="321.5" y="852.0">e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.comptes</node>
+    <node x="1037.0" y="2284.0">e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.audit_logs</node>
+    <node x="54.5" y="124.0">e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.rapport_commission</node>
+    <node x="528.0" y="1148.0">e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.commission_repartition</node>
+  </nodes>
+  <notes />
+  <edges>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.admin" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.agence" relationship="REFERENCES">
+      <point x="-33.5" y="-44.0" />
+      <point x="-223.5" y="524.0" />
+      <point x="-270.0" y="524.0" />
+      <point x="-270.0" y="344.0" />
+      <point x="-279.75" y="344.0" />
+      <point x="-49.75" y="56.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.commission_parameter" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.collecteurs" relationship="REFERENCES">
+      <point x="0.0" y="-140.0" />
+      <point x="-190.0" y="1844.0" />
+      <point x="-290.0" y="1844.0" />
+      <point x="-290.0" y="764.0" />
+      <point x="970.0" y="764.0" />
+      <point x="970.0" y="444.0" />
+      <point x="104.625" y="444.0" />
+      <point x="34.625" y="-116.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.compte_collecteur" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.collecteurs" relationship="REFERENCES">
+      <point x="-48.25" y="-44.0" />
+      <point x="181.75" y="1544.0" />
+      <point x="-210.0" y="1544.0" />
+      <point x="-210.0" y="804.0" />
+      <point x="-50.0" y="804.0" />
+      <point x="-50.0" y="744.0" />
+      <point x="70.0" y="744.0" />
+      <point x="0.0" y="116.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.commission_parameter" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.agence" relationship="REFERENCES">
+      <point x="-89.0" y="-140.0" />
+      <point x="-279.0" y="1864.0" />
+      <point x="-330.0" y="1864.0" />
+      <point x="-330.0" y="524.0" />
+      <point x="-270.0" y="524.0" />
+      <point x="-270.0" y="344.0" />
+      <point x="-279.75" y="344.0" />
+      <point x="-49.75" y="56.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.commission" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.rapport_commission" relationship="REFERENCES">
+      <point x="92.4" y="-164.0" />
+      <point x="982.4000000000001" y="2224.0" />
+      <point x="1010.0" y="2224.0" />
+      <point x="1010.0" y="464.0" />
+      <point x="230.0" y="464.0" />
+      <point x="230.0" y="424.0" />
+      <point x="227.75" y="424.0" />
+      <point x="57.75" y="140.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.commission" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.clients" relationship="REFERENCES">
+      <point x="-46.20000000000002" y="-164.0" />
+      <point x="843.8" y="2204.0" />
+      <point x="110.0" y="2204.0" />
+      <point x="110.0" y="1444.0" />
+      <point x="-137.0" y="1444.0" />
+      <point x="-47.0" y="152.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.compte_client" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.clients" relationship="REFERENCES">
+      <point x="-38.75" y="-44.0" />
+      <point x="571.25" y="1524.0" />
+      <point x="-43.0" y="1524.0" />
+      <point x="47.0" y="152.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.mouvements" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.journaux" relationship="REFERENCES">
+      <point x="-40.599999999999994" y="-152.0" />
+      <point x="729.4000000000001" y="1484.0" />
+      <point x="230.0" y="1484.0" />
+      <point x="0.0" y="104.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.collecteurs" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.agence" relationship="REFERENCES">
+      <point x="-103.875" y="-116.0" />
+      <point x="-33.875" y="444.0" />
+      <point x="-190.0" y="444.0" />
+      <point x="-190.0" y="344.0" />
+      <point x="-180.25" y="344.0" />
+      <point x="49.75" y="56.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.commission" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.collecteurs" relationship="REFERENCES">
+      <point x="46.19999999999999" y="-164.0" />
+      <point x="936.2" y="2224.0" />
+      <point x="970.0" y="2224.0" />
+      <point x="970.0" y="444.0" />
+      <point x="104.625" y="444.0" />
+      <point x="34.625" y="-116.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.transferts_compte_client" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.clients" relationship="REFERENCES">
+      <point x="-61.5" y="-92.0" />
+      <point x="368.5" y="1584.0" />
+      <point x="110.0" y="1584.0" />
+      <point x="110.0" y="1444.0" />
+      <point x="-137.0" y="1444.0" />
+      <point x="-47.0" y="152.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.compte_collecteur" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.comptes" relationship="REFERENCES">
+      <point x="48.25" y="-44.0" />
+      <point x="278.25" y="1564.0" />
+      <point x="270.0" y="1564.0" />
+      <point x="270.0" y="1384.0" />
+      <point x="348.625" y="1384.0" />
+      <point x="-81.375" y="92.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.clients" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.agence" relationship="REFERENCES">
+      <point x="-47.0" y="-152.0" />
+      <point x="-137.0" y="784.0" />
+      <point x="-90.0" y="784.0" />
+      <point x="-90.0" y="444.0" />
+      <point x="-190.0" y="444.0" />
+      <point x="-190.0" y="344.0" />
+      <point x="-180.25" y="344.0" />
+      <point x="49.75" y="56.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.collecteurs" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.rapport_commission" relationship="REFERENCES">
+      <point x="103.875" y="-116.0" />
+      <point x="173.875" y="464.0" />
+      <point x="230.0" y="464.0" />
+      <point x="230.0" y="424.0" />
+      <point x="227.75" y="424.0" />
+      <point x="57.75" y="140.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.rapport_commission" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.collecteurs" relationship="REFERENCES">
+      <point x="-57.75" y="140.0" />
+      <point x="112.25" y="424.0" />
+      <point x="104.625" y="424.0" />
+      <point x="34.625" y="-116.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.clients" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.collecteurs" relationship="REFERENCES">
+      <point x="47.0" y="-152.0" />
+      <point x="-43.0" y="804.0" />
+      <point x="-50.0" y="804.0" />
+      <point x="-50.0" y="744.0" />
+      <point x="70.0" y="744.0" />
+      <point x="0.0" y="116.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.remuneration_collecteur" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.compte_collecteur" relationship="REFERENCES">
+      <point x="-60.25" y="-140.0" />
+      <point x="549.75" y="2264.0" />
+      <point x="230.0" y="2264.0" />
+      <point x="0.0" y="44.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.collecteurs" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.utilisateurs" relationship="REFERENCES">
+      <point x="-34.625" y="-116.0" />
+      <point x="35.375" y="464.0" />
+      <point x="30.0" y="464.0" />
+      <point x="0.0" y="128.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.historique_montant_max" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.collecteurs" relationship="REFERENCES">
+      <point x="0.0" y="-92.0" />
+      <point x="790.0" y="764.0" />
+      <point x="970.0" y="764.0" />
+      <point x="970.0" y="444.0" />
+      <point x="104.625" y="444.0" />
+      <point x="34.625" y="-116.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.compte_client" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.comptes" relationship="REFERENCES">
+      <point x="38.75" y="-44.0" />
+      <point x="648.75" y="1564.0" />
+      <point x="270.0" y="1564.0" />
+      <point x="270.0" y="1384.0" />
+      <point x="348.625" y="1384.0" />
+      <point x="-81.375" y="92.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.commission_parameter" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.clients" relationship="REFERENCES">
+      <point x="89.0" y="-140.0" />
+      <point x="-101.0" y="1584.0" />
+      <point x="110.0" y="1584.0" />
+      <point x="110.0" y="1444.0" />
+      <point x="-137.0" y="1444.0" />
+      <point x="-47.0" y="152.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.mouvements" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.comptes" relationship="REFERENCES">
+      <point x="0.0" y="-152.0" />
+      <point x="770.0" y="1464.0" />
+      <point x="402.875" y="1464.0" />
+      <point x="-27.125" y="92.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.commission_tiers" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.commission_parameter" relationship="REFERENCES">
+      <point x="0.0" y="-80.0" />
+      <point x="0.0" y="140.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.compte_liaison" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.agence" relationship="REFERENCES">
+      <point x="-40.75" y="-44.0" />
+      <point x="-30.75" y="1564.0" />
+      <point x="-250.0" y="1564.0" />
+      <point x="-250.0" y="664.0" />
+      <point x="-290.0" y="664.0" />
+      <point x="-290.0" y="444.0" />
+      <point x="-190.0" y="444.0" />
+      <point x="-190.0" y="344.0" />
+      <point x="-180.25" y="344.0" />
+      <point x="49.75" y="56.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.mouvements" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.commission_repartition" relationship="REFERENCES">
+      <point x="81.2" y="-152.0" />
+      <point x="851.2" y="1424.0" />
+      <point x="650.0" y="1424.0" />
+      <point x="0.0" y="116.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.transferts_compte_client" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.transferts_compte" relationship="REFERENCES">
+      <point x="61.5" y="-92.0" />
+      <point x="491.5" y="1504.0" />
+      <point x="490.0" y="1504.0" />
+      <point x="490.0" y="1404.0" />
+      <point x="90.0" y="1404.0" />
+      <point x="0.0" y="128.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.compte_liaison" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.comptes" relationship="REFERENCES">
+      <point x="40.75" y="-44.0" />
+      <point x="50.75" y="1564.0" />
+      <point x="270.0" y="1564.0" />
+      <point x="270.0" y="1384.0" />
+      <point x="348.625" y="1384.0" />
+      <point x="-81.375" y="92.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.commission_repartition" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.collecteurs" relationship="REFERENCES">
+      <point x="0.0" y="-116.0" />
+      <point x="650.0" y="764.0" />
+      <point x="970.0" y="764.0" />
+      <point x="970.0" y="444.0" />
+      <point x="104.625" y="444.0" />
+      <point x="34.625" y="-116.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.commission" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.comptes" relationship="REFERENCES">
+      <point x="-1.4210854715202004E-14" y="-164.0" />
+      <point x="890.0" y="1404.0" />
+      <point x="511.375" y="1404.0" />
+      <point x="81.375" y="92.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.remuneration_collecteur" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.collecteurs" relationship="REFERENCES">
+      <point x="60.25" y="-140.0" />
+      <point x="670.25" y="2184.0" />
+      <point x="930.0" y="2184.0" />
+      <point x="930.0" y="764.0" />
+      <point x="970.0" y="764.0" />
+      <point x="970.0" y="444.0" />
+      <point x="104.625" y="444.0" />
+      <point x="34.625" y="-116.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.mouvements" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.transferts_compte" relationship="REFERENCES">
+      <point x="-81.19999999999999" y="-152.0" />
+      <point x="688.8" y="1504.0" />
+      <point x="490.0" y="1504.0" />
+      <point x="490.0" y="1404.0" />
+      <point x="90.0" y="1404.0" />
+      <point x="0.0" y="128.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.commission" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.commission_parameter" relationship="REFERENCES">
+      <point x="-92.40000000000003" y="-164.0" />
+      <point x="797.5999999999999" y="2224.0" />
+      <point x="-190.0" y="2224.0" />
+      <point x="0.0" y="140.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.journaux" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.collecteurs" relationship="REFERENCES">
+      <point x="0.0" y="-104.0" />
+      <point x="230.0" y="804.0" />
+      <point x="-50.0" y="804.0" />
+      <point x="-50.0" y="744.0" />
+      <point x="70.0" y="744.0" />
+      <point x="0.0" y="116.0" />
+    </edge>
+    <edge source="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.admin" target="e2db03d5-1e03-4c1a-b3d2-cdeb8c528273.TABLE:collect_focep_bd.utilisateurs" relationship="REFERENCES">
+      <point x="33.5" y="-44.0" />
+      <point x="-156.5" y="464.0" />
+      <point x="30.0" y="464.0" />
+      <point x="0.0" y="128.0" />
+    </edge>
+  </edges>
+  <settings layout="Hierarchic Compact" zoom="0.6892506669207319" showDependencies="false" x="-79.1280000000001" y="1139.082073434125" />
+  <SelectedNodes />
+  <Categories>
+    <Category>Columns</Category>
+    <Category>Comments</Category>
+    <Category>Key columns</Category>
+    <Category>Virtual foreign keys</Category>
+  </Categories>
+</Diagram>
+

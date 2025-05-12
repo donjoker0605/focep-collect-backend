@@ -1,0 +1,330 @@
+@startuml
+
+!theme plain
+top to bottom direction
+skinparam linetype ortho
+
+class admin {
+   agence_id: bigint
+   id: bigint
+}
+class agence {
+   code_agence: varchar(255)
+   nom_agence: varchar(255)
+   id: bigint
+}
+class audit_logs {
+   action: varchar(255)
+   details: text
+   entity_id: bigint
+   entity_type: varchar(255)
+   ip_address: varchar(255)
+   timestamp: datetime(6)
+   user_agent: varchar(255)
+   username: varchar(255)
+   version: bigint
+   id: bigint
+}
+class client {
+   nom: varchar(255)
+   numero_cni: varchar(255)
+   photo_path: varchar(255)
+   prenom: varchar(255)
+   quartier: varchar(255)
+   telephone: varchar(255)
+   valide: bit(1)
+   ville: varchar(255)
+   id_agence: bigint
+   id_collecteur: bigint
+   id: bigint
+}
+class clients {
+   nom: varchar(255)
+   numero_cni: varchar(255)
+   photo_path: varchar(255)
+   prenom: varchar(255)
+   quartier: varchar(255)
+   telephone: varchar(255)
+   valide: bit(1)
+   ville: varchar(255)
+   id_agence: bigint
+   id_collecteur: bigint
+   id: bigint
+}
+class collecteur {
+   anciennete_en_mois: int
+   id_agence: bigint
+   montant_max_retrait: double
+   id: bigint
+}
+class collecteurs {
+   active: tinyint(1)
+   anciennete_en_mois: int
+   date_modification_montant: datetime(6)
+   modifie_par: varchar(255)
+   montant_max_retrait: double
+   id_agence: bigint
+   rapport_id: bigint
+   id: bigint
+}
+class commission {
+   date_calcul: datetime(6)
+   date_fin_validite: datetime(6)
+   montant: double
+   tva: double
+   type: varchar(255)
+   valeur: double
+   client_id: bigint
+   collecteur_id: bigint
+   commission_parameter_id: bigint
+   compte_id: bigint
+   rapport_id: bigint
+   id: bigint
+}
+class commission_parameter {
+   is_active: bit(1)
+   code_produit: varchar(255)
+   type: enum('fixed', 'percentage', 'tier')
+   valeur: double
+   valid_from: date
+   valid_to: date
+   agence_id: bigint
+   client_id: bigint
+   collecteur_id: bigint
+   id: bigint
+}
+class commission_repartition {
+   date_repartition: datetime(6)
+   montanttvaclient: double
+   montant_total_commission: double
+   part_collecteur: double
+   partemf: double
+   tva_sur_partemf: double
+   collecteur_id: bigint
+   id: bigint
+}
+class commission_tier {
+   montant_max: double
+   montant_min: double
+   taux: double
+   commission_parameter_id: bigint
+   id: bigint
+}
+class commission_tiers {
+   montant_max: double
+   montant_min: double
+   taux: double
+   commission_parameter_id: bigint
+   id: bigint
+}
+class compte {
+   nom_compte: varchar(255)
+   solde: double
+   type_compte: varchar(255)
+   id: bigint
+}
+class compte_client {
+   id_client: bigint
+   id: bigint
+}
+class compte_collecteur {
+   id_collecteur: bigint
+   id: bigint
+}
+class compte_liaison {
+   id_agence: bigint
+   id: bigint
+}
+class comptes {
+   nom_compte: varchar(255)
+   numero_compte: varchar(255)
+   solde: double
+   type_compte: varchar(255)
+   version: bigint
+   id: bigint
+}
+class historique_montant_max {
+   ancien_montant: double
+   date_modification: datetime(6)
+   justification: varchar(255)
+   modifie_par: varchar(255)
+   collecteur_id: bigint
+   id: bigint
+}
+class journal {
+   date_debut: date
+   date_fin: date
+   id_collecteur: bigint
+   date_cloture: datetime(6)
+   est_cloture: bit(1)
+   id: bigint
+}
+class journaux {
+   date_cloture: datetime(6)
+   date_debut: date
+   date_fin: date
+   est_cloture: bit(1)
+   version: bigint
+   id_collecteur: bigint
+   id: bigint
+}
+class mouvement {
+   date_operation: datetime(6)
+   libelle: varchar(255)
+   montant: double
+   sens: varchar(255)
+   compte_destination: bigint
+   compte_source: bigint
+   id_journal: bigint
+   id: bigint
+}
+class mouvements {
+   date_operation: datetime(6)
+   libelle: varchar(255)
+   montant: double
+   sens: varchar(255)
+   version: bigint
+   compte_destination: bigint
+   compte_source: bigint
+   journal_id: bigint
+   transfert_id: bigint
+   repartition_id: bigint
+   id: bigint
+}
+class rapport_commission {
+   date_debut: date
+   date_fin: date
+   est_valide: bit(1)
+   partemf: double
+   remuneration_collecteur: double
+   total_commissions: double
+   totaltva: double
+   tva_sur_partemf: double
+   collecteur_id: bigint
+   id: bigint
+}
+class remuneration_collecteur {
+   date_debut: date
+   date_fin: date
+   est_paye: bit(1)
+   montant_fixe: double
+   montant_remuneration: double
+   montanttva: double
+   total_commissions: double
+   collecteur_id: bigint
+   compte_collecteur_id: bigint
+   id: bigint
+}
+class transactions {
+   created_at: datetime(6)
+   status: enum('initiated', 'pending_validation', 'validated', 'processing', 'completed', 'failed', 'cancelled')
+   updated_at: datetime(6)
+   id: bigint
+}
+class transferts_compte {
+   created_by: varchar(255)
+   date_transfert: datetime(6)
+   is_inter_agence: bit(1)
+   montant_commissions: double
+   montant_total: double
+   nombre_comptes: int
+   source_collecteur_id: bigint
+   target_collecteur_id: bigint
+   id: bigint
+}
+class transferts_compte_client {
+   client_id: bigint
+   new_solde: double
+   old_solde: double
+   status: varchar(255)
+   transfert_id: bigint
+   id: bigint
+}
+class utilisateur {
+   adresse_mail: varchar(255)
+   nom: varchar(255)
+   numero_cni: varchar(255)
+   prenom: varchar(255)
+   role: varchar(255)
+   telephone: varchar(255)
+   password: varchar(255)
+   id: bigint
+}
+class utilisateur_backup {
+   id: bigint
+   adresse_mail: varchar(255)
+   nom: varchar(255)
+   numero_cni: varchar(255)
+   prenom: varchar(255)
+   role: varchar(255)
+   telephone: varchar(255)
+   password: varchar(255)
+}
+class utilisateurs {
+   adresse_mail: varchar(255)
+   nom: varchar(255)
+   numero_cni: varchar(255)
+   password: varchar(255)
+   prenom: varchar(255)
+   role: varchar(255)
+   telephone: varchar(255)
+   version: bigint
+   id: bigint
+}
+
+admin                     -[#595959,plain]-^  agence                   : "agence_id:id"
+admin                     -[#595959,plain]-^  utilisateurs             : "id"
+client                    -[#595959,plain]-^  agence                   : "id_agence:id"
+client                    -[#595959,plain]-^  collecteur               : "id_collecteur:id"
+clients                   -[#595959,plain]-^  agence                   : "id_agence:id"
+clients                   -[#595959,plain]-^  collecteurs              : "id_collecteur:id"
+collecteur                -[#595959,plain]-^  agence                   : "id_agence:id"
+collecteur                -[#595959,plain]-^  utilisateur              : "id"
+collecteurs               -[#595959,plain]-^  agence                   : "id_agence:id"
+collecteurs               -[#595959,plain]-^  rapport_commission       : "rapport_id:id"
+collecteurs               -[#595959,plain]-^  utilisateurs             : "id"
+commission                -[#595959,plain]-^  client                   : "client_id:id"
+commission                -[#595959,plain]-^  clients                  : "client_id:id"
+commission                -[#595959,plain]-^  collecteur               : "collecteur_id:id"
+commission                -[#595959,plain]-^  collecteurs              : "collecteur_id:id"
+commission                -[#595959,plain]-^  commission_parameter     : "commission_parameter_id:id"
+commission                -[#595959,plain]-^  compte                   : "compte_id:id"
+commission                -[#595959,plain]-^  comptes                  : "compte_id:id"
+commission                -[#595959,plain]-^  rapport_commission       : "rapport_id:id"
+commission_parameter      -[#595959,plain]-^  agence                   : "agence_id:id"
+commission_parameter      -[#595959,plain]-^  client                   : "client_id:id"
+commission_parameter      -[#595959,plain]-^  clients                  : "client_id:id"
+commission_parameter      -[#595959,plain]-^  collecteur               : "collecteur_id:id"
+commission_parameter      -[#595959,plain]-^  collecteurs              : "collecteur_id:id"
+commission_repartition    -[#595959,plain]-^  collecteur               : "collecteur_id:id"
+commission_repartition    -[#595959,plain]-^  collecteurs              : "collecteur_id:id"
+commission_tier           -[#595959,plain]-^  commission_parameter     : "commission_parameter_id:id"
+commission_tiers          -[#595959,plain]-^  commission_parameter     : "commission_parameter_id:id"
+compte_client             -[#595959,plain]-^  clients                  : "id_client:id"
+compte_client             -[#595959,plain]-^  comptes                  : "id"
+compte_collecteur         -[#595959,plain]-^  collecteurs              : "id_collecteur:id"
+compte_collecteur         -[#595959,plain]-^  comptes                  : "id"
+compte_liaison            -[#595959,plain]-^  agence                   : "id_agence:id"
+compte_liaison            -[#595959,plain]-^  comptes                  : "id"
+historique_montant_max    -[#595959,plain]-^  collecteur               : "collecteur_id:id"
+historique_montant_max    -[#595959,plain]-^  collecteurs              : "collecteur_id:id"
+journal                   -[#595959,plain]-^  collecteur               : "id_collecteur:id"
+journaux                  -[#595959,plain]-^  collecteurs              : "id_collecteur:id"
+mouvement                 -[#595959,plain]-^  compte                   : "compte_destination:id"
+mouvement                 -[#595959,plain]-^  compte                   : "compte_source:id"
+mouvement                 -[#595959,plain]-^  journal                  : "id_journal:id"
+mouvements                -[#595959,plain]-^  commission_repartition   : "repartition_id:id"
+mouvements                -[#595959,plain]-^  comptes                  : "compte_destination:id"
+mouvements                -[#595959,plain]-^  comptes                  : "compte_source:id"
+mouvements                -[#595959,plain]-^  journal                  : "journal_id:id"
+mouvements                -[#595959,plain]-^  journaux                 : "journal_id:id"
+mouvements                -[#595959,plain]-^  transferts_compte        : "transfert_id:id"
+rapport_commission        -[#595959,plain]-^  collecteur               : "collecteur_id:id"
+rapport_commission        -[#595959,plain]-^  collecteurs              : "collecteur_id:id"
+remuneration_collecteur   -[#595959,plain]-^  collecteur               : "collecteur_id:id"
+remuneration_collecteur   -[#595959,plain]-^  collecteurs              : "collecteur_id:id"
+remuneration_collecteur   -[#595959,plain]-^  compte_collecteur        : "compte_collecteur_id:id"
+transferts_compte_client  -[#595959,plain]-^  client                   : "client_id:id"
+transferts_compte_client  -[#595959,plain]-^  clients                  : "client_id:id"
+transferts_compte_client  -[#595959,plain]-^  transferts_compte        : "transfert_id:id"
+@enduml
