@@ -31,4 +31,25 @@ public interface CompteRepository extends JpaRepository<Compte, Long> {
 
     @Query("SELECT c FROM CompteSysteme c WHERE c.typeCompte = :typeCompte")
     Optional<CompteSysteme> findSystemCompteByTypeCompte(@Param("typeCompte") String typeCompte);
+
+    /**
+     * Vérifie si un compte avec le numéro donné existe
+     */
+    boolean existsByNumeroCompte(String numeroCompte);
+
+    /**
+     * Trouve un compte par son numéro
+     */
+    Optional<Compte> findByNumeroCompte(String numeroCompte);
+
+    /**
+     * Trouve tous les comptes d'un type donné
+     */
+    List<Compte> findAllByTypeCompte(String typeCompte);
+
+    /**
+     * Recherche avancée pour les comptes système
+     */
+    @Query("SELECT c FROM Compte c WHERE c.typeCompte = :typeCompte AND c.numeroCompte LIKE :numeroPattern")
+    List<Compte> findByTypeAndNumeroPattern(@Param("typeCompte") String typeCompte, @Param("numeroPattern") String numeroPattern);
 }

@@ -6,7 +6,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.entities.*;
 import org.example.collectfocep.repositories.*;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
@@ -45,83 +47,135 @@ public class CompteUtility {
         } catch (Exception e) {
             log.error("Erreur lors de l'initialisation des comptes système: {}", e.getMessage());
             log.debug("Détails de l'erreur:", e);
+            // L'application doit continuer malgré cette erreur
         }
     }
 
     /**
      * Assure que les comptes système nécessaires existent
+     * Chaque compte est créé dans sa propre transaction pour éviter les rollbacks en cascade
      */
-    @Transactional
     public void ensureSystemAccountsExist() {
+        // Créer chaque compte dans sa propre transaction
+        createSystemAccountSafely("TAXE", "Compte TVA", "TAXE-SYS");
+        createSystemAccountSafely("PRODUIT", "Compte Produit FOCEP", "PROD-SYS");
+        createSystemAccountSafely("ATTENTE", "Compte Attente Système", "ATT-SYS");
+    }
+
+    /**
+     * Crée un compte système dans sa propre transaction
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void createSystemAccountSafely(String typeCompte, String nomCompte, String numeroCompte) {
         try {
-            // Comptes système communs
-            ensureSystemCompteExists("TAXE", "Compte TVA", "TAXE-SYS");
-            ensureSystemCompteExists("PRODUIT", "Compte Produit FOCEP", "PROD-SYS");
-            ensureSystemCompteExists("ATTENTE", "Compte Attente Système", "ATT-SYS");
+            ensureSystemCompteExists(typeCompte, nomCompte, numeroCompte);
         } catch (Exception e) {
-            log.error("Erreur lors de la création des comptes système: {}", e.getMessage());
-            log.debug("Détails de l'erreur:", e);
-            throw e;
+            log.error("Erreur lors de la création du compte {}: {}", typeCompte, e.getMessage());
+            // Ne pas propager l'exception pour ne pas bloquer les autres créations
         }
     }
+
     /**
      * Assure qu'un compte système spécifique existe
-     * @param typeCompte Type du compte à créer
-     * @param nomCompte Nom du compte
-     * @param numeroCompte Numéro du compte
-     * @return Le compte existant ou nouvellement créé
+     * Utilise une approche défensive avec multiple tentatives de récupération
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public CompteSysteme ensureSystemCompteExists(String typeCompte, String nomCompte, String numeroCompte) {
+        // Étape 1: Vérification double avec flush pour s'assurer de la cohérence
+        CompteSysteme existingCompte = findExistingSystemCompte(typeCompte, numeroCompte);
+        if (existingCompte != null) {
+            return existingCompte;
+        }
+
         try {
-            // Vérifier d'abord par le numéro de compte pour éviter les duplications
-            Optional<CompteSysteme> compteOpt = compteSystemeRepository.findByNumeroCompte(numeroCompte);
-            if (compteOpt.isPresent()) {
-                log.debug("Compte système {} déjà existant avec numéro {}: {}", typeCompte, numeroCompte, compteOpt.get().getId());
-                return compteOpt.get();
-            }
-
-            // Ensuite vérifier par type de compte
-            compteOpt = compteSystemeRepository.findByTypeCompte(typeCompte);
-            if (compteOpt.isPresent()) {
-                log.debug("Compte système {} déjà existant: {}", typeCompte, compteOpt.get().getId());
-                return compteOpt.get();
-            }
-
+            // Étape 2: Tentative de création
             log.info("Création du compte système: {} avec numéro {}", typeCompte, numeroCompte);
             CompteSysteme compte = CompteSysteme.create(typeCompte, nomCompte, numeroCompte);
             CompteSysteme savedCompte = compteSystemeRepository.save(compte);
+            compteSystemeRepository.flush(); // Force l'écriture en DB
 
             log.info("Compte système {} créé avec l'ID: {}", typeCompte, savedCompte.getId());
             return savedCompte;
+
+        } catch (DataIntegrityViolationException e) {
+            // Étape 3: Récupération après violation de contrainte
+            log.warn("Contrainte d'intégrité violée pour {}, tentative de récupération", typeCompte);
+            return recoverExistingSystemCompte(typeCompte, numeroCompte, e);
+
         } catch (Exception e) {
-            log.error("Erreur lors de la création du compte système {}: {}", typeCompte, e.getMessage());
-            // Si l'erreur est due à une contrainte unique, essayer de récupérer le compte existant
-            if (e.getMessage().contains("Duplicate entry")) {
-                log.warn("Tentative de création d'un compte système déjà existant, récupération du compte existant");
-                return compteSystemeRepository.findByTypeCompte(typeCompte)
-                        .orElseThrow(() -> new RuntimeException("Impossible de récupérer le compte système existant"));
-            }
-            throw e;
+            log.error("Erreur inattendue lors de la création du compte système {}: {}", typeCompte, e.getMessage());
+            throw new RuntimeException("Impossible de créer le compte système: " + typeCompte, e);
         }
+    }
+
+    /**
+     * Recherche un compte système existant de manière défensive
+     */
+    private CompteSysteme findExistingSystemCompte(String typeCompte, String numeroCompte) {
+        // Méthode 1: Par numéro de compte
+        Optional<CompteSysteme> compteOpt = compteSystemeRepository.findByNumeroCompte(numeroCompte);
+        if (compteOpt.isPresent()) {
+            log.debug("Compte système trouvé par numéro {}: {}", numeroCompte, compteOpt.get().getId());
+            return compteOpt.get();
+        }
+
+        // Méthode 2: Par type de compte
+        compteOpt = compteSystemeRepository.findByTypeCompte(typeCompte);
+        if (compteOpt.isPresent()) {
+            log.debug("Compte système trouvé par type {}: {}", typeCompte, compteOpt.get().getId());
+            return compteOpt.get();
+        }
+
+        return null;
+    }
+
+    /**
+     * Récupère un compte système après une violation de contrainte
+     */
+    private CompteSysteme recoverExistingSystemCompte(String typeCompte, String numeroCompte, Exception originalException) {
+        // Attendre un peu pour laisser la transaction se terminer
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        // Tentative 1: Par numéro de compte
+        Optional<CompteSysteme> compteOpt = compteSystemeRepository.findByNumeroCompte(numeroCompte);
+        if (compteOpt.isPresent()) {
+            log.info("Compte système récupéré par numéro {}: {}", numeroCompte, compteOpt.get().getId());
+            return compteOpt.get();
+        }
+
+        // Tentative 2: Par type de compte
+        compteOpt = compteSystemeRepository.findByTypeCompte(typeCompte);
+        if (compteOpt.isPresent()) {
+            log.info("Compte système récupéré par type {}: {}", typeCompte, compteOpt.get().getId());
+            return compteOpt.get();
+        }
+
+        // Tentative 3: Recherche plus large dans la table des comptes
+        Optional<Compte> compteGeneral = compteRepository.findByTypeCompte(typeCompte);
+        if (compteGeneral.isPresent() && compteGeneral.get() instanceof CompteSysteme) {
+            log.info("Compte système récupéré via table générale: {}", compteGeneral.get().getId());
+            return (CompteSysteme) compteGeneral.get();
+        }
+
+        // Si toutes les tentatives échouent
+        log.error("Impossible de récupérer le compte système {} après violation de contrainte", typeCompte);
+        throw new RuntimeException("Impossible de récupérer le compte système existant: " + typeCompte, originalException);
     }
 
     /**
      * Assure que le compte d'attente existe pour un collecteur donné
-     * Cette méthode est sécurisée pour éviter les erreurs lors de la création des comptes
+     * Version améliorée avec gestion des erreurs plus robuste
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public CompteCollecteur ensureCompteAttenteExists(Collecteur collecteur) {
         try {
             // Validation préliminaire
-            if (collecteur == null) {
-                log.error("Impossible de créer un compte d'attente pour un collecteur null");
-                throw new IllegalArgumentException("Le collecteur ne peut pas être null");
-            }
-
-            if (collecteur.getId() == null) {
-                log.error("Impossible de créer un compte d'attente pour un collecteur sans ID");
-                throw new IllegalArgumentException("L'ID du collecteur ne peut pas être null");
+            if (collecteur == null || collecteur.getId() == null) {
+                throw new IllegalArgumentException("Le collecteur et son ID ne peuvent pas être null");
             }
 
             // Recherche du compte d'attente existant
@@ -135,36 +189,63 @@ public class CompteUtility {
                 return optCompte.get();
             }
 
-            // Vérification de l'existence du collecteur dans la base
-            boolean collecteurExists = collecteurRepository.existsById(collecteur.getId());
-            if (!collecteurExists) {
-                log.error("Le collecteur avec ID={} n'existe pas dans la base de données", collecteur.getId());
-                throw new EntityNotFoundException("Collecteur non trouvé avec ID: " + collecteur.getId());
-            }
-
-            // Rechargement du collecteur pour éviter les erreurs de session
+            // Rechargement du collecteur pour s'assurer qu'il existe
             Collecteur collecteurAttache = collecteurRepository.findById(collecteur.getId())
                     .orElseThrow(() -> new EntityNotFoundException("Collecteur non trouvé avec ID: " + collecteur.getId()));
 
-            // Création d'un nouveau compte d'attente
+            // Génération d'un numéro de compte unique
+            String numeroCompte = generateUniqueAccountNumber("ATT", collecteurAttache);
+
+            // Création du nouveau compte
             log.info("Création d'un compte d'attente pour le collecteur ID={}, Nom={}",
                     collecteurAttache.getId(), collecteurAttache.getNom());
 
             CompteCollecteur compte = new CompteCollecteur();
             compte.setCollecteur(collecteurAttache);
             compte.setNomCompte("Compte Attente - " + collecteurAttache.getNom());
-            compte.setNumeroCompte("ATT" + collecteurAttache.getId());
+            compte.setNumeroCompte(numeroCompte);
             compte.setTypeCompte("ATTENTE");
             compte.setSolde(0.0);
 
             CompteCollecteur savedCompte = compteCollecteurRepository.save(compte);
-            log.info("Compte d'attente créé avec succès: ID={}", savedCompte.getId());
+            compteCollecteurRepository.flush(); // Force l'écriture
+
+            log.info("Compte d'attente créé avec succès: ID={}, Numéro={}",
+                    savedCompte.getId(), savedCompte.getNumeroCompte());
             return savedCompte;
+
+        } catch (DataIntegrityViolationException e) {
+            log.warn("Violation de contrainte lors de la création du compte d'attente, tentative de récupération");
+            // Tenter de récupérer le compte nouvellement créé
+            return compteCollecteurRepository.findByCollecteurAndTypeCompte(collecteur, "ATTENTE")
+                    .orElseThrow(() -> new RuntimeException("Impossible de créer ou récupérer le compte d'attente", e));
+
         } catch (Exception e) {
             log.error("Erreur lors de la création du compte d'attente pour le collecteur: {}",
-                    collecteur != null ? collecteur.getId() : "null", e);
-            // Ne pas masquer l'exception, la propager pour être gérée par l'appelant
+                    collecteur.getId(), e);
             throw e;
         }
+    }
+
+    /**
+     * Génère un numéro de compte unique pour éviter les conflits
+     */
+    private String generateUniqueAccountNumber(String prefix, Collecteur collecteur) {
+        String baseNumber = prefix + collecteur.getId();
+
+        // Vérifier l'unicité
+        if (!compteRepository.existsByNumeroCompte(baseNumber)) {
+            return baseNumber;
+        }
+
+        // Si le numéro existe déjà, ajouter un suffixe
+        for (int i = 1; i <= 999; i++) {
+            String uniqueNumber = baseNumber + "-" + String.format("%03d", i);
+            if (!compteRepository.existsByNumeroCompte(uniqueNumber)) {
+                return uniqueNumber;
+            }
+        }
+
+        throw new RuntimeException("Impossible de générer un numéro de compte unique pour " + prefix);
     }
 }
