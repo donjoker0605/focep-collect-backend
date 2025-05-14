@@ -10,5 +10,6 @@ import java.util.Optional;
 public interface CompteSystemeRepository extends JpaRepository<CompteSysteme, Long> {
     Optional<CompteSysteme> findByTypeCompte(String typeCompte);
 
+    boolean existsByNumeroCompte(String numeroCompte);
     Optional<CompteSysteme> findByNumeroCompte(String numeroCompte);
 }
