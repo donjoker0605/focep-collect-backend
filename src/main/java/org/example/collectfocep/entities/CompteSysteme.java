@@ -6,21 +6,23 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.SuperBuilder;
 
+@Entity
+@Table(name = "compte_systeme")
 @Getter
 @Setter
-@Entity
 @SuperBuilder
-@Table(name = "compte_systeme")
 public class CompteSysteme extends Compte {
 
-    // Constructeur par défaut explicite
     public CompteSysteme() {
         super();
     }
 
-    // Méthode de création avec validation
+    /**
+     * Méthode factory pour créer un compte système valide
+     * Utilisez cette méthode au lieu du constructeur direct
+     */
     public static CompteSysteme create(String typeCompte, String nomCompte, String numeroCompte) {
-        // Validation des paramètres d'entrée
+        // Validation stricte des paramètres
         if (typeCompte == null || typeCompte.trim().isEmpty()) {
             throw new IllegalArgumentException("Le type de compte ne peut pas être null ou vide");
         }
@@ -31,18 +33,18 @@ public class CompteSysteme extends Compte {
             throw new IllegalArgumentException("Le numéro de compte ne peut pas être null ou vide");
         }
 
-        // Création avec tous les champs requis
-        CompteSysteme compte = CompteSysteme.builder()
+        return CompteSysteme.builder()
                 .typeCompte(typeCompte.trim())
                 .nomCompte(nomCompte.trim())
                 .numeroCompte(numeroCompte.trim())
                 .solde(0.0)
+                .version(0L)
                 .build();
-
-        return compte;
     }
 
-    // Méthode de validation pour s'assurer que l'instance est valide
+    /**
+     * Méthode de validation pour s'assurer que l'instance est valide
+     */
     public boolean isValid() {
         return this.getNomCompte() != null && !this.getNomCompte().trim().isEmpty() &&
                 this.getNumeroCompte() != null && !this.getNumeroCompte().trim().isEmpty() &&
