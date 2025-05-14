@@ -17,16 +17,17 @@ public abstract class Compte {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
+    // Mapping explicite pour éviter tout conflit avec la stratégie de nommage
+    @Column(name = "nom_compte", nullable = false)
     private String nomCompte;
 
-    @Column(nullable = false, unique = true)
-    private String numeroCompte;  // Ajout du champ numeroCompte
+    @Column(name = "numero_compte", nullable = false, unique = true)
+    private String numeroCompte;
 
-    @Column(nullable = false)
+    @Column(name = "solde", nullable = false)
     private double solde;
 
-    @Column(nullable = false)
+    @Column(name = "type_compte", nullable = false)
     private String typeCompte;
 
     @Version

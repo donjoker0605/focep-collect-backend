@@ -18,12 +18,34 @@ public class CompteSysteme extends Compte {
         super();
     }
 
+    // Méthode de création avec validation
     public static CompteSysteme create(String typeCompte, String nomCompte, String numeroCompte) {
-        CompteSysteme compte = new CompteSysteme();
-        compte.setTypeCompte(typeCompte);
-        compte.setNomCompte(nomCompte);
-        compte.setNumeroCompte(numeroCompte);
-        compte.setSolde(0.0);
+        // Validation des paramètres d'entrée
+        if (typeCompte == null || typeCompte.trim().isEmpty()) {
+            throw new IllegalArgumentException("Le type de compte ne peut pas être null ou vide");
+        }
+        if (nomCompte == null || nomCompte.trim().isEmpty()) {
+            throw new IllegalArgumentException("Le nom de compte ne peut pas être null ou vide");
+        }
+        if (numeroCompte == null || numeroCompte.trim().isEmpty()) {
+            throw new IllegalArgumentException("Le numéro de compte ne peut pas être null ou vide");
+        }
+
+        // Création avec tous les champs requis
+        CompteSysteme compte = CompteSysteme.builder()
+                .typeCompte(typeCompte.trim())
+                .nomCompte(nomCompte.trim())
+                .numeroCompte(numeroCompte.trim())
+                .solde(0.0)
+                .build();
+
         return compte;
+    }
+
+    // Méthode de validation pour s'assurer que l'instance est valide
+    public boolean isValid() {
+        return this.getNomCompte() != null && !this.getNomCompte().trim().isEmpty() &&
+                this.getNumeroCompte() != null && !this.getNumeroCompte().trim().isEmpty() &&
+                this.getTypeCompte() != null && !this.getTypeCompte().trim().isEmpty();
     }
 }

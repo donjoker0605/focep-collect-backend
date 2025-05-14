@@ -1,8 +1,6 @@
 package org.example.collectfocep.entities;
 
-import jakarta.persistence.Entity;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.OneToOne;
+import jakarta.persistence.*;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
 
@@ -12,9 +10,9 @@ import lombok.experimental.SuperBuilder;
 @AllArgsConstructor
 @Entity
 @SuperBuilder
+@Table(name = "compte_liaison")
 public class CompteLiaison extends Compte {
     @OneToOne
     @JoinColumn(name = "id_agence")
     private Agence agence;
-
 }

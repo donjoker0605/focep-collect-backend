@@ -20,10 +20,10 @@ public class Journal {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
+    @Column(name = "date_debut", nullable = false)
     private LocalDate dateDebut;
 
-    @Column(nullable = false)
+    @Column(name = "date_fin", nullable = false)
     private LocalDate dateFin;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -34,10 +34,11 @@ public class Journal {
     @Builder.Default
     private List<Mouvement> mouvements = new ArrayList<>();
 
-    @Column(nullable = false)
+    @Column(name = "est_cloture", nullable = false)
     @Builder.Default
     private boolean estCloture = false;
 
+    @Column(name = "date_cloture")
     private LocalDateTime dateCloture;
 
     @Version

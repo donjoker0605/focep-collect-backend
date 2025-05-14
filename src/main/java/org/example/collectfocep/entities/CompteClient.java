@@ -10,9 +10,9 @@ import lombok.experimental.SuperBuilder;
 @AllArgsConstructor
 @Entity
 @SuperBuilder
+@Table(name = "compte_client")
 public class CompteClient extends Compte {
     @OneToOne
     @JoinColumn(name = "id_client")
     private Client client;
-
 }

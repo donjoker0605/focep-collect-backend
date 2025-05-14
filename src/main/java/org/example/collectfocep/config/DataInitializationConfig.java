@@ -7,7 +7,7 @@ import org.example.collectfocep.entities.Agence;
 import org.example.collectfocep.repositories.AdminRepository;
 import org.example.collectfocep.repositories.AgenceRepository;
 import org.example.collectfocep.security.config.RoleConfig;
-import org.example.collectfocep.util.CompteUtility;
+import org.example.collectfocep.services.impl.SystemAccountService; // AJOUT
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,7 +22,7 @@ public class DataInitializationConfig {
     private final AgenceRepository agenceRepository;
     private final AdminRepository adminRepository;
     private final PasswordEncoder passwordEncoder;
-    private final CompteUtility compteUtility;
+    private final SystemAccountService systemAccountService; // MODIFICATION
 
     @Bean
     @Profile("init")
@@ -33,7 +33,7 @@ public class DataInitializationConfig {
             // Initialiser les comptes système en premier
             try {
                 log.info("Initialisation des comptes système...");
-                compteUtility.ensureSystemAccountsExist();
+                systemAccountService.ensureSystemAccountsExist(); // MODIFICATION
                 log.info("Comptes système initialisés avec succès");
             } catch (Exception e) {
                 log.error("Erreur lors de l'initialisation des comptes système: {}", e.getMessage());

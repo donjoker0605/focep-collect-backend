@@ -27,7 +27,6 @@ import java.util.UUID;
 @Service
 @Slf4j
 public class MouvementService {
-    private final CompteUtility compteUtility;
     private final MouvementRepository mouvementRepository;
     private final CompteRepository compteRepository;
     private final CompteClientRepository compteClientRepository;
@@ -39,6 +38,8 @@ public class MouvementService {
     private final CommissionService commissionService;
     private final TransactionService transactionService;
     private final ClientAccountInitializationService clientAccountInitializationService;
+    private final SystemAccountService systemAccountService;
+    private final CollecteurAccountService collecteurAccountService;
 
     // Métriques injectées via Spring
     private final Counter epargneCounter;
@@ -46,7 +47,8 @@ public class MouvementService {
 
     @Autowired
     public MouvementService(
-            CompteUtility compteUtility,
+            SystemAccountService systemAccountService,
+            CollecteurAccountService collecteurAccountService,
             MouvementRepository mouvementRepository,
             CompteRepository compteRepository,
             CompteClientRepository compteClientRepository,
@@ -61,7 +63,8 @@ public class MouvementService {
             Counter epargneCounter,
             Timer mouvementTimer) {
 
-        this.compteUtility = compteUtility;
+        this.systemAccountService = systemAccountService;
+        this.collecteurAccountService = collecteurAccountService;
         this.mouvementRepository = mouvementRepository;
         this.compteRepository = compteRepository;
         this.compteClientRepository = compteClientRepository;
@@ -571,13 +574,13 @@ public class MouvementService {
 
                 // Récupération ou création des comptes nécessaires avec l'utilitaire
                 // 1. S'assurer que les comptes système existent
-                compteUtility.ensureSystemAccountsExist();
+                systemAccountService.ensureSystemAccountsExist();
 
                 // 2. Récupérer le compte d'attente
                 Compte compteAttente = compteRepository.findByTypeCompte("ATTENTE")
                         .orElseGet(() -> {
                             log.warn("Compte d'attente système non trouvé, création en cours...");
-                            return compteUtility.ensureSystemCompteExists("ATTENTE", "Compte Attente Système", "ATT-SYS");
+                            return systemAccountService.ensureSystemCompteExists("ATTENTE", "Compte Attente Système", "ATT-SYS");
                         });
 
                 log.debug("Compte attente trouvé: ID={}, Solde={}", compteAttente.getId(), compteAttente.getSolde());
@@ -586,14 +589,14 @@ public class MouvementService {
                 Compte compteTaxe = compteRepository.findByTypeCompte("TAXE")
                         .orElseGet(() -> {
                             log.warn("Compte taxe système non trouvé, création en cours...");
-                            return compteUtility.ensureSystemCompteExists("TAXE", "Compte Taxe Système", "TAXE-SYS");
+                            return systemAccountService.ensureSystemCompteExists("TAXE", "Compte Taxe Système", "TAXE-SYS");
                         });
                 log.debug("Compte taxe trouvé: ID={}, Solde={}", compteTaxe.getId(), compteTaxe.getSolde());
 
                 Compte compteProduit = compteRepository.findByTypeCompte("PRODUIT")
                         .orElseGet(() -> {
                             log.warn("Compte produit système non trouvé, création en cours...");
-                            return compteUtility.ensureSystemCompteExists("PRODUIT", "Compte Produit FOCEP", "PROD-SYS");
+                            return systemAccountService.ensureSystemCompteExists("PRODUIT", "Compte Produit FOCEP", "PROD-SYS");
                         });
                 log.debug("Compte produit trouvé: ID={}, Solde={}", compteProduit.getId(), compteProduit.getSolde());
 
@@ -602,7 +605,7 @@ public class MouvementService {
                 if (mouvement.getCompteDestination() instanceof CompteClient) {
                     Client client = ((CompteClient) mouvement.getCompteDestination()).getClient();
                     if (client != null && client.getCollecteur() != null) {
-                        compteAttenteCollecteur = compteUtility.ensureCompteAttenteExists(client.getCollecteur());
+                        compteAttenteCollecteur = collecteurAccountService.ensureCompteAttenteExists(client.getCollecteur());
                         // Si on a trouvé un compte d'attente spécifique au collecteur, on l'utilise à la place
                         if (compteAttenteCollecteur != null) {
                             compteAttente = compteAttenteCollecteur;

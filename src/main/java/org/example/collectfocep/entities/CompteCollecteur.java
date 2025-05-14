@@ -12,7 +12,7 @@ import lombok.experimental.SuperBuilder;
 @SuperBuilder
 @Table(name = "compte_collecteur")
 public class CompteCollecteur extends Compte {
-    @ManyToOne
+    @OneToOne
     @JoinColumn(name = "id_collecteur")
     private Collecteur collecteur;
 }

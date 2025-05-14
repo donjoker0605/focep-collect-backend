@@ -3,7 +3,7 @@ package org.example.collectfocep.config;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.services.impl.ClientAccountInitializationService;
-import org.example.collectfocep.util.CompteUtility;
+import org.example.collectfocep.services.impl.SystemAccountService;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Configuration;
@@ -15,7 +15,7 @@ import org.springframework.core.annotation.Order;
 @Order(1)
 public class AccountInitializationConfig implements ApplicationListener<ApplicationReadyEvent> {
 
-    private final CompteUtility compteUtility;
+    private final SystemAccountService systemAccountService;
     private final ClientAccountInitializationService clientAccountInitializationService;
 
     @Override
@@ -24,7 +24,7 @@ public class AccountInitializationConfig implements ApplicationListener<Applicat
 
         try {
             // S'assurer que les comptes système existent
-            compteUtility.ensureSystemAccountsExist();
+            systemAccountService.ensureSystemAccountsExist();
 
             // Créer les comptes clients manquants
             clientAccountInitializationService.createAccountsForAllClientsWithoutAccounts();
@@ -32,7 +32,6 @@ public class AccountInitializationConfig implements ApplicationListener<Applicat
             log.info("Initialisation des comptes terminée avec succès");
         } catch (Exception e) {
             log.error("Erreur lors de l'initialisation des comptes: {}", e.getMessage(), e);
-            // Ne pas bloquer le démarrage de l'application, juste logger l'erreur
         }
     }
 }

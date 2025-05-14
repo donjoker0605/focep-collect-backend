@@ -90,12 +90,13 @@ public class WebSecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        // Ajouter l'URL Expo et l'adresse IP de développement
         configuration.setAllowedOrigins(Arrays.asList(
-                "http://localhost:19006",     // Expo Web
-                "http://localhost:8081",      // Metro bundler
-                "exp://192.168.111.31:8081",  // Expo Go
-                "*"                           // Temporairement pendant le développement
+                "http://localhost:19006",        // Expo Web
+                "http://localhost:8081",         // Metro bundler
+                "http://192.168.111.57:19006",   // Expo Web avec votre IP
+                "http://192.168.111.57:8081",    // Metro bundler avec votre IP
+                "exp://192.168.111.57:8081",     // Expo Go avec votre IP correcte
+                "http://192.168.111.57:3000"     // Si vous avez un port différent
         ));
 
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
