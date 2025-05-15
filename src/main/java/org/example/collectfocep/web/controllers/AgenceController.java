@@ -103,7 +103,7 @@ public class AgenceController {
         // Vérifier que le code agence n'existe pas déjà (si fourni)
         if (agenceDTO.getCodeAgence() != null &&
                 agenceRepository.findAll().stream()
-                        .anyMatch(agence -> agence.getCodeAgence().equals(agenceDTO.getCodeAgence()))) {
+                        .anyMatch(agence -> agence.getCodeAgence() != null && agence.getCodeAgence().equals(agenceDTO.getCodeAgence()))) {
             throw new DuplicateResourceException("Une agence avec ce code existe déjà");
         }
 
@@ -212,7 +212,8 @@ public class AgenceController {
             // Utiliser une variable locale finale pour la lambda
             final String currentCode = code;
             codeExists = agenceRepository.findAll().stream()
-                    .anyMatch(agence -> agence.getCodeAgence().equals(currentCode));
+                    .anyMatch(agence -> agence.getCodeAgence() != null &&
+                            agence.getCodeAgence().equals(currentCode));
             counter++;
         } while (codeExists);
 
