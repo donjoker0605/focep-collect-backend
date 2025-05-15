@@ -65,48 +65,53 @@ public class ClientServiceImpl implements ClientService {
     @Override
     @Transactional
     public Client saveClient(Client client) {
+        log.info("Tentative de sauvegarde d'un client: {}", client.getNumeroCni());
+
+        // Validation des champs obligatoires
+        validateClientBeforeSave(client);
+
+        // Validation et récupération du collecteur
+        if (client.getCollecteur() == null || client.getCollecteur().getId() == null) {
+            throw new BusinessException("L'ID du collecteur est requis", "MISSING_COLLECTEUR_ID",
+                    "Veuillez spécifier un collecteur valide pour ce client");
+        }
+
+        Long collecteurId = client.getCollecteur().getId();
+        log.debug("Chargement du collecteur avec ID: {}", collecteurId);
+
+        Collecteur collecteur = collecteurRepository.findById(collecteurId)
+                .orElseThrow(() -> new ResourceNotFoundException("Collecteur", "id", collecteurId));
+        client.setCollecteur(collecteur);
+
+        // Validation et récupération de l'agence
+        if (client.getAgence() == null || client.getAgence().getId() == null) {
+            throw new BusinessException("L'ID de l'agence est requis", "MISSING_AGENCE_ID",
+                    "Veuillez spécifier une agence valide pour ce client");
+        }
+
+        Long agenceId = client.getAgence().getId();
+        log.debug("Chargement de l'agence avec ID: {}", agenceId);
+
+        Agence agence = agenceRepository.findById(agenceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Agence", "id", agenceId));
+        client.setAgence(agence);
+
+        // Vérification de cohérence : le collecteur doit appartenir à la même agence
+        if (!collecteur.getAgence().getId().equals(agence.getId())) {
+            throw new BusinessException(
+                    "Le collecteur ne peut pas être assigné à un client d'une agence différente",
+                    "AGENCE_MISMATCH",
+                    String.format("Collecteur agence: %d, Client agence: %d",
+                            collecteur.getAgence().getId(), agence.getId())
+            );
+        }
+
         try {
-            log.info("Tentative de sauvegarde d'un client: {}", client.getNumeroCni());
-
-            // Validation du client
-            validateClientBeforeSave(client);
-
-            // Charger l'entité Collecteur complète au lieu d'utiliser juste l'ID
-            if (client.getCollecteur() != null && client.getCollecteur().getId() != null) {
-                Long collecteurId = client.getCollecteur().getId();
-                log.debug("Chargement du collecteur avec ID: {}", collecteurId);
-
-                Collecteur collecteur = collecteurRepository.findById(collecteurId)
-                        .orElseThrow(() -> new ResourceNotFoundException("Collecteur", "id", collecteurId));
-                client.setCollecteur(collecteur);
-            } else {
-                throw new BusinessException("L'ID du collecteur est requis", "MISSING_COLLECTEUR_ID",
-                        "Veuillez spécifier un collecteur valide pour ce client");
-            }
-
-            // Charger l'entité Agence complète au lieu d'utiliser juste l'ID
-            if (client.getAgence() != null && client.getAgence().getId() != null) {
-                Long agenceId = client.getAgence().getId();
-                log.debug("Chargement de l'agence avec ID: {}", agenceId);
-
-                Agence agence = agenceRepository.findById(agenceId)
-                        .orElseThrow(() -> new ResourceNotFoundException("Agence", "id", agenceId));
-                client.setAgence(agence);
-            } else {
-                throw new BusinessException("L'ID de l'agence est requis", "MISSING_AGENCE_ID",
-                        "Veuillez spécifier une agence valide pour ce client");
-            }
-
-            // Sauvegarder le client
             Client savedClient = clientRepository.save(client);
             log.info("Client sauvegardé avec succès, ID: {}", savedClient.getId());
             return savedClient;
-
-        } catch (BusinessException | ResourceNotFoundException | DuplicateResourceException e) {
-            log.error("Erreur validée lors de la sauvegarde du client: {}", e.getMessage());
-            throw e;
         } catch (Exception e) {
-            log.error("Erreur inattendue lors de la sauvegarde du client: {}", e.getMessage(), e);
+            log.error("Erreur lors de la sauvegarde du client: {}", e.getMessage(), e);
             throw new BusinessException("Impossible de sauvegarder le client", "CLIENT_SAVE_ERROR",
                     "Une erreur est survenue lors de la sauvegarde: " + e.getMessage());
         }

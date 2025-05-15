@@ -4,7 +4,11 @@ import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
-@Table(name = "clients")
+@Table(name = "clients", indexes = {
+        @Index(name = "idx_client_cni", columnList = "numero_cni"),
+        @Index(name = "idx_client_collecteur", columnList = "id_collecteur"),
+        @Index(name = "idx_client_agence", columnList = "id_agence")
+})
 @Getter
 @Setter
 @NoArgsConstructor
@@ -21,45 +25,48 @@ public class Client {
     @Column(nullable = false)
     private String prenom;
 
-    @Column(nullable = false, unique = true)
+    @Column(name = "numero_cni", nullable = false, unique = true)
     private String numeroCni;
 
     private String ville;
     private String quartier;
     private String telephone;
+
+    @Column(name = "photo_path")
     private String photoPath;
 
     @Column(nullable = false)
-    private boolean valide;
+    @Builder.Default
+    private boolean valide = true;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "id_collecteur")
+    @JoinColumn(name = "id_collecteur", nullable = false)
     private Collecteur collecteur;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "id_agence")
+    @JoinColumn(name = "id_agence", nullable = false)
     private Agence agence;
 
-    // Getters/setters pour les relations par ID
+    // Méthodes utilitaires pour récupérer les IDs (lecture seule)
+    @Transient
     public Long getAgenceId() {
         return agence != null ? agence.getId() : null;
     }
 
-    public void setAgenceId(Long agenceId) {
-        if (agence == null) {
-            agence = new Agence();
-        }
-        agence.setId(agenceId);
-    }
-
+    @Transient
     public Long getCollecteurId() {
         return collecteur != null ? collecteur.getId() : null;
     }
 
-    public void setCollecteurId(Long collecteurId) {
+    // Méthodes de validation
+    @PrePersist
+    @PreUpdate
+    private void validateConstraints() {
         if (collecteur == null) {
-            collecteur = new Collecteur();
+            throw new IllegalStateException("Un client doit être associé à un collecteur");
         }
-        collecteur.setId(collecteurId);
+        if (agence == null) {
+            throw new IllegalStateException("Un client doit être associé à une agence");
+        }
     }
 }

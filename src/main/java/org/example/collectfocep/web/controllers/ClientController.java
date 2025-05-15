@@ -41,7 +41,19 @@ public class ClientController {
     public ResponseEntity<ApiResponse<ClientDTO>> createClient(@Valid @RequestBody ClientDTO clientDTO) {
         log.info("Création d'un nouveau client: {}", clientDTO.getNumeroCni());
 
+        // Log pour debugging
+        log.debug("DTO reçu - collecteurId: {}, agenceId: {}",
+                clientDTO.getCollecteurId(), clientDTO.getAgenceId());
+
+        // Conversion DTO vers Entity
         Client client = clientMapper.toEntity(clientDTO);
+
+        // Log pour vérifier le mapping
+        log.debug("Entity mappée - collecteur: {}, agence: {}",
+                client.getCollecteur() != null ? client.getCollecteur().getId() : "null",
+                client.getAgence() != null ? client.getAgence().getId() : "null");
+
+        // Sauvegarde
         Client savedClient = clientService.saveClient(client);
 
         return ResponseEntity.ok(ApiResponse.success(

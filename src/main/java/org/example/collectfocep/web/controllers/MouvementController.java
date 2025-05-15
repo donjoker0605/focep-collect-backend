@@ -25,6 +25,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/mouvements")
@@ -93,7 +94,7 @@ public class MouvementController {
 
     @PostMapping("/retrait")
     @PreAuthorize("@securityService.canManageClient(authentication, #request.clientId)")
-    public ResponseEntity<?> effectuerRetrait(@Valid @RequestBody RetraitRequest request) {
+    public ResponseEntity<ApiResponse<MouvementCommissionDTO>> effectuerRetrait(@Valid @RequestBody RetraitRequest request) {
         log.info("Traitement d'une opération de retrait pour le client: {}", request.getClientId());
         try {
             // Vérification explicite des autorisations
@@ -116,23 +117,44 @@ public class MouvementController {
             }
 
             Mouvement mouvement = mouvementService.enregistrerRetrait(client, request.getMontant(), journal);
-            return ResponseEntity.ok(mouvement);
+
+            // ✅ FIX PRINCIPAL : Utiliser DTO au lieu de l'entité brute
+            MouvementCommissionDTO responseDto = mouvementMapper.toCommissionDto(mouvement);
+
+            return ResponseEntity.ok(
+                    ApiResponse.success(responseDto, "Retrait effectué avec succès")
+            );
         } catch (Exception e) {
             log.error("Erreur lors de l'enregistrement du retrait", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Erreur lors de l'enregistrement du retrait: " + e.getMessage());
+                    .body(ApiResponse.error("RETRAIT_ERROR", "Erreur lors de l'enregistrement du retrait: " + e.getMessage()));
         }
     }
 
     @GetMapping("/journal/{journalId}")
     @PreAuthorize("@securityService.canAccessJournal(authentication, #journalId)")
-    public ResponseEntity<List<Mouvement>> getMouvementsByJournal(@PathVariable Long journalId) {
-        // Vérification explicite des autorisations
-        if (!securityService.canAccessJournal(SecurityContextHolder.getContext().getAuthentication(),
-                journalId)) {
-            throw new UnauthorizedException("Non autorisé à accéder à ce journal");
-        }
+    public ResponseEntity<ApiResponse<List<MouvementCommissionDTO>>> getMouvementsByJournal(@PathVariable Long journalId) {
+        try {
+            // Vérification explicite des autorisations
+            if (!securityService.canAccessJournal(SecurityContextHolder.getContext().getAuthentication(),
+                    journalId)) {
+                throw new UnauthorizedException("Non autorisé à accéder à ce journal");
+            }
 
-        return ResponseEntity.ok(mouvementService.findByJournalId(journalId));
+            List<Mouvement> mouvements = mouvementService.findByJournalId(journalId);
+
+            // ✅ FIX : Convertir toutes les entités en DTOs
+            List<MouvementCommissionDTO> mouvementDTOs = mouvements.stream()
+                    .map(mouvementMapper::toCommissionDto)
+                    .collect(Collectors.toList());
+
+            return ResponseEntity.ok(
+                    ApiResponse.success(mouvementDTOs, "Mouvements récupérés avec succès")
+            );
+        } catch (Exception e) {
+            log.error("Erreur lors de la récupération des mouvements", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("MOUVEMENT_ERROR", "Erreur lors de la récupération: " + e.getMessage()));
+        }
     }
 }
