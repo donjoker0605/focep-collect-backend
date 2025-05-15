@@ -1,150 +1,145 @@
 package org.example.collectfocep.services.impl;
 
-import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
-import io.github.resilience4j.retry.annotation.Retry;
-import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.Timer;
-import jakarta.annotation.PostConstruct;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.Validation.CollecteurValidator;
+import org.example.collectfocep.dto.CollecteurCreateDTO;
 import org.example.collectfocep.dto.CollecteurDTO;
+import org.example.collectfocep.dto.CollecteurUpdateDTO;
+import org.example.collectfocep.entities.Agence;
+import org.example.collectfocep.entities.Collecteur;
 import org.example.collectfocep.entities.HistoriqueMontantMax;
 import org.example.collectfocep.exceptions.CollecteurServiceException;
-import org.example.collectfocep.exceptions.DuplicateResourceException;
-import org.example.collectfocep.exceptions.UnauthorizedAccessException;
-import org.springframework.cache.annotation.Cacheable;
-import jakarta.validation.ValidationException;
-import lombok.extern.slf4j.Slf4j;
-import org.example.collectfocep.entities.Collecteur;
 import org.example.collectfocep.exceptions.ResourceNotFoundException;
+import org.example.collectfocep.exceptions.UnauthorizedAccessException;
+import org.example.collectfocep.exceptions.UnauthorizedException;
+import org.example.collectfocep.mappers.CollecteurMapper;
+import org.example.collectfocep.repositories.AgenceRepository;
 import org.example.collectfocep.repositories.CollecteurRepository;
 import org.example.collectfocep.repositories.HistoriqueMontantMaxRepository;
 import org.example.collectfocep.security.service.SecurityService;
-import org.example.collectfocep.services.interfaces.CompteService;
-import org.example.collectfocep.services.MetricsService;
 import org.example.collectfocep.services.interfaces.CollecteurService;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.example.collectfocep.services.interfaces.CompteService;
 import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.retry.annotation.Retryable;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.example.collectfocep.entities.Agence;
-import org.example.collectfocep.exceptions.UnauthorizedException;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 @Service
 @Slf4j
+@RequiredArgsConstructor
 @Transactional
 public class CollecteurServiceImpl implements CollecteurService {
 
-    @Autowired
-    private MeterRegistry registry;
-    private Timer timer;
+    @PersistenceContext
+    private EntityManager entityManager;
 
     private final CollecteurRepository collecteurRepository;
+    private final AgenceRepository agenceRepository;
     private final SecurityService securityService;
-    private final org.example.collectfocep.services.interfaces.CompteService compteService;
-    private final MetricsService metricsService;
+    private final CompteService compteService;
     private final HistoriqueMontantMaxRepository historiqueRepository;
     private final CollecteurValidator collecteurValidator;
     private final PasswordEncoder passwordEncoder;
+    private final CollecteurMapper collecteurMapper;
 
-    // Constants
-    private static final int MAX_RETRY_ATTEMPTS = 3;
-    private static final String METRICS_TAG = "collecteur_service";
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Collecteur saveCollecteur(CollecteurCreateDTO dto) {
+        try {
+            log.info("Début de création du collecteur pour l'agence: {}", dto.getAgenceId());
 
-    @PostConstruct
-    public void init() {
-        timer = registry.timer("collecteur.save.time");
-    }
+            // Vérifier que l'agence existe
+            Agence agence = agenceRepository.findById(dto.getAgenceId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Agence non trouvée avec l'ID: " + dto.getAgenceId()));
 
-    @Autowired
-    public CollecteurServiceImpl(
-            CollecteurRepository collecteurRepository,
-            SecurityService securityService,
-            org.example.collectfocep.services.interfaces.CompteService compteService,
-            MetricsService metricsService,
-            HistoriqueMontantMaxRepository historiqueRepository,
-            CollecteurValidator collecteurValidator,
-            PasswordEncoder passwordEncoder) {
-        this.collecteurRepository = collecteurRepository;
-        this.securityService = securityService;
-        this.compteService = compteService;
-        this.metricsService = metricsService;
-        this.historiqueRepository = historiqueRepository;
-        this.collecteurValidator = collecteurValidator;
-        this.passwordEncoder = passwordEncoder;
+            // Créer l'entité Collecteur via le mapper
+            Collecteur collecteur = collecteurMapper.toEntity(dto);
+
+            // Définir l'agence managée
+            collecteur.setAgence(agence);
+
+            // Définir le mot de passe
+            collecteur.setPassword(passwordEncoder.encode("ChangeMe123!"));
+
+            // Validation
+            collecteurValidator.validateCollecteur(collecteur);
+
+            // Sauvegarde avec flush pour récupérer l'ID
+            Collecteur savedCollecteur = collecteurRepository.saveAndFlush(collecteur);
+            entityManager.refresh(savedCollecteur);
+
+            // Créer les comptes
+            log.info("Création des comptes pour le nouveau collecteur: {}", savedCollecteur.getId());
+            compteService.createCollecteurAccounts(savedCollecteur);
+
+            log.info("Collecteur et comptes créés avec succès: {}", savedCollecteur.getId());
+            return savedCollecteur;
+
+        } catch (Exception e) {
+            log.error("Erreur lors de la création du collecteur", e);
+            throw new CollecteurServiceException("Erreur lors de la création du collecteur: " + e.getMessage(), e);
+        }
     }
 
     @Override
-    public List<Collecteur> getAllCollecteurs() {
-        return collecteurRepository.findAll();
+    @Transactional
+    public Collecteur updateCollecteur(Long id, CollecteurUpdateDTO dto) {
+        Collecteur collecteur = collecteurRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé avec l'ID: " + id));
+
+        // Vérification des droits d'accès
+        if (!securityService.hasPermissionForCollecteur(collecteur)) {
+            throw new UnauthorizedException("Non autorisé à modifier ce collecteur");
+        }
+
+        // Mise à jour via mapper
+        collecteurMapper.updateEntityFromDTO(dto, collecteur);
+
+        // Validation
+        collecteurValidator.validateCollecteur(collecteur);
+
+        return collecteurRepository.saveAndFlush(collecteur);
     }
 
     @Override
-    public Page<Collecteur> getAllCollecteurs(Pageable pageable) {
-        return collecteurRepository.findAll(pageable);
+    @Transactional
+    public Collecteur updateMontantMaxRetrait(Long collecteurId, Double nouveauMontant, String justification) {
+        Collecteur collecteur = collecteurRepository.findById(collecteurId)
+                .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
+
+        if (!securityService.hasPermissionForCollecteur(collecteur)) {
+            throw new UnauthorizedAccessException("Non autorisé à modifier le montant maximal");
+        }
+
+        // Sauvegarde de l'historique
+        sauvegarderHistoriqueMontantMax(collecteur, justification);
+
+        collecteur.setMontantMaxRetrait(nouveauMontant);
+        collecteur.setDateModificationMontantMax(LocalDateTime.now());
+        collecteur.setModifiePar(securityService.getCurrentUsername());
+
+        return collecteurRepository.saveAndFlush(collecteur);
     }
 
     @Override
     @Cacheable(value = "collecteurs", key = "#id")
     public Optional<Collecteur> getCollecteurById(Long id) {
-        return collecteurRepository.findById(id)
-                .map(collecteur -> {
-                    metricsService.incrementCounter("collecteur.access", METRICS_TAG);
-                    return collecteur;
-                });
+        return collecteurRepository.findById(id);
     }
 
     @Override
-    @Retryable(maxAttempts = MAX_RETRY_ATTEMPTS)
-    @CircuitBreaker(name = "collecteurService")
-    @CacheEvict(value = "collecteurs", key = "#collecteur.id")
-    public Collecteur saveCollecteur(Collecteur collecteur) {
-        Timer.Sample sample = null;
-        try {
-            if (metricsService != null) {
-                sample = metricsService.startTimer();
-            }
-
-            // Validation des données du collecteur via le validator
-            collecteurValidator.validateCollecteur(collecteur);
-
-            // Sauvegarde du collecteur
-            Collecteur savedCollecteur = collecteurRepository.save(collecteur);
-
-            // Création des comptes associés si nécessaire
-            compteService.createCollecteurAccounts(savedCollecteur);
-
-            return savedCollecteur;
-        } catch (Exception e) {
-            log.error("Erreur lors de la sauvegarde du collecteur", e);
-            throw new CollecteurServiceException("Erreur lors de la sauvegarde du collecteur", e);
-        } finally {
-            // Sécuriser l'appel aux métriques pour éviter les NPE
-            if (sample != null && metricsService != null) {
-                Timer timer = metricsService.getTimer("collecteur.save");
-                if (timer != null) {
-                    sample.stop(timer);
-                }
-            }
-        }
-    }
-
-    @Override
-    @CacheEvict(value = "collecteurs", key = "#id")
-    @Transactional
-    public void deactivateCollecteur(Long id) {
-        Collecteur collecteur = collecteurRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
-        collecteur.setActive(false);
-        collecteurRepository.save(collecteur);
+    public CollecteurDTO convertToDTO(Collecteur collecteur) {
+        return collecteurMapper.toDTO(collecteur);
     }
 
     @Override
@@ -158,110 +153,28 @@ public class CollecteurServiceImpl implements CollecteurService {
     }
 
     @Override
+    @CacheEvict(value = "collecteurs", key = "#id")
     @Transactional
-    public Collecteur updateCollecteur(Collecteur collecteur) {
-        // Vérifier si le collecteur existe
-        if (collecteur.getId() == null) {
-            throw new ValidationException("L'ID du collecteur ne peut pas être null pour une mise à jour");
-        }
-
-        collecteurRepository.findById(collecteur.getId())
+    public void deactivateCollecteur(Long id) {
+        Collecteur collecteur = collecteurRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
-
-        return collecteurRepository.save(collecteur);
+        collecteur.setActive(false);
+        collecteurRepository.saveAndFlush(collecteur);
     }
 
     @Override
-    public CollecteurDTO convertToDTO(Collecteur collecteur) {
-        if (collecteur == null) return null;
-
-        CollecteurDTO dto = new CollecteurDTO();
-        dto.setId(collecteur.getId());
-        dto.setNom(collecteur.getNom());
-        dto.setPrenom(collecteur.getPrenom());
-        dto.setAgenceId(collecteur.getAgence() != null ? collecteur.getAgence().getId() : null);
-        dto.setMontantMaxRetrait(collecteur.getMontantMaxRetrait());
-        dto.setNumeroCni(collecteur.getNumeroCni());
-        dto.setAdresseMail(collecteur.getAdresseMail());
-        dto.setTelephone(collecteur.getTelephone());
-        // Ne pas exposer le mot de passe
-        return dto;
+    public List<Collecteur> getAllCollecteurs() {
+        return collecteurRepository.findAll();
     }
 
     @Override
-    public Collecteur convertToEntity(CollecteurDTO dto) {
-        if (dto == null) return null;
-
-        Collecteur collecteur = new Collecteur();
-        collecteur.setId(dto.getId());
-        collecteur.setNom(dto.getNom());
-        collecteur.setPrenom(dto.getPrenom());
-        collecteur.setMontantMaxRetrait(dto.getMontantMaxRetrait());
-        collecteur.setNumeroCni(dto.getNumeroCni());
-        collecteur.setAdresseMail(dto.getAdresseMail());
-        collecteur.setTelephone(dto.getTelephone());
-
-        return collecteur;
-    }
-    @Override
-    public void updateCollecteurFromDTO(Collecteur collecteur, CollecteurDTO dto) {
-        if (collecteur == null || dto == null) return;
-
-        collecteur.setNom(dto.getNom());
-        collecteur.setPrenom(dto.getPrenom());
-        collecteur.setMontantMaxRetrait(dto.getMontantMaxRetrait());
-        // L'agence n'est pas mise à jour ici
+    public Page<Collecteur> getAllCollecteurs(Pageable pageable) {
+        return collecteurRepository.findAll(pageable);
     }
 
     @Override
     public boolean hasActiveOperations(Collecteur collecteur) {
-        // Vérifier si le collecteur a des clients actifs
-        return !collecteur.getClients().isEmpty();
-    }
-
-    private void validateCollecteur(Collecteur collecteur) {
-        if (collecteur.getMontantMaxRetrait() <= 0) {
-            throw new ValidationException("Le montant maximum de retrait doit être positif");
-        }
-
-        if (collecteur.getAncienneteEnMois() < 0) {
-            throw new ValidationException("L'ancienneté ne peut pas être négative");
-        }
-
-        // Vérification des doublons
-        if (collecteur.getId() == null && collecteurRepository.existsByNumeroCni(collecteur.getNumeroCni())) {
-            throw new DuplicateResourceException("Un collecteur existe déjà avec ce numéro d'identification");
-        }
-
-        if (collecteur.getId() == null && collecteurRepository.existsByAdresseMail(collecteur.getAdresseMail())) {
-            throw new DuplicateResourceException("Un collecteur existe déjà avec cette adresse email");
-        }
-    }
-
-    @Retry(name = "collecteurRetry")
-    @Transactional
-    public Collecteur updateMontantMaxRetrait(Long collecteurId, Double nouveauMontant, String justification) {
-        log.debug("Tentative de mise à jour du montant max de retrait pour le collecteur: {}", collecteurId);
-
-        Collecteur collecteur = collecteurRepository.findById(collecteurId)
-                .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
-
-        if (!securityService.hasPermissionForCollecteur(collecteur)) {
-            throw new UnauthorizedAccessException("Non autorisé à modifier le montant maximal");
-        }
-
-        log.info("Modification du montant max de retrait pour le collecteur {} : {} -> {}",
-                collecteur.getId(), collecteur.getMontantMaxRetrait(), nouveauMontant);
-
-        // Sauvegarde de l'historique
-        sauvegarderHistoriqueMontantMax(collecteur, justification);
-
-        collecteur.setMontantMaxRetrait(nouveauMontant);
-        collecteur.setDateModificationMontantMax(LocalDateTime.now());
-        collecteur.setModifiePar(securityService.getCurrentUsername());
-
-        // Retourner le collecteur sauvegardé au lieu d'appeler récursivement la même méthode
-        return collecteurRepository.save(collecteur);
+        return collecteur.getClients() != null && !collecteur.getClients().isEmpty();
     }
 
     private void sauvegarderHistoriqueMontantMax(Collecteur collecteur, String justification) {
@@ -275,64 +188,74 @@ public class CollecteurServiceImpl implements CollecteurService {
         historiqueRepository.save(historique);
     }
 
+    // Méthodes deprecated pour compatibilité - À SUPPRIMER PROGRESSIVEMENT
     @Override
-    @Transactional
+    @Deprecated
     public Collecteur saveCollecteur(CollecteurDTO dto, Long agenceId) {
-        // Créer l'entité Collecteur à partir du DTO
-        Collecteur collecteur = convertToEntity(dto);
+        CollecteurCreateDTO createDTO = new CollecteurCreateDTO();
+        createDTO.setNom(dto.getNom());
+        createDTO.setPrenom(dto.getPrenom());
+        createDTO.setNumeroCni(dto.getNumeroCni());
+        createDTO.setAdresseMail(dto.getAdresseMail());
+        createDTO.setTelephone(dto.getTelephone());
+        createDTO.setAgenceId(agenceId);
+        createDTO.setMontantMaxRetrait(dto.getMontantMaxRetrait());
 
-        // Définir les propriétés non mappées automatiquement
-        if (collecteur.getId() == null) {
-            // C'est un nouveau collecteur
-            collecteur.setRole("COLLECTEUR");
-            collecteur.setPassword(passwordEncoder.encode("ChangeMe123!"));
-            collecteur.setActive(true);
-            collecteur.setAncienneteEnMois(0);  // Nouveau collecteur
-        }
-
-        // Définir l'agence
-        if (agenceId != null) {
-            Agence agence = new Agence();
-            agence.setId(agenceId);
-            collecteur.setAgence(agence);
-        }
-
-        // Validation du collecteur
-        collecteurValidator.validateCollecteur(collecteur);
-
-        // Vérification des droits d'accès
-        if (collecteur.getId() != null && !securityService.hasPermissionForCollecteur(collecteur)) {
-            throw new UnauthorizedException("Non autorisé à gérer ce collecteur");
-        }
-
-        // Sauvegarde du collecteur
-        boolean isNew = collecteur.getId() == null;
-        Collecteur savedCollecteur = collecteurRepository.save(collecteur);
-
-        // Si c'est un nouveau collecteur, créer tous les comptes nécessaires
-        if (isNew) {
-            log.info("Création des comptes pour le nouveau collecteur: {}", savedCollecteur.getId());
-
-            // Créer les comptes standard (service, rémunération, charge)
-            compteService.createCollecteurAccounts(savedCollecteur);
-
-            log.info("Comptes créés avec succès pour le collecteur: {}", savedCollecteur.getId());
-        }
-
-        return savedCollecteur;
+        return saveCollecteur(createDTO);
     }
 
     @Override
-    @Transactional
+    @Deprecated
+    public Collecteur saveCollecteur(Collecteur collecteur) {
+        // Implémentation de compatibilité
+        return collecteurRepository.saveAndFlush(collecteur);
+    }
+
+    @Override
+    @Deprecated
+    public Collecteur convertToEntity(CollecteurDTO dto) {
+        // Implémentation de compatibilité - utiliser le mapper à la place
+        return collecteurMapper.toEntity(new CollecteurCreateDTO(
+                dto.getNom(),
+                dto.getPrenom(),
+                dto.getNumeroCni(),
+                dto.getAdresseMail(),
+                dto.getTelephone(),
+                dto.getAgenceId(),
+                dto.getMontantMaxRetrait()
+        ));
+    }
+
+    @Override
+    @Deprecated
+    public void updateCollecteurFromDTO(Collecteur collecteur, CollecteurDTO dto) {
+        // Implémentation de compatibilité - utiliser updateCollecteur(Long, CollecteurUpdateDTO) à la place
+        CollecteurUpdateDTO updateDTO = new CollecteurUpdateDTO();
+        updateDTO.setNom(dto.getNom());
+        updateDTO.setPrenom(dto.getPrenom());
+        updateDTO.setTelephone(dto.getTelephone());
+        updateDTO.setMontantMaxRetrait(dto.getMontantMaxRetrait());
+        updateDTO.setActive(dto.isActive());
+
+        collecteurMapper.updateEntityFromDTO(updateDTO, collecteur);
+    }
+
+    @Override
+    @Deprecated
+    public Collecteur updateCollecteur(Collecteur collecteur) {
+        return collecteurRepository.saveAndFlush(collecteur);
+    }
+
+    @Override
+    @Deprecated
     public Collecteur updateCollecteur(Long id, CollecteurDTO dto) {
-        Collecteur collecteur = collecteurRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
+        CollecteurUpdateDTO updateDTO = new CollecteurUpdateDTO();
+        updateDTO.setNom(dto.getNom());
+        updateDTO.setPrenom(dto.getPrenom());
+        updateDTO.setTelephone(dto.getTelephone());
+        updateDTO.setMontantMaxRetrait(dto.getMontantMaxRetrait());
+        updateDTO.setActive(dto.isActive());
 
-        // Mise à jour de l'entité avec les données du DTO
-        updateCollecteurFromDTO(collecteur, dto);
-
-        // Validation et sauvegarde
-        collecteurValidator.validateCollecteur(collecteur);
-        return collecteurRepository.save(collecteur);
+        return updateCollecteur(id, updateDTO);
     }
 }

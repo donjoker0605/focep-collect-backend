@@ -1,21 +1,18 @@
 package org.example.collectfocep.web.controllers;
 
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.example.collectfocep.dto.CollecteurDTO;
+import org.example.collectfocep.dto.*;
 import org.example.collectfocep.entities.Collecteur;
 import org.example.collectfocep.exceptions.InvalidOperationException;
 import org.example.collectfocep.exceptions.ResourceNotFoundException;
 import org.example.collectfocep.security.annotations.AgenceAccess;
 import org.example.collectfocep.security.annotations.Audited;
-import org.example.collectfocep.security.annotations.CollecteurManagement;
 import org.example.collectfocep.security.service.SecurityService;
 import org.example.collectfocep.services.impl.PasswordService;
 import org.example.collectfocep.services.interfaces.CollecteurService;
 import org.example.collectfocep.util.ApiResponse;
-import org.example.collectfocep.dto.MontantMaxRetraitRequest;
-import org.example.collectfocep.dto.PasswordResetRequest;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -24,7 +21,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
-import org.example.collectfocep.mappers.CollecteurMapper;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -32,22 +28,44 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/collecteurs")
 @Slf4j
+@RequiredArgsConstructor
 public class CollecteurController {
     private final CollecteurService collecteurService;
-    private final SecurityService securityService;
-    private final PasswordService passwordService;
-    private final CollecteurMapper collecteurMapper;
+    private final PasswordService passwordService; // LIGNE MANQUANTE
+    private final SecurityService securityService; // Aussi nécessaire
 
-    @Autowired
-    public CollecteurController(
-            CollecteurService collecteurService,
-            SecurityService securityService,
-            PasswordService passwordService,
-            CollecteurMapper collecteurMapper) {
-        this.collecteurService = collecteurService;
-        this.securityService = securityService;
-        this.passwordService = passwordService;
-        this.collecteurMapper = collecteurMapper;
+    @PostMapping
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
+    @Audited(action = "CREATE", entityType = "Collecteur")
+    public ResponseEntity<ApiResponse<CollecteurDTO>> createCollecteur(@Valid @RequestBody CollecteurCreateDTO dto) {
+        log.info("Création d'un nouveau collecteur pour l'agence: {}", dto.getAgenceId());
+
+        Collecteur collecteur = collecteurService.saveCollecteur(dto);
+
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        collecteurService.convertToDTO(collecteur),
+                        "Collecteur créé avec succès"
+                )
+        );
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("@securityService.canManageCollecteur(authentication, #id)")
+    @Audited(action = "UPDATE", entityType = "Collecteur")
+    public ResponseEntity<ApiResponse<CollecteurDTO>> updateCollecteur(
+            @PathVariable Long id,
+            @Valid @RequestBody CollecteurUpdateDTO dto) {
+        log.info("Mise à jour du collecteur: {}", id);
+
+        Collecteur updated = collecteurService.updateCollecteur(id, dto);
+
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        collecteurService.convertToDTO(updated),
+                        "Collecteur mis à jour avec succès"
+                )
+        );
     }
 
     @PutMapping("/{id}/montant-max")
@@ -73,7 +91,6 @@ public class CollecteurController {
         );
     }
 
-    // Méthode existante
     @GetMapping("/agence/{agenceId}")
     @AgenceAccess
     public ResponseEntity<List<CollecteurDTO>> getCollecteursByAgence(@PathVariable Long agenceId) {
@@ -85,7 +102,6 @@ public class CollecteurController {
         return ResponseEntity.ok(dtos);
     }
 
-    // Nouvelle méthode avec pagination
     @GetMapping("/agence/{agenceId}/page")
     @AgenceAccess
     public ResponseEntity<ApiResponse<Page<CollecteurDTO>>> getCollecteursByAgencePaginated(
@@ -108,41 +124,6 @@ public class CollecteurController {
         response.addMeta("totalPages", collecteursPage.getTotalPages());
 
         return ResponseEntity.ok(response);
-    }
-
-    @PostMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN') and @securityService.canAccessAgence(authentication, #dto.agenceId)")
-    @Audited(action = "CREATE", entityType = "Collecteur")
-    public ResponseEntity<ApiResponse<CollecteurDTO>> createCollecteur(@Valid @RequestBody CollecteurDTO dto) {
-        log.info("Création d'un nouveau collecteur pour l'agence: {}", dto.getAgenceId());
-
-        Collecteur collecteur = collecteurService.saveCollecteur(dto, dto.getAgenceId());
-
-        return ResponseEntity.ok(
-                ApiResponse.success(
-                        collecteurMapper.toDTO(collecteur),
-                        "Collecteur créé avec succès"
-                )
-        );
-    }
-
-
-    @PutMapping("/{id}")
-    @CollecteurManagement
-    @Audited(action = "UPDATE", entityType = "Collecteur")
-    public ResponseEntity<ApiResponse<CollecteurDTO>> updateCollecteur(
-            @PathVariable Long id,
-            @Valid @RequestBody CollecteurDTO dto) {
-        log.info("Mise à jour du collecteur: {}", id);
-
-        Collecteur updated = collecteurService.updateCollecteur(id, dto);
-
-        return ResponseEntity.ok(
-                ApiResponse.success(
-                        collecteurMapper.toDTO(updated),
-                        "Collecteur mis à jour avec succès"
-                )
-        );
     }
 
     @PostMapping("/{id}/reset-password")

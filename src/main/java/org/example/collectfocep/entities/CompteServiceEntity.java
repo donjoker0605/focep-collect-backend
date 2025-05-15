@@ -22,4 +22,3 @@ public class CompteServiceEntity extends Compte {
     @JoinColumn(name = "id_collecteur")
     private Collecteur collecteur;
 }
-

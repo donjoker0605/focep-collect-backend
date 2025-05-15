@@ -11,6 +11,8 @@ import org.example.collectfocep.repositories.AuditLogRepository;
 import org.example.collectfocep.security.annotations.Audited;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
@@ -24,6 +26,7 @@ public class AuditAspect {
     private final AuditLogRepository auditLogRepository;
 
     @Around("@annotation(audited)")
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Object logAction(ProceedingJoinPoint joinPoint, Audited audited) throws Throwable {
         String username = "anonymous";
         if (SecurityContextHolder.getContext().getAuthentication() != null) {
