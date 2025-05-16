@@ -3,43 +3,51 @@ package org.example.collectfocep.services.impl;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Timer;
 import org.example.collectfocep.constants.ErrorMessages;
+import org.example.collectfocep.dto.MouvementCommissionDTO;
+import org.example.collectfocep.dto.MouvementProjection;
 import org.example.collectfocep.entities.*;
 import org.example.collectfocep.exceptions.CompteNotFoundException;
 import org.example.collectfocep.exceptions.SoldeInsuffisantException;
-import org.example.collectfocep.exceptions.ResourceNotFoundException;  // AJOUT DE L'IMPORT MANQUANT
+import org.example.collectfocep.exceptions.ResourceNotFoundException;
+import org.example.collectfocep.mappers.MouvementMapperV2;
 import org.example.collectfocep.repositories.*;
-import org.example.collectfocep.services.JournalService;
 import org.example.collectfocep.exceptions.MontantMaxRetraitException;
 import org.example.collectfocep.services.interfaces.CompteService;
-import org.example.collectfocep.util.CompteUtility;
+import org.example.collectfocep.services.interfaces.JournalService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.exceptions.BusinessException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
 public class MouvementService {
-    private final MouvementRepository mouvementRepository;
     private final CompteRepository compteRepository;
     private final CompteClientRepository compteClientRepository;
     private final CompteCollecteurRepository compteCollecteurRepository;
     private final CompteLiaisonRepository compteLiaisonRepository;
     private final ClientRepository clientRepository;
-    private final JournalService journalService;
+    private final JournalRepository journalRepository; // AJOUT DU REPOSITORY MANQUANT
     private final CompteService compteService;
     private final CommissionService commissionService;
     private final TransactionService transactionService;
     private final ClientAccountInitializationService clientAccountInitializationService;
     private final SystemAccountService systemAccountService;
     private final CollecteurAccountService collecteurAccountService;
+    @Autowired
+    private MouvementRepository mouvementRepository;
+
+    @Autowired
+    private MouvementMapperV2 mouvementMapper;
+
+    private final JournalService journalService;
 
     // Métriques injectées via Spring
     private final Counter epargneCounter;
@@ -56,6 +64,7 @@ public class MouvementService {
             CompteLiaisonRepository compteLiaisonRepository,
             ClientRepository clientRepository,
             JournalService journalService,
+            JournalRepository journalRepository, // AJOUT DU PARAMÈTRE MANQUANT
             CompteService compteService,
             CommissionService commissionService,
             TransactionService transactionService,
@@ -71,8 +80,9 @@ public class MouvementService {
         this.compteCollecteurRepository = compteCollecteurRepository;
         this.compteLiaisonRepository = compteLiaisonRepository;
         this.clientRepository = clientRepository;
+        this.journalRepository = journalRepository;
         this.journalService = journalService;
-        this.compteService = compteService; // INITIALISATION DU FIELD
+        this.compteService = compteService;
         this.commissionService = commissionService;
         this.transactionService = transactionService;
         this.clientAccountInitializationService = clientAccountInitializationService;
@@ -425,6 +435,9 @@ public class MouvementService {
     /**
      * Enregistre une opération de retrait avec gestion des transactions
      */
+    /**
+     * Enregistre une opération de retrait avec gestion des transactions
+     */
     @Transactional(
             propagation = Propagation.REQUIRED,
             isolation = Isolation.READ_COMMITTED,
@@ -435,57 +448,116 @@ public class MouvementService {
         log.info("Début enregistrement retrait: Client={} (ID={}), Montant={}, Journal={}",
                 client.getNom() + " " + client.getPrenom(), client.getId(), montant, journal != null ? journal.getId() : "null");
 
-        return transactionService.executeInTransaction(status -> {
-            try {
-                log.debug("Démarrage transaction de retrait");
+        try {
+            // 1. CHARGER TOUTES LES ENTITÉS DANS LA MÊME TRANSACTION
+            log.debug("Rechargement des entités pour éviter les problèmes de lazy loading");
 
-                // Validation et récupération des comptes
-                CompteClient compteClient = compteClientRepository.findByClient(client)
-                        .orElseThrow(() -> {
-                            log.error("Compte client non trouvé pour client ID={}", client.getId());
-                            return new CompteNotFoundException(
-                                    String.format(ErrorMessages.RESOURCE_NOT_FOUND, "Compte client")
-                            );
-                        });
-                log.debug("Compte client trouvé: ID={}, Numéro={}, Solde={}",
-                        compteClient.getId(), compteClient.getNumeroCompte(), compteClient.getSolde());
+            // Recharger le client avec ses relations
+            Client clientRecharge = clientRepository.findByIdWithAllRelations(client.getId())
+                    .orElseThrow(() -> {
+                        log.error("Client non trouvé lors du rechargement: ID={}", client.getId());
+                        return new ResourceNotFoundException("Client non trouvé");
+                    });
+            log.debug("Client rechargé: ID={}, Nom={}", clientRecharge.getId(),
+                    clientRecharge.getNom() + " " + clientRecharge.getPrenom());
 
-                CompteCollecteur compteService = getCompteServiceCollecteur(client.getCollecteur());
-                log.debug("Compte service collecteur trouvé: ID={}, Numéro={}, Solde={}",
-                        compteService.getId(), compteService.getNumeroCompte(), compteService.getSolde());
-
-                // Validations métier
-                validateRetrait(compteClient, client.getCollecteur(), montant);
-                log.debug("Validation du retrait réussie: Solde suffisant et montant dans la limite autorisée");
-
-                // Création et exécution du mouvement
-                Mouvement mouvement = creerMouvementRetrait(
-                        compteClient,
-                        compteService,
-                        montant,
-                        client,
-                        journal
-                );
-
-                Mouvement mouvementEnregistre = effectuerMouvement(mouvement);
-                log.info("Retrait enregistré avec succès: ID={}, Client={} (ID={}), Montant={}",
-                        mouvementEnregistre.getId(), client.getNom() + " " + client.getPrenom(), client.getId(), montant);
-
-                return mouvementEnregistre;
-            } catch (SoldeInsuffisantException | MontantMaxRetraitException e) {
-                // Propager directement les exceptions spécifiques
-                log.error("Erreur lors de l'enregistrement du retrait - Client: {} (ID={}), Montant: {}, Erreur: {}",
-                        client.getNom() + " " + client.getPrenom(), client.getId(), montant, e.getMessage(), e);
-                status.setRollbackOnly();
-                throw e; // Propager l'exception originale au lieu de l'envelopper
-            } catch (Exception e) {
-                log.error("Erreur lors de l'enregistrement du retrait - Client: {} (ID={}), Montant: {}, Erreur: {}",
-                        client.getNom() + " " + client.getPrenom(), client.getId(), montant, e.getMessage(), e);
-                status.setRollbackOnly();
-                throw new BusinessException("Erreur lors de l'enregistrement du retrait",
-                        "RETRAIT_ERROR", e.getMessage());
+            // Recharger le collecteur du client avec ses relations
+            Collecteur collecteurRecharge = clientRecharge.getCollecteur();
+            if (collecteurRecharge == null) {
+                // CORRECTION: Utilisation du bon constructeur de BusinessException
+                throw new BusinessException("Le client n'est associé à aucun collecteur", "CLIENT_ERROR", "Collecteur manquant");
             }
-        });
+            log.debug("Collecteur récupéré: ID={}, Nom={}, MontantMaxRetrait={}",
+                    collecteurRecharge.getId(), collecteurRecharge.getNom(), collecteurRecharge.getMontantMaxRetrait());
+
+            // Recharger le journal
+            Journal journalRecharge = journal;
+            if (journal != null) {
+                journalRecharge = journalRepository.findById(journal.getId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Journal non trouvé"));
+            }
+
+            // 2. RÉCUPÉRATION DES COMPTES
+            CompteClient compteClient = compteClientRepository.findByClient(clientRecharge)
+                    .orElseThrow(() -> {
+                        log.error("Compte client non trouvé pour client ID={}", clientRecharge.getId());
+                        return new CompteNotFoundException(
+                                String.format(ErrorMessages.RESOURCE_NOT_FOUND, "Compte client")
+                        );
+                    });
+            log.debug("Compte client trouvé: ID={}, Numéro={}, Solde={}",
+                    compteClient.getId(), compteClient.getNumeroCompte(), compteClient.getSolde());
+
+            CompteCollecteur compteService = getCompteServiceCollecteur(collecteurRecharge);
+            log.debug("Compte service collecteur trouvé: ID={}, Numéro={}, Solde={}",
+                    compteService.getId(), compteService.getNumeroCompte(), compteService.getSolde());
+
+            // 3. VALIDATIONS MÉTIER (plus de problème de lazy loading ici)
+            validateRetrait(compteClient, collecteurRecharge, montant);
+            log.debug("Validation du retrait réussie: Solde suffisant et montant dans la limite autorisée");
+
+            // 4. CRÉATION ET EXÉCUTION DU MOUVEMENT
+            Mouvement mouvement = creerMouvementRetrait(
+                    compteClient,
+                    compteService,
+                    montant,
+                    clientRecharge,
+                    journalRecharge
+            );
+
+            // 5. EXÉCUTER LE MOUVEMENT DIRECTEMENT (sans transaction imbriquée)
+            log.debug("Exécution directe du mouvement de retrait");
+
+            // Validation des comptes
+            Compte compteSource = validateAndGetCompte(mouvement.getCompteSource().getId());
+            Compte compteDestination = validateAndGetCompte(mouvement.getCompteDestination().getId());
+
+            // Vérification du solde
+            verifierSoldeDisponible(compteSource, mouvement.getMontant(), mouvement.getSens());
+            log.debug("Vérification du solde réussie - Compte: {}, Solde actuel: {}, Montant opération: {}",
+                    compteSource.getNumeroCompte(), compteSource.getSolde(), mouvement.getMontant());
+
+            // Enregistrer l'état avant modification pour journalisation
+            double soldeSourceAvant = compteSource.getSolde();
+            double soldeDestinationAvant = compteDestination.getSolde();
+
+            // Mise à jour des soldes
+            mettreAJourSoldes(compteSource, compteDestination, mouvement.getMontant(), mouvement.getSens());
+
+            log.debug("Mise à jour des soldes - Source: {} ({} → {}), Destination: {} ({} → {})",
+                    compteSource.getNumeroCompte(), soldeSourceAvant, compteSource.getSolde(),
+                    compteDestination.getNumeroCompte(), soldeDestinationAvant, compteDestination.getSolde());
+
+            // Sauvegarde des modifications
+            compteRepository.save(compteSource);
+            compteRepository.save(compteDestination);
+
+            // Enregistrement du mouvement
+            mouvement.setDateOperation(LocalDateTime.now());
+            Mouvement mouvementEnregistre = mouvementRepository.save(mouvement);
+
+            log.info("Retrait enregistré avec succès: ID={}, Client={} (ID={}), Montant={}",
+                    mouvementEnregistre.getId(),
+                    clientRecharge.getNom() + " " + clientRecharge.getPrenom(),
+                    clientRecharge.getId(), montant);
+
+            log.info("SOLDES MIS À JOUR: Compte client {} ({}→{}), Compte service {} ({}→{})",
+                    compteSource.getNumeroCompte(), soldeSourceAvant, compteSource.getSolde(),
+                    compteDestination.getNumeroCompte(), soldeDestinationAvant, compteDestination.getSolde());
+
+            return mouvementEnregistre;
+
+        } catch (SoldeInsuffisantException | MontantMaxRetraitException e) {
+            // Propager directement les exceptions spécifiques
+            log.error("Erreur lors de l'enregistrement du retrait - Client: {} (ID={}), Montant: {}, Erreur: {}",
+                    client.getNom() + " " + client.getPrenom(), client.getId(), montant, e.getMessage());
+            throw e; // Propager l'exception originale
+        } catch (Exception e) {
+            log.error("Erreur lors de l'enregistrement du retrait - Client: {} (ID={}), Montant: {}, Erreur: {}",
+                    client.getNom() + " " + client.getPrenom(), client.getId(), montant, e.getMessage(), e);
+            // CORRECTION: Utilisation du bon constructeur de BusinessException
+            throw new BusinessException("Erreur lors de l'enregistrement du retrait", "RETRAIT_ERROR", e.getMessage());
+        }
     }
 
     /**
@@ -841,5 +913,33 @@ public class MouvementService {
     public List<Mouvement> findByJournalId(Long journalId) {
         log.debug("Récupération des mouvements pour le journal: {}", journalId);
         return mouvementRepository.findByJournalId(journalId);
+    }
+
+    /**
+     * Méthode optimisée utilisant les projections
+     */
+    @Transactional(readOnly = true)
+    public List<MouvementCommissionDTO> findMouvementsDtoByJournalId(Long journalId) {
+        List<MouvementProjection> projections = mouvementRepository.findMouvementProjectionsByJournalId(journalId);
+        return projections.stream()
+                .map(mouvementMapper::projectionToDto)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Méthode avec JOIN FETCH (plus flexible)
+     */
+    @Transactional(readOnly = true)
+    public List<Mouvement> findByJournalIdWithAccounts(Long journalId) {
+        return mouvementRepository.findByJournalIdWithAccounts(journalId);
+    }
+
+    /**
+     * Conversion des entités en DTO
+     */
+    public List<MouvementCommissionDTO> convertToDto(List<Mouvement> mouvements) {
+        return mouvements.stream()
+                .map(mouvementMapper::toCommissionDto)
+                .collect(Collectors.toList());
     }
 }

@@ -3,7 +3,7 @@ package org.example.collectfocep.services.impl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.entities.Journal;
-import org.example.collectfocep.services.JournalService;
+import org.example.collectfocep.services.interfaces.JournalService;
 import org.example.collectfocep.services.ReportService;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;

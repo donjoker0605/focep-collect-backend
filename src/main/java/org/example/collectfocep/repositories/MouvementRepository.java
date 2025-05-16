@@ -1,5 +1,6 @@
 package org.example.collectfocep.repositories;
 
+import org.example.collectfocep.dto.MouvementProjection;
 import org.example.collectfocep.entities.Compte;
 import org.example.collectfocep.entities.Journal;
 import org.example.collectfocep.entities.Mouvement;
@@ -112,4 +113,20 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
             @Param("endDate") LocalDateTime endDate);
 
     List<Mouvement> findByLibelleContaining(String keyword);
+
+    @Query("SELECT m FROM Mouvement m " +
+            "LEFT JOIN FETCH m.compteSource " +
+            "LEFT JOIN FETCH m.compteDestination " +
+            "LEFT JOIN FETCH m.journal " +
+            "WHERE m.journal.id = :journalId")
+    List<Mouvement> findByJournalIdWithAccounts(@Param("journalId") Long journalId);
+
+    @Query("SELECT new org.example.collectfocep.dto.MouvementProjection(" +
+            "m.id, m.montant, m.libelle, m.sens, m.dateOperation, " +
+            "cs.numeroCompte, cd.numeroCompte) " +
+            "FROM Mouvement m " +
+            "LEFT JOIN m.compteSource cs " +
+            "LEFT JOIN m.compteDestination cd " +
+            "WHERE m.journal.id = :journalId")
+    List<MouvementProjection> findMouvementProjectionsByJournalId(@Param("journalId") Long journalId);
 }

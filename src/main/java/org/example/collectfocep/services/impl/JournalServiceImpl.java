@@ -1,8 +1,11 @@
 package org.example.collectfocep.services.impl;
 
+import org.example.collectfocep.entities.Collecteur;
 import org.example.collectfocep.entities.Journal;
+import org.example.collectfocep.entities.Mouvement;
 import org.example.collectfocep.exceptions.ResourceNotFoundException;
 import org.example.collectfocep.repositories.JournalRepository;
+import org.example.collectfocep.repositories.MouvementRepository;
 import org.example.collectfocep.services.interfaces.JournalService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.CacheEvict;
@@ -22,10 +25,12 @@ import java.util.Optional;
 public class JournalServiceImpl implements JournalService {
 
     private final JournalRepository journalRepository;
+    private final MouvementRepository mouvementRepository; // ✅ AJOUT pour saveMouvement
 
     @Autowired
-    public JournalServiceImpl(JournalRepository journalRepository) {
+    public JournalServiceImpl(JournalRepository journalRepository, MouvementRepository mouvementRepository) {
         this.journalRepository = journalRepository;
+        this.mouvementRepository = mouvementRepository;
     }
 
     @Override
@@ -75,9 +80,32 @@ public class JournalServiceImpl implements JournalService {
         return journalRepository.findByCollecteurAndDateRange(collecteurId, dateDebut, dateFin, pageable);
     }
 
-    public List<Journal> getMonthlyEntries(long collecteurId, YearMonth month) {
+    @Override
+    public List<Journal> getMonthlyEntries(Long collecteurId, YearMonth month) {
         LocalDate startDate = month.atDay(1);
         LocalDate endDate = month.atEndOfMonth();
         return journalRepository.findByCollecteurAndDateRange(collecteurId, startDate, endDate);
+    }
+
+    // ✅ MÉTHODES SUPPLÉMENTAIRES de l'ancienne classe
+
+    @Override
+    @Transactional
+    public void deleteJournal(Long id) {
+        journalRepository.deleteById(id);
+    }
+
+    @Override
+    @Transactional
+    public Mouvement saveMouvement(Mouvement mouvement, Journal journal) {
+        mouvement.setJournal(journal);
+        return mouvementRepository.save(mouvement);
+    }
+
+    // ✅ MÉTHODE pour la compatibilité avec Collecteur
+    @Override
+    public List<Journal> getJournauxByCollecteurAndDateRange(
+            Collecteur collecteur, LocalDate dateDebut, LocalDate dateFin) {
+        return journalRepository.findByCollecteurAndDateDebutBetween(collecteur, dateDebut, dateFin);
     }
 }

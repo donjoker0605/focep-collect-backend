@@ -34,6 +34,7 @@ public interface CommissionMapper {
     @Mapping(target = "dateFinValidite", ignore = true)
     @Mapping(target = "compte", ignore = true)
     @Mapping(target = "commissionParameter", ignore = true)
+    @Mapping(target = "rapport", ignore = true)
     Commission toEntity(CommissionCalculationDTO dto);
 
     @Mapping(target = "dateCalcul", expression = "java(LocalDateTime.now())")

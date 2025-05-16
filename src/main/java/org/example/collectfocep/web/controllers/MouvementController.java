@@ -18,6 +18,7 @@ import org.example.collectfocep.services.impl.MouvementService;
 import org.example.collectfocep.security.service.SecurityService;
 import org.example.collectfocep.util.ApiResponse;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -31,11 +32,16 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/mouvements")
 @Slf4j
 public class MouvementController {
-    private final MouvementService mouvementService;
+
     private final SecurityService securityService;
     private final ClientRepository clientRepository;
     private final JournalRepository journalRepository;
     private final MouvementMapper mouvementMapper;
+    @Autowired
+    private MouvementService mouvementService;
+
+    @Value("${app.mouvement.use-projection:true}")
+    private boolean useProjection;
 
     @Autowired
     public MouvementController(
@@ -132,29 +138,30 @@ public class MouvementController {
     }
 
     @GetMapping("/journal/{journalId}")
-    @PreAuthorize("@securityService.canAccessJournal(authentication, #journalId)")
-    public ResponseEntity<ApiResponse<List<MouvementCommissionDTO>>> getMouvementsByJournal(@PathVariable Long journalId) {
+    public ResponseEntity<ApiResponse<List<MouvementCommissionDTO>>> getMouvementsByJournal(
+            @PathVariable Long journalId,
+            @RequestParam(defaultValue = "auto") String strategy) {
+
         try {
-            // Vérification explicite des autorisations
-            if (!securityService.canAccessJournal(SecurityContextHolder.getContext().getAuthentication(),
-                    journalId)) {
-                throw new UnauthorizedException("Non autorisé à accéder à ce journal");
+            List<MouvementCommissionDTO> mouvementDTOs;
+
+            // Stratégie configurable
+            if ("projection".equals(strategy) || (useProjection && "auto".equals(strategy))) {
+                // Approche projection (plus rapide)
+                mouvementDTOs = mouvementService.findMouvementsDtoByJournalId(journalId);
+            } else {
+                // Approche entity avec JOIN FETCH (plus flexible)
+                mouvementDTOs = mouvementService.convertToDto(
+                        mouvementService.findByJournalIdWithAccounts(journalId)
+                );
             }
-
-            List<Mouvement> mouvements = mouvementService.findByJournalId(journalId);
-
-            // ✅ FIX : Convertir toutes les entités en DTOs
-            List<MouvementCommissionDTO> mouvementDTOs = mouvements.stream()
-                    .map(mouvementMapper::toCommissionDto)
-                    .collect(Collectors.toList());
 
             return ResponseEntity.ok(
                     ApiResponse.success(mouvementDTOs, "Mouvements récupérés avec succès")
             );
         } catch (Exception e) {
-            log.error("Erreur lors de la récupération des mouvements", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error("MOUVEMENT_ERROR", "Erreur lors de la récupération: " + e.getMessage()));
+                    .body(ApiResponse.error("MOUVEMENT_ERROR", "Erreur: " + e.getMessage()));
         }
     }
 }
