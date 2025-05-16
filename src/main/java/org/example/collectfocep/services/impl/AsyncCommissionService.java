@@ -1,56 +1,85 @@
 package org.example.collectfocep.services.impl;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.example.collectfocep.dto.CommissionResult;
+import org.example.collectfocep.dto.CommissionProcessingResult;
+import org.example.collectfocep.entities.CommissionRepartition;
+import org.example.collectfocep.entities.Collecteur;
 import org.example.collectfocep.repositories.CollecteurRepository;
-import org.example.collectfocep.services.CommissionCalculationService;
-import org.example.collectfocep.services.CommissionRepartitionService;
-import org.example.collectfocep.services.ReportService;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.example.collectfocep.services.CommissionProcessingService;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.util.concurrent.CompletableFuture;
 
+/**
+ * Service asynchrone pour le traitement des commissions
+ * Utilise la nouvelle architecture avec CommissionProcessingService
+ */
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class AsyncCommissionService {
 
-    private final CommissionCalculationService commissionCalculationService;
-    private final CommissionRepartitionService commissionRepartitionService;
-    private final ReportService reportService;
+    private final CommissionProcessingService commissionProcessingService;
     private final CollecteurRepository collecteurRepository;
 
-    @Autowired
-    public AsyncCommissionService(
-            CommissionCalculationService commissionCalculationService,
-            CommissionRepartitionService commissionRepartitionService,
-            ReportService reportService,
-            CollecteurRepository collecteurRepository) {
-        this.commissionCalculationService = commissionCalculationService;
-        this.commissionRepartitionService = commissionRepartitionService;
-        this.reportService = reportService;
-        this.collecteurRepository = collecteurRepository;
+    /**
+     * Traitement asynchrone des commissions pour un collecteur
+     */
+    @Async
+    public CompletableFuture<CommissionProcessingResult> processCommissions(
+            Long collecteurId, LocalDate startDate, LocalDate endDate) {
+
+        log.info("Début traitement asynchrone des commissions - Collecteur: {}, Période: {} à {}",
+                collecteurId, startDate, endDate);
+
+        try {
+            // Vérifier que le collecteur existe
+            Collecteur collecteur = collecteurRepository.findById(collecteurId)
+                    .orElseThrow(() -> new RuntimeException("Collecteur non trouvé: " + collecteurId));
+
+            // Déléguer le traitement au service principal
+            CommissionProcessingResult result = commissionProcessingService
+                    .processCommissionsForPeriod(collecteurId, startDate, endDate);
+
+            log.info("Traitement asynchrone terminé avec succès pour collecteur {}", collecteurId);
+            return CompletableFuture.completedFuture(result);
+
+        } catch (Exception e) {
+            log.error("Erreur lors du traitement asynchrone des commissions pour collecteur {}: {}",
+                    collecteurId, e.getMessage(), e);
+
+            return CompletableFuture.completedFuture(
+                    CommissionProcessingResult.failure(collecteurId, e.getMessage())
+            );
+        }
     }
 
+    /**
+     * Recalcul forcé des commissions en mode asynchrone
+     */
     @Async
-    public CompletableFuture<CommissionResult> processCommissions(Long collecteurId, LocalDate startDate, LocalDate endDate) {
-        log.info("Starting async commission processing for collecteur: {}", collecteurId);
+    public CompletableFuture<CommissionProcessingResult> recalculateCommissions(
+            Long collecteurId, LocalDate startDate, LocalDate endDate) {
+
+        log.info("Début recalcul asynchrone des commissions - Collecteur: {}", collecteurId);
+
         try {
-            // Calculate commissions
-            CommissionResult result = commissionCalculationService.calculateCommissions(collecteurId, startDate, endDate);
+            CommissionProcessingResult result = commissionProcessingService
+                    .recalculateCommissions(collecteurId, startDate, endDate, true);
 
-            // Process repartition
-            commissionRepartitionService.processRepartition(result);
-
-            // Pour le rapport, nous pouvons simplement renvoyer le résultat pour l'instant
-            // Une méthode complète generateCommissionReport pourrait être implémentée dans ReportService
-
+            log.info("Recalcul asynchrone terminé avec succès pour collecteur {}", collecteurId);
             return CompletableFuture.completedFuture(result);
+
         } catch (Exception e) {
-            log.error("Error processing commissions", e);
-            return CompletableFuture.failedFuture(e);
+            log.error("Erreur lors du recalcul asynchrone pour collecteur {}: {}",
+                    collecteurId, e.getMessage(), e);
+
+            return CompletableFuture.completedFuture(
+                    CommissionProcessingResult.failure(collecteurId, e.getMessage())
+            );
         }
     }
 }

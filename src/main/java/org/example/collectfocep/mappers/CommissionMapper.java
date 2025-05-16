@@ -43,7 +43,11 @@ public interface CommissionMapper {
     @Mapping(source = "type", target = "typeCalcul")
     @Mapping(source = "client.id", target = "clientId")
     @Mapping(source = "collecteur.id", target = "collecteurId")
-    @Mapping(target = "montantNet", expression = "java(commission.getMontant() - commission.getTva())")
+    @Mapping(target = "montantNet", expression = "java(java.math.BigDecimal.valueOf(commission.getMontant() - commission.getTva()))")
+    // AJOUT: Mapper les propriétés manquantes
+    @Mapping(target = "success", constant = "true")
+    @Mapping(target = "errorMessage", ignore = true)
+    @Mapping(target = "warnings", ignore = true)
     CommissionResult toResult(Commission commission);
 
     // Méthode pour mapper CommissionTier vers CommissionTierDTO

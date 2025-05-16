@@ -4,7 +4,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.dto.CommissionResult;
 import org.example.collectfocep.entities.*;
-import org.example.collectfocep.exceptions.CommissionCalculationException;
 import org.example.collectfocep.repositories.CommissionParameterRepository;
 import org.example.collectfocep.repositories.CommissionRepository;
 import org.example.collectfocep.services.CommissionValidationService;
@@ -12,6 +11,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -23,157 +24,150 @@ public class CommissionService {
     @Value("${commission.tva.rate:0.1925}")
     private double TVA_RATE;
 
-    @Value("${commission.fixed.amount:1000}")
-    private double FIXED_COMMISSION_AMOUNT;
-
-    @Value("${commission.percentage.rate:0.02}")
-    private double DEFAULT_PERCENTAGE_RATE;
-
     private final CommissionParameterRepository commissionParameterRepository;
     private final CommissionValidationService validationService;
     private final CommissionRepository commissionRepository;
 
-    @Transactional(readOnly = true)
-    public CommissionResult calculateCommission(double montant, CommissionType type, Double valeurPersonnalisee) {
-        return switch(type) {
-            case FIXED -> calculateFixedCommission(montant, valeurPersonnalisee);
-            case PERCENTAGE -> calculatePercentageCommission(montant, valeurPersonnalisee);
-            case TIER -> calculateTierCommission(montant);
-        };
-    }
-
+    /**
+     * AJOUT: Méthode pour calculer la commission d'un mouvement
+     */
     @Transactional(readOnly = true)
     public double calculerCommission(Mouvement mouvement) {
-        try {
-            // Déterminer le client concerné
-            Compte compteDestination = mouvement.getCompteDestination();
+        log.debug("Calcul commission pour mouvement: ID={}, Type={}, Montant={}",
+                mouvement.getId(), mouvement.getSens(), mouvement.getMontant());
 
-            // Vérifier si le compte de destination est un compte client
-            if (!(compteDestination instanceof CompteClient)) {
-                // Pas un compte client, pas de commission
+        // Logique simplifiée pour le moment - peut être enrichie
+        double montant = mouvement.getMontant();
+
+        // Selon le type d'opération
+        switch (mouvement.getSens().toLowerCase()) {
+            case "epargne":
+                // 2% de commission pour épargne
+                double commissionEpargne = montant * 0.02;
+                log.debug("Commission épargne calculée: {}% de {} = {}", 2, montant, commissionEpargne);
+                return commissionEpargne;
+
+            case "retrait":
+                // 1% de commission pour retrait
+                double commissionRetrait = montant * 0.01;
+                log.debug("Commission retrait calculée: {}% de {} = {}", 1, montant, commissionRetrait);
+                return commissionRetrait;
+
+            default:
+                log.debug("Pas de commission pour opération de type: {}", mouvement.getSens());
                 return 0.0;
-            }
-
-            // Récupérer le client de façon sûre
-            final Client client = ((CompteClient) compteDestination).getClient();
-            if (client == null) {
-                // Pas de client associé, pas de commission
-                return 0.0;
-            }
-
-            // Rechercher les paramètres de commission pour ce client
-            CommissionParameter params = commissionParameterRepository.findByClient(client)
-                    .orElseGet(() -> commissionParameterRepository.findByCollecteur(client.getCollecteur())
-                            .orElseGet(() -> commissionParameterRepository.findByAgence(client.getAgence())
-                                    .orElseThrow(() -> new CommissionCalculationException("Aucun paramètre de commission trouvé"))));
-
-            // Calculer selon le type de commission
-            switch (params.getType()) {
-                case FIXED:
-                    return params.getValeur();
-                case PERCENTAGE:
-                    return mouvement.getMontant() * (params.getValeur() / 100);
-                case TIER:
-                    return calculateCommissionByTier(params.getTiers(), mouvement.getMontant());
-                default:
-                    return 0.0;
-            }
-        } catch (Exception e) {
-            log.error("Erreur lors du calcul de commission", e);
-            return 0.0;
         }
     }
 
-    private CommissionResult calculateFixedCommission(double montant, Double valeurPersonnalisee) {
-        log.debug("Calcul de commission fixe pour le montant: {}", montant);
-        double commission = valeurPersonnalisee != null ? valeurPersonnalisee : FIXED_COMMISSION_AMOUNT;
-        double tva = commission * TVA_RATE;
-        double montantNet = commission - tva;
+    @Transactional(readOnly = true)
+    public CommissionResult calculateCommission(BigDecimal montant, CommissionType type, BigDecimal valeurPersonnalisee, List<CommissionTier> tiers) {
+        log.debug("Calcul de commission - Montant: {}, Type: {}, Valeur: {}", montant, type, valeurPersonnalisee);
 
-        return CommissionResult.builder()
-                .montantCommission(commission)
-                .montantTVA(tva)
-                .montantNet(montantNet)
-                .typeCalcul("FIXED")
-                .dateCalcul(LocalDateTime.now())
-                .build();
-    }
-
-    private CommissionResult calculatePercentageCommission(double montant, Double valeurPersonnalisee) {
-        log.debug("Calcul de commission en pourcentage pour le montant: {}", montant);
-        double taux = valeurPersonnalisee != null ? valeurPersonnalisee / 100 : DEFAULT_PERCENTAGE_RATE;
-        double commission = montant * taux;
-        double tva = commission * TVA_RATE;
-        double montantNet = commission - tva;
-
-        return CommissionResult.builder()
-                .montantCommission(commission)
-                .montantTVA(tva)
-                .montantNet(montantNet)
-                .typeCalcul("PERCENTAGE")
-                .dateCalcul(LocalDateTime.now())
-                .build();
-    }
-
-    private CommissionResult calculateTierCommission(double montant) {
-        log.debug("Calcul de commission par palier pour le montant: {}", montant);
-        double rate;
-
-        // Exemple de paliers
-        if (montant <= 100000) {
-            rate = 0.03;
-        } else if (montant <= 500000) {
-            rate = 0.02;
-        } else {
-            rate = 0.01;
+        if (montant == null || montant.compareTo(BigDecimal.ZERO) <= 0) {
+            return CommissionResult.failure(null, null, "Montant invalide: " + montant);
         }
 
-        double commission = montant * rate;
-        double tva = commission * TVA_RATE;
-        double montantNet = commission - tva;
+        BigDecimal commission = switch (type) {
+            case FIXED -> calculateFixedCommission(montant, valeurPersonnalisee);
+            case PERCENTAGE -> calculatePercentageCommission(montant, valeurPersonnalisee);
+            case TIER -> calculateTierCommission(montant, tiers);
+        };
 
-        return CommissionResult.builder()
-                .montantCommission(commission)
-                .montantTVA(tva)
-                .montantNet(montantNet)
-                .typeCalcul("TIER")
-                .dateCalcul(LocalDateTime.now())
-                .build();
+        BigDecimal tva = commission.multiply(BigDecimal.valueOf(TVA_RATE))
+                .setScale(2, RoundingMode.HALF_UP);
+
+        return CommissionResult.success(commission, tva, type.name(), null, null);
     }
 
-    private double calculateCommissionByTier(List<CommissionTier> tiers, double montant) {
-        return tiers.stream()
-                .filter(tier -> montant >= tier.getMontantMin() && montant <= tier.getMontantMax())
-                .findFirst()
-                .map(tier -> montant * (tier.getTaux() / 100))
-                .orElseThrow(() -> new CommissionCalculationException("Aucun palier trouvé pour le montant"));
+    private BigDecimal calculateFixedCommission(BigDecimal montant, BigDecimal valeurPersonnalisee) {
+        log.debug("Calcul commission fixe: {}", valeurPersonnalisee);
+
+        if (valeurPersonnalisee == null || valeurPersonnalisee.compareTo(BigDecimal.ZERO) <= 0) {
+            log.warn("Valeur fixe invalide: {}, utilisation de 0", valeurPersonnalisee);
+            return BigDecimal.ZERO;
+        }
+
+        return valeurPersonnalisee.setScale(2, RoundingMode.HALF_UP);
     }
 
-    // Méthode pour récupérer les commissions par agence
+    private BigDecimal calculatePercentageCommission(BigDecimal montant, BigDecimal valeurPersonnalisee) {
+        log.debug("Calcul commission pourcentage - Montant: {}, Taux: {}%", montant, valeurPersonnalisee);
+
+        if (valeurPersonnalisee == null || valeurPersonnalisee.compareTo(BigDecimal.ZERO) < 0
+                || valeurPersonnalisee.compareTo(BigDecimal.valueOf(100)) > 0) {
+            log.warn("Pourcentage invalide: {}, utilisation de 0%", valeurPersonnalisee);
+            return BigDecimal.ZERO;
+        }
+
+        return montant.multiply(valeurPersonnalisee)
+                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal calculateTierCommission(BigDecimal montant, List<CommissionTier> tiers) {
+        log.debug("Calcul commission par palier - Montant: {}, Nombre de paliers: {}",
+                montant, tiers != null ? tiers.size() : 0);
+
+        if (tiers == null || tiers.isEmpty()) {
+            log.warn("Aucun palier défini, commission = 0");
+            return BigDecimal.ZERO;
+        }
+
+        for (CommissionTier tier : tiers) {
+            BigDecimal min = BigDecimal.valueOf(tier.getMontantMin());
+            BigDecimal max = BigDecimal.valueOf(tier.getMontantMax());
+
+            if (montant.compareTo(min) >= 0 && montant.compareTo(max) <= 0) {
+                BigDecimal taux = BigDecimal.valueOf(tier.getTaux());
+                BigDecimal commission = montant.multiply(taux)
+                        .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+
+                log.debug("Palier trouvé [{}-{}], taux: {}%, commission: {}",
+                        min, max, taux, commission);
+                return commission;
+            }
+        }
+
+        log.warn("Aucun palier trouvé pour le montant: {}", montant);
+        return BigDecimal.ZERO;
+    }
+
     @Transactional(readOnly = true)
     public List<Commission> findByAgenceId(Long agenceId) {
-        log.debug("Récupération des commissions pour l'agence: {}", agenceId);
-        // Vous devrez implémenter la requête dans le repository correspondant
-        // ou utiliser une jointure avec les clients/collecteurs
+        log.debug("Récupération commissions pour agence: {}", agenceId);
         return commissionRepository.findByAgenceId(agenceId);
     }
 
-    // Méthode pour récupérer les commissions par collecteur
     @Transactional(readOnly = true)
     public List<Commission> findByCollecteurId(Long collecteurId) {
-        log.debug("Récupération des commissions pour le collecteur: {}", collecteurId);
+        log.debug("Récupération commissions pour collecteur: {}", collecteurId);
         return commissionRepository.findByCollecteurId(collecteurId);
     }
 
-    // Méthode pour sauvegarder un paramètre de commission
     @Transactional
     public CommissionParameter saveCommissionParameter(CommissionParameter parameter) {
-        log.info("Sauvegarde d'un paramètre de commission: {}", parameter.getType());
+        log.info("Sauvegarde paramètre commission: type={}, scope={}",
+                parameter.getType(), getParameterScope(parameter));
 
-        // Validation du paramètre
-        validationService.validateCommissionParameters(parameter);
+        // Validation
+        var validationResult = validationService.validateCommissionParameters(parameter);
+        validationResult.throwIfInvalid();
 
-        // Sauvegarde du paramètre
-        return commissionParameterRepository.save(parameter);
+        // Log des warnings
+        if (!validationResult.getWarnings().isEmpty()) {
+            log.warn("Avertissements lors de la validation: {}", validationResult.getWarnings());
+        }
+
+        // Sauvegarde
+        var saved = commissionParameterRepository.save(parameter);
+        log.info("Paramètre sauvegardé avec ID: {}", saved.getId());
+
+        return saved;
+    }
+
+    private String getParameterScope(CommissionParameter parameter) {
+        if (parameter.getClient() != null) return "CLIENT:" + parameter.getClient().getId();
+        if (parameter.getCollecteur() != null) return "COLLECTEUR:" + parameter.getCollecteur().getId();
+        if (parameter.getAgence() != null) return "AGENCE:" + parameter.getAgence().getId();
+        return "UNDEFINED";
     }
 }
