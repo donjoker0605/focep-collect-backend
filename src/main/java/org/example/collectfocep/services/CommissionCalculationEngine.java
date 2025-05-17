@@ -44,36 +44,37 @@ public class CommissionCalculationEngine {
 
         // Requête SQL optimisée avec agrégations
         String sql = """
-            SELECT 
-                c.id as client_id,
-                CONCAT(c.nom, ' ', c.prenom) as client_name,
-                cc.numero_compte as numero_compte,
-                COALESCE(SUM(CASE 
-                    WHEN m.sens = 'CREDIT' AND m.compte_destination = cc.id 
-                    THEN m.montant 
-                    ELSE 0 
-                END), 0) as montant_collecte,
-                cp.id as param_id,
-                cp.type as param_type,
-                cp.valeur as param_valeur
-            FROM clients c
-            JOIN compte_client cc ON cc.id_client = c.id
-            LEFT JOIN mouvements m ON m.compte_destination = cc.id 
-                AND m.date_operation BETWEEN ? AND ?
-                AND m.libelle LIKE '%épargne%'
-            LEFT JOIN commission_parameters cp ON (
-                cp.client_id = c.id OR 
-                cp.collecteur_id = c.id_collecteur OR 
-                cp.agence_id = c.id_agence
-            )
-            WHERE c.id_collecteur = ?
-                AND c.valide = true
-                AND cp.is_active = true
-                AND (cp.valid_from IS NULL OR cp.valid_from <= ?)
-                AND (cp.valid_to IS NULL OR cp.valid_to >= ?)
-            GROUP BY c.id, cc.numero_compte, cp.id, cp.type, cp.valeur
-            ORDER BY c.id
-            """;
+    SELECT 
+        c.id as client_id,
+        CONCAT(c.nom, ' ', c.prenom) as client_name,
+        cpt.numero_compte as numero_compte,
+        COALESCE(SUM(CASE 
+            WHEN m.sens = 'CREDIT' AND m.compte_destination = cc.id 
+            THEN m.montant 
+            ELSE 0 
+        END), 0) as montant_collecte,
+        cp.id as param_id,
+        cp.type as param_type,
+        cp.valeur as param_valeur
+    FROM clients c
+    JOIN compte_client cc ON cc.id_client = c.id
+    JOIN comptes cpt ON cpt.id = cc.id
+    LEFT JOIN mouvements m ON m.compte_destination = cc.id 
+        AND m.date_operation BETWEEN ? AND ?
+        AND m.libelle LIKE '%épargne%'
+    LEFT JOIN commission_parameter cp ON (
+        cp.client_id = c.id OR 
+        cp.collecteur_id = c.id_collecteur OR 
+        cp.agence_id = c.id_agence
+    )
+    WHERE c.id_collecteur = ?
+        AND c.valide = true
+        AND cp.is_active = true
+        AND (cp.valid_from IS NULL OR cp.valid_from <= ?)
+        AND (cp.valid_to IS NULL OR cp.valid_to >= ?)
+    GROUP BY c.id, cpt.numero_compte, cp.id, cp.type, cp.valeur
+    ORDER BY c.id
+    """;
 
         return jdbcTemplate.query(sql, this::mapToCalculation,
                 context.getStartDate().atStartOfDay(),

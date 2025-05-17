@@ -43,4 +43,13 @@ public interface CommissionParameterRepository extends JpaRepository<CommissionP
     // Recherche par type
     @Query("SELECT cp FROM CommissionParameter cp WHERE cp.type = :type AND cp.active = true")
     List<CommissionParameter> findByTypeAndActive(@Param("type") String type);
+
+    @Query("SELECT cp FROM CommissionParameter cp LEFT JOIN FETCH cp.tiers WHERE cp.id = :id")
+    Optional<CommissionParameter> findByIdWithTiers(@Param("id") Long id);
+
+    @Query("SELECT cp FROM CommissionParameter cp LEFT JOIN FETCH cp.tiers")
+    List<CommissionParameter> findAllWithTiers();
+
+    @Query("SELECT cp FROM CommissionParameter cp LEFT JOIN FETCH cp.tiers")
+    Page<CommissionParameter> findAllWithTiers(Pageable pageable);
 }

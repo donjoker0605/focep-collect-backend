@@ -5,12 +5,23 @@ import org.example.collectfocep.entities.CommissionParameter;
 import org.example.collectfocep.entities.Client;
 import org.example.collectfocep.entities.Collecteur;
 import org.example.collectfocep.entities.Agence;
-import org.mapstruct.Mapper;
-import org.mapstruct.Mapping;
-import org.mapstruct.Named;
+import org.example.collectfocep.repositories.ClientRepository;
+import org.example.collectfocep.repositories.CollecteurRepository;
+import org.example.collectfocep.repositories.AgenceRepository;
+import org.mapstruct.*;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Mapper(componentModel = "spring", uses = {CommissionMapper.class})
-public interface CommissionParameterMapper {
+public abstract class CommissionParameterMapper {
+
+    @Autowired
+    private ClientRepository clientRepository;
+
+    @Autowired
+    private CollecteurRepository collecteurRepository;
+
+    @Autowired
+    private AgenceRepository agenceRepository;
 
     @Mapping(source = "client.id", target = "clientId")
     @Mapping(source = "collecteur.id", target = "collecteurId")
@@ -21,11 +32,11 @@ public interface CommissionParameterMapper {
     @Mapping(source = "validTo", target = "dateFin")
     @Mapping(source = "active", target = "actif")
     @Mapping(source = "tiers", target = "paliers")
-    CommissionParameterDTO toDTO(CommissionParameter parameter);
+    public abstract CommissionParameterDTO toDTO(CommissionParameter parameter);
 
-    @Mapping(source = "clientId", target = "client", qualifiedByName = "idToClient")
-    @Mapping(source = "collecteurId", target = "collecteur", qualifiedByName = "idToCollecteur")
-    @Mapping(source = "agenceId", target = "agence", qualifiedByName = "idToAgence")
+    @Mapping(target = "client", ignore = true)
+    @Mapping(target = "collecteur", ignore = true)
+    @Mapping(target = "agence", ignore = true)
     @Mapping(source = "typeCommission", target = "type")
     @Mapping(source = "valeurCommission", target = "valeur")
     @Mapping(source = "dateDebut", target = "validFrom")
@@ -33,31 +44,25 @@ public interface CommissionParameterMapper {
     @Mapping(source = "actif", target = "active")
     @Mapping(source = "paliers", target = "tiers")
     @Mapping(target = "id", ignore = true)
-    @Mapping(target = "version", ignore = true) // ✅ CORRECTION: Ignorer version
-    CommissionParameter toEntity(CommissionParameterDTO dto);
+    @Mapping(target = "version", ignore = true)
+    public abstract CommissionParameter toEntity(CommissionParameterDTO dto);
 
-    // Méthodes de mapping pour les entités liées
-    @Named("idToClient")
-    default Client idToClient(Long id) {
-        if (id == null) return null;
-        Client client = new Client();
-        client.setId(id);
-        return client;
-    }
+    @AfterMapping
+    protected void setReferences(CommissionParameterDTO dto, @MappingTarget CommissionParameter entity) {
+        // Charger les entités complètes depuis la base de données
+        if (dto.getClientId() != null) {
+            clientRepository.findById(dto.getClientId())
+                    .ifPresent(entity::setClient);
+        }
 
-    @Named("idToCollecteur")
-    default Collecteur idToCollecteur(Long id) {
-        if (id == null) return null;
-        Collecteur collecteur = new Collecteur();
-        collecteur.setId(id);
-        return collecteur;
-    }
+        if (dto.getCollecteurId() != null) {
+            collecteurRepository.findById(dto.getCollecteurId())
+                    .ifPresent(entity::setCollecteur);
+        }
 
-    @Named("idToAgence")
-    default Agence idToAgence(Long id) {
-        if (id == null) return null;
-        Agence agence = new Agence();
-        agence.setId(id);
-        return agence;
+        if (dto.getAgenceId() != null) {
+            agenceRepository.findById(dto.getAgenceId())
+                    .ifPresent(entity::setAgence);
+        }
     }
 }

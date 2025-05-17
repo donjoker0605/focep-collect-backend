@@ -4,11 +4,12 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.dto.CommissionParameterDTO;
-import org.example.collectfocep.entities.CommissionParameter;
-import org.example.collectfocep.entities.CommissionTier;
-import org.example.collectfocep.entities.CommissionType;
+import org.example.collectfocep.entities.*;
 import org.example.collectfocep.exceptions.ResourceNotFoundException;
 import org.example.collectfocep.mappers.CommissionParameterMapper;
+import org.example.collectfocep.repositories.AgenceRepository;
+import org.example.collectfocep.repositories.ClientRepository;
+import org.example.collectfocep.repositories.CollecteurRepository;
 import org.example.collectfocep.repositories.CommissionParameterRepository;
 import org.example.collectfocep.security.annotations.AgenceAccess;
 import org.example.collectfocep.services.CommissionValidationService;
@@ -29,6 +30,9 @@ import java.util.Map;
 public class CommissionParameterController {
 
     private final CommissionParameterRepository commissionParameterRepository;
+    private final CollecteurRepository collecteurRepository;
+    private final AgenceRepository agenceRepository;
+    private final ClientRepository clientRepository;
     private final CommissionParameterMapper parameterMapper;
     private final CommissionValidationService validationService;
 
@@ -52,6 +56,25 @@ public class CommissionParameterController {
 
             // Mapping vers entité
             CommissionParameter parameter = parameterMapper.toEntity(parameterDTO);
+
+            // Chargement explicite des entités référencées
+            if (parameterDTO.getCollecteurId() != null) {
+                Collecteur collecteur = collecteurRepository.findById(parameterDTO.getCollecteurId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Collecteur not found with id: " + parameterDTO.getCollecteurId()));
+                parameter.setCollecteur(collecteur);
+            }
+
+            if (parameterDTO.getAgenceId() != null) {
+                Agence agence = agenceRepository.findById(parameterDTO.getAgenceId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Agence not found with id: " + parameterDTO.getAgenceId()));
+                parameter.setAgence(agence);
+            }
+
+            if (parameterDTO.getClientId() != null) {
+                Client client = clientRepository.findById(parameterDTO.getClientId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Client not found with id: " + parameterDTO.getClientId()));
+                parameter.setClient(client);
+            }
 
             // Validation métier
             var validationResult = validationService.validateCommissionParameters(parameter);
@@ -87,12 +110,12 @@ public class CommissionParameterController {
 
         log.debug("Récupération paramètres commission - Page: {}", pageable.getPageNumber());
 
-        Page<CommissionParameter> parameters = commissionParameterRepository.findAll(pageable);
+        // MODIFICATION: Utiliser findAllWithTiers au lieu de findAll
+        Page<CommissionParameter> parameters = commissionParameterRepository.findAllWithTiers(pageable);
         Page<CommissionParameterDTO> result = parameters.map(parameterMapper::toDTO);
 
         return ResponseEntity.ok(result);
     }
-
     /**
      * Récupérer un paramètre par ID
      */
@@ -101,7 +124,8 @@ public class CommissionParameterController {
     public ResponseEntity<CommissionParameterDTO> getCommissionParameter(@PathVariable Long id) {
         log.debug("Récupération paramètre commission - ID: {}", id);
 
-        CommissionParameter parameter = commissionParameterRepository.findById(id)
+        // MODIFICATION: Utiliser findByIdWithTiers au lieu de findById
+        CommissionParameter parameter = commissionParameterRepository.findByIdWithTiers(id)
                 .orElseThrow(() -> new ResourceNotFoundException("CommissionParameter not found with id: " + id));
 
         return ResponseEntity.ok(parameterMapper.toDTO(parameter));
@@ -120,7 +144,7 @@ public class CommissionParameterController {
 
         try {
             // Vérifier existence
-            CommissionParameter existing = commissionParameterRepository.findById(id)
+            CommissionParameter existing = commissionParameterRepository.findByIdWithTiers(id)
                     .orElseThrow(() -> new ResourceNotFoundException("CommissionParameter not found with id: " + id));
 
             // Validation du DTO
@@ -172,7 +196,7 @@ public class CommissionParameterController {
         log.info("Suppression paramètre commission - ID: {}", id);
 
         try {
-            CommissionParameter parameter = commissionParameterRepository.findById(id)
+            CommissionParameter parameter = commissionParameterRepository.findByIdWithTiers(id)
                     .orElseThrow(() -> new ResourceNotFoundException("CommissionParameter not found with id: " + id));
 
             // Vérifier si le paramètre est utilisé (optionnel - selon votre logique métier)
@@ -204,7 +228,7 @@ public class CommissionParameterController {
         log.info("Changement statut paramètre {} - Actif: {}", id, active);
 
         try {
-            CommissionParameter parameter = commissionParameterRepository.findById(id)
+            CommissionParameter parameter = commissionParameterRepository.findByIdWithTiers(id)
                     .orElseThrow(() -> new ResourceNotFoundException("CommissionParameter not found with id: " + id));
 
             parameter.setActive(active);
@@ -271,7 +295,7 @@ public class CommissionParameterController {
         log.info("Ajout tier au paramètre {}", id);
 
         try {
-            CommissionParameter parameter = commissionParameterRepository.findById(id)
+            CommissionParameter parameter = commissionParameterRepository.findByIdWithTiers(id)
                     .orElseThrow(() -> new ResourceNotFoundException("CommissionParameter not found with id: " + id));
 
             // Validation du type
@@ -327,7 +351,7 @@ public class CommissionParameterController {
         log.info("Suppression tier {} du paramètre {}", tierId, id);
 
         try {
-            CommissionParameter parameter = commissionParameterRepository.findById(id)
+            CommissionParameter parameter = commissionParameterRepository.findByIdWithTiers(id)
                     .orElseThrow(() -> new ResourceNotFoundException("CommissionParameter not found with id: " + id));
 
             boolean removed = parameter.getTiers().removeIf(tier -> tier.getId().equals(tierId));
