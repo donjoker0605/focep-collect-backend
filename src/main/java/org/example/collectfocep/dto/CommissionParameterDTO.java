@@ -46,16 +46,21 @@ public class CommissionParameterDTO {
     private List<CommissionTierDTO> paliers;
 
     // Validation personnalisée
-    public boolean isValid() {
-        // Exactement un scope doit être défini
+    public boolean isValidScope() {
         int scopeCount = 0;
         if (clientId != null) scopeCount++;
         if (collecteurId != null) scopeCount++;
         if (agenceId != null) scopeCount++;
-
         return scopeCount == 1;
     }
+    public boolean isValid() {
+        return isValidScope();
+    }
 
+
+    /**
+     * Récupère le scope défini
+     */
     public String getScope() {
         if (clientId != null) return "CLIENT";
         if (collecteurId != null) return "COLLECTEUR";

@@ -31,6 +31,9 @@ public class CommissionParameter {
     @Column(name = "is_active")
     private boolean active;
 
+    @Version
+    private Long version;
+
     @ManyToOne
     @JoinColumn(name = "client_id")
     private Client client;

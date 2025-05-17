@@ -22,7 +22,7 @@ public class AsyncCommissionController {
     private final AsyncCommissionService asyncCommissionService;
     private final AsyncReportService asyncReportService;
 
-    @PostMapping("/process")
+    @PostMapping("/process-asyn")
     public ResponseEntity<String> processCommissions(
             @RequestParam Long collecteurId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
