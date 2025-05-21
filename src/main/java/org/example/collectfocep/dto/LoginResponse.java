@@ -1,19 +1,19 @@
 package org.example.collectfocep.dto;
+
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class LoginResponse {
     private String token;
+    private String role;
+    private String refreshToken; // Optionnel
 
-    public LoginResponse() {
-    }
-
-    public LoginResponse(String token) {
+    public LoginResponse(String token, String role) {
         this.token = token;
-    }
-
-    public String getToken() {
-        return token;
-    }
-
-    public void setToken(String token) {
-        this.token = token;
+        this.role = role;
     }
 }

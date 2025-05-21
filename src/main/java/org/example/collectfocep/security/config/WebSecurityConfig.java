@@ -49,13 +49,20 @@ public class WebSecurityConfig {
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**", "/api/public/**").permitAll()
-                        .requestMatchers("/api/auth/**", "/api/public/**", "/api/bootstrap/**").permitAll()
+                        // Endpoints publics - CORRIGÉ
+                        .requestMatchers("/api/auth/login", "/api/auth/logout").permitAll()
+                        .requestMatchers("/api/public/**").permitAll()
+                        .requestMatchers("/api/bootstrap/**").permitAll()
+                        .requestMatchers("/actuator/**").permitAll()
+
+                        // Endpoints protégés
                         .requestMatchers("/api/admin/**").hasRole("SUPER_ADMIN")
                         .requestMatchers("/api/agences/{agenceId}/**").access(new WebExpressionAuthorizationManager(
                                 "hasRole('SUPER_ADMIN') or @securityService.canAccessAgence(authentication, #agenceId)"))
                         .requestMatchers("/api/collecteurs/**").hasAnyRole("SUPER_ADMIN", "ADMIN")
                         .requestMatchers("/api/clients/**").hasAnyRole("SUPER_ADMIN", "ADMIN", "COLLECTEUR")
+
+                        // Toutes les autres requêtes nécessitent une authentification
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
@@ -91,19 +98,32 @@ public class WebSecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
+
+        // IP mise à jour selon vos logs
         configuration.setAllowedOrigins(Arrays.asList(
-                "http://localhost:19006",        // Expo Web
-                "http://localhost:8081",         // Metro bundler
-                "http://192.168.111.57:19006",   // Expo Web avec votre IP
-                "http://192.168.111.57:8081",    // Metro bundler avec votre IP
-                "exp://192.168.111.57:8081",     // Expo Go avec votre IP correcte
-                "http://192.168.111.57:3000"     // Si vous avez un port différent
+                "http://localhost:19006",
+                "http://localhost:8081",
+                "http://192.168.88.187:19006",   // VOTRE IP des logs
+                "http://192.168.88.187:8081",    // VOTRE IP des logs
+                "exp://192.168.88.187:8081",     // Format Expo Go
+                "http://10.0.2.2:8080",         // Pour émulateur Android
+                "http://127.0.0.1:8081"
         ));
 
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(Arrays.asList("authorization", "content-type", "x-auth-token"));
-        configuration.setExposedHeaders(Arrays.asList("x-auth-token"));
+        configuration.setAllowedHeaders(Arrays.asList(
+                "Authorization",
+                "Content-Type",
+                "Accept",
+                "Origin",
+                "X-Requested-With",
+                "Cache-Control",
+                "Pragma"
+        ));
+
+        configuration.setExposedHeaders(Arrays.asList("Authorization"));
         configuration.setAllowCredentials(true);
+        configuration.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
