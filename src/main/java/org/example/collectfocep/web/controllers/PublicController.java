@@ -13,8 +13,8 @@ import java.util.Map;
 @RequestMapping("/api/public")
 public class PublicController {
 
-    @GetMapping("/ping")
-    public ResponseEntity<?> ping() {
+    @GetMapping("/diagnostic/ping")
+    public ResponseEntity<?> diagnosticPing() {
         log.info("🏓 Ping reçu - serveur opérationnel");
 
         Map<String, Object> response = new HashMap<>();
@@ -23,7 +23,7 @@ public class PublicController {
         response.put("timestamp", LocalDateTime.now().toString());
         response.put("version", "1.0.0");
 
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok("Diagnostic actif");
     }
 
     @GetMapping("/health")
