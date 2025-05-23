@@ -38,11 +38,26 @@ public class Journal {
     @Builder.Default
     private boolean estCloture = false;
 
+    // ✅ AJOUT DU CHAMP STATUT MANQUANT
+    @Column(name = "statut", nullable = false)
+    @Builder.Default
+    private String statut = "OUVERT"; // Valeur par défaut
+
     @Column(name = "date_cloture")
     private LocalDateTime dateCloture;
 
     @Version
     private Long version;
+
+    // ✅ CORRECTION DU GETTER - maintenant le champ existe
+    public String getStatut() {
+        return this.statut;
+    }
+
+    // ✅ MÉTHODE UTILITAIRE POUR CALCULER LE STATUT BASÉ SUR estCloture
+    public String getStatutCalcule() {
+        return this.estCloture ? "CLOTURE" : "OUVERT";
+    }
 
     public void addMouvement(Mouvement mouvement) {
         mouvements.add(mouvement);
@@ -52,5 +67,19 @@ public class Journal {
     public void removeMouvement(Mouvement mouvement) {
         mouvements.remove(mouvement);
         mouvement.setJournal(null);
+    }
+
+    // MÉTHODE POUR CLÔTURER LE JOURNAL
+    public void cloturerJournal() {
+        this.estCloture = true;
+        this.statut = "CLOTURE";
+        this.dateCloture = LocalDateTime.now();
+    }
+
+    // MÉTHODE POUR OUVRIR LE JOURNAL
+    public void ouvrirJournal() {
+        this.estCloture = false;
+        this.statut = "OUVERT";
+        this.dateCloture = null;
     }
 }

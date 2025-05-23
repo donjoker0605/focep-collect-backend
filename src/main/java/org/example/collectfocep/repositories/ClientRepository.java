@@ -11,6 +11,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -34,11 +36,27 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
     @Query("SELECT c FROM Client c WHERE c.collecteur = :collecteur")
     List<Client> findByCollecteur(@Param("collecteur") Collecteur collecteur);
 
-    @Query("SELECT c FROM Client c WHERE c.collecteur = :collecteur AND c.valide = true")
-    List<Client> findActiveByCollecteur(@Param("collecteur") Collecteur collecteur);
+    // ✅ REQUÊTE CORRIGÉE - Maintenant que dateCreation existe dans l'entité
+    @Query("SELECT c FROM Client c WHERE c.collecteur = :collecteur AND c.valide = true ORDER BY c.dateCreation DESC")
+    List<Client> findActiveByCollecteur(@Param("collecteur") Collecteur collecteur, Pageable pageable);
+
+    // ✅ AJOUT DE MÉTHODES DE RECHERCHE UTILES
+    @Query("SELECT c FROM Client c WHERE c.collecteur = :collecteur ORDER BY c.dateCreation DESC")
+    List<Client> findAllByCollecteurOrderByDateCreationDesc(@Param("collecteur") Collecteur collecteur);
+
+    @Query("SELECT c FROM Client c WHERE c.collecteur = :collecteur ORDER BY c.dateCreation DESC")
+    Page<Client> findAllByCollecteurOrderByDateCreationDesc(@Param("collecteur") Collecteur collecteur, Pageable pageable);
+
+    @Query("SELECT c FROM Client c WHERE c.collecteur.id = :collecteurId AND " +
+            "(LOWER(c.nom) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+            "LOWER(c.prenom) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+            "c.numeroCni LIKE CONCAT('%', :search, '%'))")
+    Page<Client> findByCollecteurIdAndSearch(@Param("collecteurId") Long collecteurId,
+                                             @Param("search") String search,
+                                             Pageable pageable);
 
     @Query("SELECT COUNT(c) FROM Client c WHERE c.collecteur = :collecteur")
-    long countByCollecteur(@Param("collecteur") Collecteur collecteur);
+    Long countByCollecteur(@Param("collecteur") Collecteur collecteur);
 
     @Query("SELECT c FROM Client c JOIN FETCH c.collecteur WHERE c.numeroCni = :numeroCni")
     Optional<Client> findByNumeroCniWithCollecteur(@Param("numeroCni") String numeroCni);
@@ -55,10 +73,8 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
     @Query("SELECT c.agence.id FROM Client c WHERE c.id = :clientId")
     Long findAgenceIdByClientId(@Param("clientId") Long clientId);
 
-    // Requêtes spécifiques pour éviter les problèmes de lazy loading
     @Query("SELECT c FROM Client c LEFT JOIN FETCH c.agence WHERE c.id = :id")
     Optional<Client> findByIdWithAgence(@Param("id") Long id);
-
 
     @Query("SELECT a.codeAgence FROM Client c JOIN c.agence a WHERE c.id = :clientId")
     String findAgenceCodeByClientId(@Param("clientId") Long clientId);
@@ -69,13 +85,39 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
             "WHERE c.id = :id")
     Optional<Client> findByIdWithAllRelations(@Param("id") Long id);
 
-    @Query("SELECT COUNT(c) FROM Client c WHERE c.collecteur = :collecteur")
-    Long countByCollecteur(@Param("collecteur") Collecteur collecteur);
+    // ✅ CORRIGER LA REQUÊTE DE COMPTAGE AVEC PLAGE DE DATES
+    @Query("SELECT COUNT(c) FROM Client c WHERE c.collecteur = :collecteur AND " +
+            "c.dateCreation >= :dateDebut AND c.dateCreation < :dateFin")
+    Long countByCollecteurAndDateCreationBetween(@Param("collecteur") Collecteur collecteur,
+                                                 @Param("dateDebut") LocalDateTime dateDebut,
+                                                 @Param("dateFin") LocalDateTime dateFin);
 
-    @Query("SELECT COUNT(c) FROM Client c WHERE c.collecteur = :collecteur AND DATE(c.dateCreation) = :date")
+    // ✅ MÉTHODE POUR COMPTER PAR DATE SPÉCIFIQUE
+    @Query("SELECT COUNT(c) FROM Client c WHERE c.collecteur = :collecteur AND " +
+            "DATE(c.dateCreation) = :date")
     Long countByCollecteurAndDateCreation(@Param("collecteur") Collecteur collecteur, @Param("date") LocalDate date);
 
-    @Query("SELECT c FROM Client c WHERE c.collecteur = :collecteur AND c.actif = true ORDER BY c.dateCreation DESC")
-    List<Client> findActiveByCollecteur(@Param("collecteur") Collecteur collecteur, Pageable pageable);
+    // ✅ RECHERCHE AVANCÉE POUR ADMIN
+    @Query("SELECT c FROM Client c WHERE " +
+            "(:nom IS NULL OR LOWER(c.nom) LIKE LOWER(CONCAT('%', :nom, '%'))) AND " +
+            "(:prenom IS NULL OR LOWER(c.prenom) LIKE LOWER(CONCAT('%', :prenom, '%'))) AND " +
+            "(:numeroCni IS NULL OR c.numeroCni LIKE CONCAT('%', :numeroCni, '%')) AND " +
+            "(:collecteurId IS NULL OR c.collecteur.id = :collecteurId) AND " +
+            "(:agenceId IS NULL OR c.agence.id = :agenceId)")
+    Page<Client> findByMultipleCriteria(@Param("nom") String nom,
+                                        @Param("prenom") String prenom,
+                                        @Param("numeroCni") String numeroCni,
+                                        @Param("collecteurId") Long collecteurId,
+                                        @Param("agenceId") Long agenceId,
+                                        Pageable pageable);
 
+    // ✅ MÉTHODES UTILES POUR LES STATISTIQUES
+    @Query("SELECT COUNT(c) FROM Client c WHERE c.agence.id = :agenceId")
+    Long countByAgenceId(@Param("agenceId") Long agenceId);
+
+    @Query("SELECT COUNT(c) FROM Client c WHERE c.collecteur.id = :collecteurId")
+    Long countByCollecteurId(@Param("collecteurId") Long collecteurId);
+
+    @Query("SELECT COUNT(c) FROM Client c WHERE c.valide = :valide")
+    Long countByValide(@Param("valide") boolean valide);
 }

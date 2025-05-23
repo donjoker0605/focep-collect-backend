@@ -11,6 +11,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDate; // ✅ Import manquant ajouté
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -86,7 +87,6 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
 
     void deleteByJournal(Journal journal);
 
-    // Méthode manquante pour trouver les mouvements liés à un transfert
     @Query("SELECT m FROM Mouvement m WHERE m.transfert.id = :transferId")
     List<Mouvement> findByTransfertId(@Param("transferId") Long transferId);
 
@@ -130,6 +130,7 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
             "WHERE m.journal.id = :journalId")
     List<MouvementProjection> findMouvementProjectionsByJournalId(@Param("journalId") Long journalId);
 
+    // ✅ MÉTHODES CORRIGÉES avec LocalDate bien importé
     @Query("SELECT COALESCE(SUM(m.montant), 0.0) FROM Mouvement m WHERE m.collecteur.id = :collecteurId AND m.typeMouvement = :type")
     Double sumMontantByCollecteurAndType(@Param("collecteurId") Long collecteurId, @Param("type") String type);
 

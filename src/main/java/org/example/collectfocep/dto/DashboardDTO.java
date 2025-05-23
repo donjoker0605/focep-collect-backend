@@ -1,11 +1,12 @@
 package org.example.collectfocep.dto;
 
-import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.AllArgsConstructor;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Data
@@ -22,7 +23,7 @@ public class DashboardDTO {
     private Double objectifMensuel;
     private Double progressionObjectif;
 
-    // Statistiques de la journée
+    // Statistiques du jour
     private Long transactionsAujourdhui;
     private Double montantEpargneAujourdhui;
     private Double montantRetraitAujourdhui;
@@ -45,40 +46,12 @@ public class DashboardDTO {
     // Journal actuel
     private JournalDTO journalActuel;
 
-    // Transactions récentes
+    // Données récentes
     private List<TransactionRecenteDTO> transactionsRecentes;
-
-    // Clients actifs récents
     private List<ClientDTO> clientsActifs;
 
-    // Alertes et notifications
-    private List<AlerteDTO> alertes;
-
-    @Data
-    @Builder
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class TransactionRecenteDTO {
-        private Long id;
-        private String type;
-        private Double montant;
-        private LocalDate date;
-        private String clientNom;
-        private String clientPrenom;
-        private String statut;
-    }
-
-    @Data
-    @Builder
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class AlerteDTO {
-        private String type;
-        private String message;
-        private String niveau; // INFO, WARNING, ERROR
-        private LocalDate date;
-        private Boolean lue;
-    }
+    // Alertes
+    private List<String> alertes;
 
     @Data
     @Builder
@@ -92,5 +65,19 @@ public class DashboardDTO {
         private Double soldeInitial;
         private Double soldeActuel;
         private Long nombreTransactions;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class TransactionRecenteDTO {
+        private Long id;
+        private String type;
+        private Double montant;
+        private LocalDateTime date;
+        private String clientNom;
+        private String clientPrenom;
+        private String statut;
     }
 }

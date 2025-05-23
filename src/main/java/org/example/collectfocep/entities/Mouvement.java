@@ -14,7 +14,6 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-// ✅ FIX : Gestion des références circulaires
 @JsonIdentityInfo(generator = ObjectIdGenerators.PropertyGenerator.class, property = "id")
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class Mouvement {
@@ -34,21 +33,37 @@ public class Mouvement {
     @Column(name = "date_operation", nullable = false)
     private LocalDateTime dateOperation;
 
+    // ✅ AJOUT DES CHAMPS MANQUANTS
+    @Column(name = "type_mouvement")
+    private String typeMouvement; // "EPARGNE" ou "RETRAIT"
+
+    @Column(name = "date_mouvement")
+    private LocalDateTime dateMouvement;
+
+    // ✅ RELATION AVEC CLIENT
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "client_id")
+    @JsonIgnoreProperties({"mouvements", "collecteur", "agence"})
+    private Client client;
+
+    // ✅ RELATION AVEC COLLECTEUR
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "collecteur_id")
+    @JsonIgnoreProperties({"mouvements", "clients", "agence"})
+    private Collecteur collecteur;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "compte_source")
-    // ✅ FIX : Éviter récursion avec Compte
     @JsonIgnoreProperties({"mouvements", "client", "collecteur", "agence"})
     private Compte compteSource;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "compte_destination")
-    // ✅ FIX : Éviter récursion avec Compte
     @JsonIgnoreProperties({"mouvements", "client", "collecteur", "agence"})
     private Compte compteDestination;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "journal_id")
-    // ✅ FIX : Éviter récursion avec Journal
     @JsonIgnoreProperties({"mouvements", "collecteur"})
     private Journal journal;
 
@@ -64,12 +79,55 @@ public class Mouvement {
         this.journal = journal;
     }
 
-    // ✅ Méthodes utilitaires pour éviter lazy loading exceptions
     public String getCompteSourceNumero() {
         return compteSource != null ? compteSource.getNumeroCompte() : null;
     }
 
     public String getCompteDestinationNumero() {
         return compteDestination != null ? compteDestination.getNumeroCompte() : null;
+    }
+
+    // ✅ GETTERS CORRIGÉS - maintenant les champs existent
+    public String getTypeMouvement() {
+        return this.typeMouvement;
+    }
+
+    public LocalDateTime getDateMouvement() {
+        return this.dateMouvement;
+    }
+
+    public Client getClient() {
+        return this.client;
+    }
+
+    // ✅ MÉTHODES UTILITAIRES POUR SYNCHRONISER LES DATES
+    @PrePersist
+    @PreUpdate
+    public void synchroniserDates() {
+        if (this.dateMouvement == null && this.dateOperation != null) {
+            this.dateMouvement = this.dateOperation;
+        }
+        if (this.dateOperation == null && this.dateMouvement != null) {
+            this.dateOperation = this.dateMouvement;
+        }
+    }
+
+    // ✅ MÉTHODE UTILITAIRE POUR DÉTERMINER LE TYPE BASÉ SUR LE SENS
+    public String getTypeMouvementCalcule() {
+        if (this.typeMouvement != null) {
+            return this.typeMouvement;
+        }
+
+        // Fallback basé sur le sens et le libellé
+        if (this.libelle != null) {
+            if (this.libelle.toLowerCase().contains("épargne") ||
+                    this.libelle.toLowerCase().contains("depot")) {
+                return "EPARGNE";
+            } else if (this.libelle.toLowerCase().contains("retrait")) {
+                return "RETRAIT";
+            }
+        }
+
+        return this.sens != null ? this.sens.toUpperCase() : "INCONNU";
     }
 }

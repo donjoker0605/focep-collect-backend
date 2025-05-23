@@ -7,6 +7,7 @@ import org.example.collectfocep.dto.*;
 import org.example.collectfocep.entities.Collecteur;
 import org.example.collectfocep.exceptions.InvalidOperationException;
 import org.example.collectfocep.exceptions.ResourceNotFoundException;
+import org.example.collectfocep.repositories.CollecteurRepository;
 import org.example.collectfocep.security.annotations.AgenceAccess;
 import org.example.collectfocep.security.annotations.Audited;
 import org.example.collectfocep.security.service.SecurityService;
@@ -16,11 +17,13 @@ import org.example.collectfocep.util.ApiResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
+import java.util.Map;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -30,9 +33,12 @@ import java.util.stream.Collectors;
 @Slf4j
 @RequiredArgsConstructor
 public class CollecteurController {
+
+    // ✅ INJECTION CORRECTE DE TOUTES LES DÉPENDANCES
     private final CollecteurService collecteurService;
-    private final PasswordService passwordService; // LIGNE MANQUANTE
-    private final SecurityService securityService; // Aussi nécessaire
+    private final PasswordService passwordService;
+    private final SecurityService securityService;
+    private final CollecteurRepository collecteurRepository; // ✅ AJOUTÉ
 
     @PostMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
@@ -40,14 +46,19 @@ public class CollecteurController {
     public ResponseEntity<ApiResponse<CollecteurDTO>> createCollecteur(@Valid @RequestBody CollecteurCreateDTO dto) {
         log.info("Création d'un nouveau collecteur pour l'agence: {}", dto.getAgenceId());
 
-        Collecteur collecteur = collecteurService.saveCollecteur(dto);
-
-        return ResponseEntity.ok(
-                ApiResponse.success(
-                        collecteurService.convertToDTO(collecteur),
-                        "Collecteur créé avec succès"
-                )
-        );
+        try {
+            Collecteur collecteur = collecteurService.saveCollecteur(dto);
+            return ResponseEntity.ok(
+                    ApiResponse.success(
+                            collecteurService.convertToDTO(collecteur),
+                            "Collecteur créé avec succès"
+                    )
+            );
+        } catch (Exception e) {
+            log.error("Erreur lors de la création du collecteur", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Erreur lors de la création du collecteur: " + e.getMessage()));
+        }
     }
 
     @PutMapping("/{id}")
@@ -58,14 +69,19 @@ public class CollecteurController {
             @Valid @RequestBody CollecteurUpdateDTO dto) {
         log.info("Mise à jour du collecteur: {}", id);
 
-        Collecteur updated = collecteurService.updateCollecteur(id, dto);
-
-        return ResponseEntity.ok(
-                ApiResponse.success(
-                        collecteurService.convertToDTO(updated),
-                        "Collecteur mis à jour avec succès"
-                )
-        );
+        try {
+            Collecteur updated = collecteurService.updateCollecteur(id, dto);
+            return ResponseEntity.ok(
+                    ApiResponse.success(
+                            collecteurService.convertToDTO(updated),
+                            "Collecteur mis à jour avec succès"
+                    )
+            );
+        } catch (Exception e) {
+            log.error("Erreur lors de la mise à jour du collecteur", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Erreur lors de la mise à jour: " + e.getMessage()));
+        }
     }
 
     @PutMapping("/{id}/montant-max")
@@ -77,29 +93,41 @@ public class CollecteurController {
 
         log.info("Demande de modification du montant max de retrait pour le collecteur: {}", id);
 
-        Collecteur collecteur = collecteurService.updateMontantMaxRetrait(
-                id,
-                request.getNouveauMontant(),
-                request.getJustification()
-        );
+        try {
+            Collecteur collecteur = collecteurService.updateMontantMaxRetrait(
+                    id,
+                    request.getNouveauMontant(),
+                    request.getJustification()
+            );
 
-        return ResponseEntity.ok(
-                ApiResponse.success(
-                        collecteurService.convertToDTO(collecteur),
-                        "Montant maximum de retrait mis à jour avec succès"
-                )
-        );
+            return ResponseEntity.ok(
+                    ApiResponse.success(
+                            collecteurService.convertToDTO(collecteur),
+                            "Montant maximum de retrait mis à jour avec succès"
+                    )
+            );
+        } catch (Exception e) {
+            log.error("Erreur lors de la mise à jour du montant max", e);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(ApiResponse.error("Erreur: " + e.getMessage()));
+        }
     }
 
     @GetMapping("/agence/{agenceId}")
     @AgenceAccess
     public ResponseEntity<List<CollecteurDTO>> getCollecteursByAgence(@PathVariable Long agenceId) {
         log.info("Récupération des collecteurs pour l'agence: {}", agenceId);
-        List<Collecteur> collecteurs = collecteurService.findByAgenceId(agenceId);
-        List<CollecteurDTO> dtos = collecteurs.stream()
-                .map(collecteurService::convertToDTO)
-                .collect(Collectors.toList());
-        return ResponseEntity.ok(dtos);
+
+        try {
+            List<Collecteur> collecteurs = collecteurService.findByAgenceId(agenceId);
+            List<CollecteurDTO> dtos = collecteurs.stream()
+                    .map(collecteurService::convertToDTO)
+                    .collect(Collectors.toList());
+            return ResponseEntity.ok(dtos);
+        } catch (Exception e) {
+            log.error("Erreur lors de la récupération des collecteurs", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(List.of());
+        }
     }
 
     @GetMapping("/agence/{agenceId}/page")
@@ -113,17 +141,23 @@ public class CollecteurController {
 
         log.info("Récupération paginée des collecteurs pour l'agence: {}", agenceId);
 
-        Sort.Direction direction = sortDir.equalsIgnoreCase("desc") ? Sort.Direction.DESC : Sort.Direction.ASC;
-        PageRequest pageRequest = PageRequest.of(page, size, Sort.by(direction, sortBy));
+        try {
+            Sort.Direction direction = sortDir.equalsIgnoreCase("desc") ? Sort.Direction.DESC : Sort.Direction.ASC;
+            PageRequest pageRequest = PageRequest.of(page, size, Sort.by(direction, sortBy));
 
-        Page<Collecteur> collecteursPage = collecteurService.findByAgenceId(agenceId, pageRequest);
-        Page<CollecteurDTO> dtoPage = collecteursPage.map(collecteurService::convertToDTO);
+            Page<Collecteur> collecteursPage = collecteurService.findByAgenceId(agenceId, pageRequest);
+            Page<CollecteurDTO> dtoPage = collecteursPage.map(collecteurService::convertToDTO);
 
-        ApiResponse<Page<CollecteurDTO>> response = ApiResponse.success(dtoPage);
-        response.addMeta("totalElements", collecteursPage.getTotalElements());
-        response.addMeta("totalPages", collecteursPage.getTotalPages());
+            ApiResponse<Page<CollecteurDTO>> response = ApiResponse.success(dtoPage);
+            response.addMeta("totalElements", collecteursPage.getTotalElements());
+            response.addMeta("totalPages", collecteursPage.getTotalPages());
 
-        return ResponseEntity.ok(response);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Erreur lors de la récupération paginée", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Erreur: " + e.getMessage()));
+        }
     }
 
     @PostMapping("/{id}/reset-password")
@@ -134,18 +168,21 @@ public class CollecteurController {
             @Valid @RequestBody PasswordResetRequest request) {
         log.info("Réinitialisation du mot de passe pour le collecteur: {}", id);
 
-        // Récupérer l'authentification courante
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            passwordService.resetPassword(id, request.getNewPassword(), auth);
 
-        // Passer l'authentification à la méthode
-        passwordService.resetPassword(id, request.getNewPassword(), auth);
-
-        return ResponseEntity.ok(
-                ApiResponse.success(
-                        null,
-                        "Mot de passe réinitialisé avec succès"
-                )
-        );
+            return ResponseEntity.ok(
+                    ApiResponse.success(
+                            null,
+                            "Mot de passe réinitialisé avec succès"
+                    )
+            );
+        } catch (Exception e) {
+            log.error("Erreur lors de la réinitialisation du mot de passe", e);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(ApiResponse.error("Erreur: " + e.getMessage()));
+        }
     }
 
     @DeleteMapping("/{id}")
@@ -154,24 +191,30 @@ public class CollecteurController {
     public ResponseEntity<ApiResponse<Void>> deleteCollecteur(@PathVariable Long id) {
         log.info("Suppression du collecteur: {}", id);
 
-        Collecteur collecteur = collecteurService.getCollecteurById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
+        try {
+            Collecteur collecteur = collecteurService.getCollecteurById(id)
+                    .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
 
-        // Vérifier si le collecteur peut être supprimé
-        if (collecteurService.hasActiveOperations(collecteur)) {
-            throw new InvalidOperationException("Impossible de supprimer un collecteur ayant des opérations actives");
+            if (collecteurService.hasActiveOperations(collecteur)) {
+                throw new InvalidOperationException("Impossible de supprimer un collecteur ayant des opérations actives");
+            }
+
+            collecteurService.deactivateCollecteur(id);
+
+            return ResponseEntity.ok(
+                    ApiResponse.success(
+                            null,
+                            "Collecteur supprimé avec succès"
+                    )
+            );
+        } catch (Exception e) {
+            log.error("Erreur lors de la suppression", e);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(ApiResponse.error("Erreur: " + e.getMessage()));
         }
-
-        collecteurService.deactivateCollecteur(id);
-
-        return ResponseEntity.ok(
-                ApiResponse.success(
-                        null,
-                        "Collecteur supprimé avec succès"
-                )
-        );
     }
 
+    // ✅ MÉTHODE CORRIGÉE POUR RÉCUPÉRER TOUS LES COLLECTEURS
     @GetMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
     public ResponseEntity<ApiResponse<List<CollecteurDTO>>> getAllCollecteurs(
@@ -187,19 +230,17 @@ public class CollecteurController {
             Page<Collecteur> collecteursPage;
 
             if (search != null && !search.trim().isEmpty()) {
-                // Recherche par nom, prénom ou email
+                // ✅ UTILISATION DE LA MÉTHODE CORRECTE
                 collecteursPage = collecteurRepository.findByNomContainingIgnoreCaseOrPrenomContainingIgnoreCaseOrAdresseMailContainingIgnoreCase(
                         search.trim(), search.trim(), search.trim(), pageRequest);
             } else {
                 collecteursPage = collecteurService.getAllCollecteurs(pageRequest);
             }
 
-            // Convertir en DTOs
             List<CollecteurDTO> collecteurDTOs = collecteursPage.getContent().stream()
                     .map(collecteurService::convertToDTO)
                     .collect(Collectors.toList());
 
-            // Préparer la réponse avec métadonnées de pagination
             ApiResponse<List<CollecteurDTO>> response = ApiResponse.success(collecteurDTOs);
             response.addMeta("totalElements", collecteursPage.getTotalElements());
             response.addMeta("totalPages", collecteursPage.getTotalPages());
@@ -214,6 +255,34 @@ public class CollecteurController {
             log.error("Erreur lors de la récupération des collecteurs", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error("Erreur lors de la récupération des collecteurs: " + e.getMessage()));
+        }
+    }
+
+    // ✅ ENDPOINT UTILE POUR LE DASHBOARD
+    @GetMapping("/{id}/dashboard")
+    @PreAuthorize("@securityService.canManageCollecteur(authentication, #id)")
+    public ResponseEntity<ApiResponse<Object>> getCollecteurDashboard(@PathVariable Long id) {
+        log.info("Récupération du dashboard pour le collecteur: {}", id);
+
+        try {
+            // Ici vous pouvez implémenter la logique pour récupérer
+            // les statistiques du collecteur
+            // Pour l'instant, retourner des données basiques
+            return ResponseEntity.ok(
+                    ApiResponse.success(
+                            Map.of(
+                                    "collecteurId", id,
+                                    "totalClients", 0,
+                                    "totalEpargne", 0,
+                                    "message", "Dashboard en cours de développement"
+                            ),
+                            "Dashboard récupéré"
+                    )
+            );
+        } catch (Exception e) {
+            log.error("Erreur lors de la récupération du dashboard", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Erreur: " + e.getMessage()));
         }
     }
 }
