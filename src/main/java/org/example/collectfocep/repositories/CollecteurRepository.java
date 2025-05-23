@@ -32,4 +32,30 @@ public interface CollecteurRepository extends JpaRepository<Collecteur, Long> {
 
     @Query("SELECT c.agence.id FROM Collecteur c WHERE c.id = :collecteurId")
     Long findAgenceIdByCollecteurId(@Param("collecteurId") Long collecteurId);
+
+    // NOUVELLES MÉTHODES DE RECHERCHE
+    Page<Collecteur> findByNomContainingIgnoreCaseOrPrenomContainingIgnoreCaseOrAdresseMailContainingIgnoreCase(
+            String nom, String prenom, String email, Pageable pageable);
+
+    @Query("SELECT c FROM Collecteur c WHERE " +
+            "(LOWER(c.nom) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+            "LOWER(c.prenom) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+            "LOWER(c.adresseMail) LIKE LOWER(CONCAT('%', :search, '%'))) AND " +
+            "c.active = true")
+    Page<Collecteur> findActiveBySearchTerm(@Param("search") String search, Pageable pageable);
+
+    @Query("SELECT c FROM Collecteur c WHERE c.active = true")
+    Page<Collecteur> findAllActive(Pageable pageable);
+
+    // MÉTHODE POUR RÉCUPÉRER L'ID DE L'AGENCE D'UN COLLECTEUR
+    @Query("SELECT c.agence.id FROM Collecteur c WHERE c.id = :collecteurId")
+    Long findAgenceIdByCollecteurId(@Param("collecteurId") Long collecteurId);
+
+    // VÉRIFIER SI UN COLLECTEUR EXISTE AVEC UN EMAIL ET UN CLIENT SPÉCIFIQUE
+    @Query("SELECT COUNT(c) > 0 FROM Collecteur c JOIN c.clients cl WHERE c.adresseMail = :email AND cl.id = :clientId")
+    boolean existsByAdresseMailAndClientId(@Param("email") String email, @Param("clientId") Long clientId);
+
+    // VÉRIFIER SI UN ADMIN EXISTE AVEC UN EMAIL ET UNE AGENCE SPÉCIFIQUE
+    @Query("SELECT COUNT(a) > 0 FROM Admin a WHERE a.adresseMail = :email AND a.agence.id = :agenceId")
+    boolean existsByAdresseMailAndAgenceId(@Param("email") String email, @Param("agenceId") Long agenceId);
 }

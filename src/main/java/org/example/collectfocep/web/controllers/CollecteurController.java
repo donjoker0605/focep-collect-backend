@@ -171,4 +171,49 @@ public class CollecteurController {
                 )
         );
     }
+
+    @GetMapping
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
+    public ResponseEntity<ApiResponse<List<CollecteurDTO>>> getAllCollecteurs(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String search) {
+
+        log.info("Récupération de tous les collecteurs - page: {}, size: {}, search: '{}'",
+                page, size, search);
+
+        try {
+            PageRequest pageRequest = PageRequest.of(page, size, Sort.by("nom", "prenom"));
+            Page<Collecteur> collecteursPage;
+
+            if (search != null && !search.trim().isEmpty()) {
+                // Recherche par nom, prénom ou email
+                collecteursPage = collecteurRepository.findByNomContainingIgnoreCaseOrPrenomContainingIgnoreCaseOrAdresseMailContainingIgnoreCase(
+                        search.trim(), search.trim(), search.trim(), pageRequest);
+            } else {
+                collecteursPage = collecteurService.getAllCollecteurs(pageRequest);
+            }
+
+            // Convertir en DTOs
+            List<CollecteurDTO> collecteurDTOs = collecteursPage.getContent().stream()
+                    .map(collecteurService::convertToDTO)
+                    .collect(Collectors.toList());
+
+            // Préparer la réponse avec métadonnées de pagination
+            ApiResponse<List<CollecteurDTO>> response = ApiResponse.success(collecteurDTOs);
+            response.addMeta("totalElements", collecteursPage.getTotalElements());
+            response.addMeta("totalPages", collecteursPage.getTotalPages());
+            response.addMeta("currentPage", page);
+            response.addMeta("size", size);
+            response.addMeta("hasNext", collecteursPage.hasNext());
+            response.addMeta("hasPrevious", collecteursPage.hasPrevious());
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            log.error("Erreur lors de la récupération des collecteurs", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Erreur lors de la récupération des collecteurs: " + e.getMessage()));
+        }
+    }
 }

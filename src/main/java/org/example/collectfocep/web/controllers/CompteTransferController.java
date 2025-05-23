@@ -30,12 +30,10 @@ public class CompteTransferController {
      * Transfère des comptes clients d'un collecteur à un autre avec gestion
      * spéciale des soldes lors du transfert entre agences différentes.
      */
-    @PostMapping("/collecteurs")
+    @PostMapping("/transfers")
     @PreAuthorize("hasRole('ADMIN') or hasRole('SUPER_ADMIN')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> transferComptes(
-            @RequestParam Long sourceCollecteurId,
-            @RequestParam Long targetCollecteurId,
-            @RequestBody List<Long> clientIds) {
+            @RequestBody TransferRequest request) {
 
         // Vérification des permissions
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();

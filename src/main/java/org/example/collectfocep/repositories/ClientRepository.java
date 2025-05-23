@@ -68,4 +68,14 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
             "LEFT JOIN FETCH col.agence " +
             "WHERE c.id = :id")
     Optional<Client> findByIdWithAllRelations(@Param("id") Long id);
+
+    @Query("SELECT COUNT(c) FROM Client c WHERE c.collecteur = :collecteur")
+    Long countByCollecteur(@Param("collecteur") Collecteur collecteur);
+
+    @Query("SELECT COUNT(c) FROM Client c WHERE c.collecteur = :collecteur AND DATE(c.dateCreation) = :date")
+    Long countByCollecteurAndDateCreation(@Param("collecteur") Collecteur collecteur, @Param("date") LocalDate date);
+
+    @Query("SELECT c FROM Client c WHERE c.collecteur = :collecteur AND c.actif = true ORDER BY c.dateCreation DESC")
+    List<Client> findActiveByCollecteur(@Param("collecteur") Collecteur collecteur, Pageable pageable);
+
 }

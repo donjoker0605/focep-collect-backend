@@ -129,4 +129,22 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
             "LEFT JOIN m.compteDestination cd " +
             "WHERE m.journal.id = :journalId")
     List<MouvementProjection> findMouvementProjectionsByJournalId(@Param("journalId") Long journalId);
+
+    @Query("SELECT COALESCE(SUM(m.montant), 0.0) FROM Mouvement m WHERE m.collecteur.id = :collecteurId AND m.typeMouvement = :type")
+    Double sumMontantByCollecteurAndType(@Param("collecteurId") Long collecteurId, @Param("type") String type);
+
+    @Query("SELECT COUNT(m) FROM Mouvement m WHERE m.collecteur.id = :collecteurId AND DATE(m.dateMouvement) = :date")
+    Long countByCollecteurAndDate(@Param("collecteurId") Long collecteurId, @Param("date") LocalDate date);
+
+    @Query("SELECT COALESCE(SUM(m.montant), 0.0) FROM Mouvement m WHERE m.collecteur.id = :collecteurId AND m.typeMouvement = :type AND DATE(m.dateMouvement) = :date")
+    Double sumMontantByCollecteurAndTypeAndDate(@Param("collecteurId") Long collecteurId, @Param("type") String type, @Param("date") LocalDate date);
+
+    @Query("SELECT COALESCE(SUM(m.montant), 0.0) FROM Mouvement m WHERE m.collecteur.id = :collecteurId AND m.typeMouvement = :type AND DATE(m.dateMouvement) BETWEEN :dateDebut AND :dateFin")
+    Double sumMontantByCollecteurAndTypeAndDateRange(@Param("collecteurId") Long collecteurId, @Param("type") String type, @Param("dateDebut") LocalDate dateDebut, @Param("dateFin") LocalDate dateFin);
+
+    @Query("SELECT COUNT(m) FROM Mouvement m WHERE m.collecteur.id = :collecteurId AND DATE(m.dateMouvement) BETWEEN :dateDebut AND :dateFin")
+    Long countByCollecteurAndDateRange(@Param("collecteurId") Long collecteurId, @Param("dateDebut") LocalDate dateDebut, @Param("dateFin") LocalDate dateFin);
+
+    @Query("SELECT m FROM Mouvement m WHERE m.collecteur.id = :collecteurId ORDER BY m.dateMouvement DESC")
+    List<Mouvement> findRecentByCollecteur(@Param("collecteurId") Long collecteurId, Pageable pageable);
 }

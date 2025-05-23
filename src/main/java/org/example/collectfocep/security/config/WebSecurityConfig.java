@@ -103,9 +103,9 @@ public class WebSecurityConfig {
         configuration.setAllowedOrigins(Arrays.asList(
                 "http://localhost:19006",
                 "http://localhost:8081",
-                "http://192.168.88.187:19006",   // VOTRE IP des logs
-                "http://192.168.88.187:8081",    // VOTRE IP des logs
-                "exp://192.168.88.187:8081",     // Format Expo Go
+                "http://192.168.88.115:19006",   // VOTRE IP des logs
+                "http://192.168.88.115:8081",    // VOTRE IP des logs
+                "exp://192.168.88.115:8081",     // Format Expo Go
                 "http://10.0.2.2:8080",         // Pour émulateur Android
                 "http://127.0.0.1:8081"
         ));

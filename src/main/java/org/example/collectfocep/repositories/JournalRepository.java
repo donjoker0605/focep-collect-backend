@@ -45,4 +45,7 @@ public interface JournalRepository extends JpaRepository<Journal, Long> {
             Pageable pageable);
 
     Optional<Journal> findByCollecteurAndDateDebut(Collecteur collecteur, LocalDate dateDebut);
+
+    @Query("SELECT j FROM Journal j WHERE j.collecteur = :collecteur AND j.statut = 'OUVERT' ORDER BY j.dateDebut DESC")
+    Optional<Journal> findActiveJournalByCollecteur(@Param("collecteur") Collecteur collecteur);
 }
