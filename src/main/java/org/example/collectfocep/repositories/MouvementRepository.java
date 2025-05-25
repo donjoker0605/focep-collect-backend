@@ -149,6 +149,9 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
     @Query("SELECT m FROM Mouvement m WHERE m.collecteur.id = :collecteurId ORDER BY m.dateMouvement DESC")
     List<Mouvement> findRecentByCollecteur(@Param("collecteurId") Long collecteurId, Pageable pageable);
 
+    /**
+     * Recherche par collecteur et plage de dates avec pagination
+     */
     Page<Mouvement> findByCollecteurIdAndDateHeureBetween(
             Long collecteurId,
             LocalDateTime startDate,
@@ -156,11 +159,47 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
             Pageable pageable
     );
 
+    /**
+     * Recherche par collecteur et plage de dates sans pagination
+     */
     List<Mouvement> findByCollecteurIdAndDateHeureBetween(
             Long collecteurId,
             LocalDateTime startDate,
             LocalDateTime endDate
     );
 
+    /**
+     * Recherche par collecteur avec pagination
+     */
     Page<Mouvement> findByCollecteurId(Long collecteurId, Pageable pageable);
+
+    /**
+     * Compter les mouvements par collecteur et période
+     */
+    @Query("SELECT COUNT(m) FROM Mouvement m WHERE m.collecteur.id = :collecteurId AND m.dateHeure BETWEEN :startDate AND :endDate")
+    Long countByCollecteurIdAndDateHeureBetween(
+            @Param("collecteurId") Long collecteurId,
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate
+    );
+
+    /**
+     * Calculer le total des épargnes par collecteur et période
+     */
+    @Query("SELECT COALESCE(SUM(m.montant), 0) FROM Mouvement m WHERE m.collecteur.id = :collecteurId AND m.typeMouvement = 'EPARGNE' AND m.dateHeure BETWEEN :startDate AND :endDate")
+    Double sumEpargneByCollecteurIdAndDateHeureBetween(
+            @Param("collecteurId") Long collecteurId,
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate
+    );
+
+    /**
+     * Calculer le total des retraits par collecteur et période
+     */
+    @Query("SELECT COALESCE(SUM(m.montant), 0) FROM Mouvement m WHERE m.collecteur.id = :collecteurId AND m.typeMouvement = 'RETRAIT' AND m.dateHeure BETWEEN :startDate AND :endDate")
+    Double sumRetraitByCollecteurIdAndDateHeureBetween(
+            @Param("collecteurId") Long collecteurId,
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate
+    );
 }

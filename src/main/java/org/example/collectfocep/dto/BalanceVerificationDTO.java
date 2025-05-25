@@ -9,5 +9,8 @@ public class BalanceVerificationDTO {
     private Boolean sufficient;
     private Double soldeDisponible;
     private Double montantDemande;
+    private Double soldeApresOperation;
     private String message;
+    private String clientNom;
+    private String clientPrenom;
 }

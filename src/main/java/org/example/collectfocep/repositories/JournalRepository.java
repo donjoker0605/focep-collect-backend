@@ -48,4 +48,10 @@ public interface JournalRepository extends JpaRepository<Journal, Long> {
 
     @Query("SELECT j FROM Journal j WHERE j.collecteur = :collecteur AND j.statut = 'OUVERT' ORDER BY j.dateDebut DESC")
     Optional<Journal> findActiveJournalByCollecteur(@Param("collecteur") Collecteur collecteur);
+
+    /**
+     * Compter les clients d'un collecteur
+     */
+    @Query("SELECT COUNT(c) FROM Client c WHERE c.collecteur.id = :collecteurId")
+    Integer countByCollecteurId(@Param("collecteurId") Long collecteurId);
 }

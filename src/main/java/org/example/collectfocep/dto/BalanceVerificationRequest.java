@@ -1,17 +1,15 @@
 package org.example.collectfocep.dto;
 
-import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 @Data
-@Valid
 public class BalanceVerificationRequest {
-    @NotNull
+    @NotNull(message = "L'ID du client est requis")
     private Long clientId;
 
-    @NotNull
+    @NotNull(message = "Le montant est requis")
     @DecimalMin(value = "0.01", message = "Le montant doit être positif")
     private Double montant;
 }

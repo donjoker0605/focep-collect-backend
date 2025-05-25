@@ -258,14 +258,12 @@ public class CollecteurController {
         }
     }
 
-    // ✅ ENDPOINT UTILE POUR LE DASHBOARD
     @GetMapping("/{id}/dashboard")
     @PreAuthorize("@securityService.canManageCollecteur(authentication, #id)")
     public ResponseEntity<ApiResponse<CollecteurDashboardDTO>> getCollecteurDashboard(@PathVariable Long id) {
         log.info("Récupération du dashboard pour le collecteur: {}", id);
 
         try {
-            // Calculer les statistiques du collecteur
             CollecteurDashboardDTO dashboard = collecteurService.getDashboardStats(id);
 
             return ResponseEntity.ok(

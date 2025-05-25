@@ -949,7 +949,10 @@ public class MouvementServiceImpl {
                 .collect(Collectors.toList());
     }
 
-    @Override
+
+    /**
+     * Trouver les mouvements par collecteur et date
+     */
     public Page<Mouvement> findByCollecteurAndDate(Long collecteurId, String date, Pageable pageable) {
         log.info("Recherche des mouvements pour collecteur {} à la date {}", collecteurId, date);
 
@@ -966,7 +969,9 @@ public class MouvementServiceImpl {
         }
     }
 
-    @Override
+    /**
+     * Vérifier le solde d'un client pour un retrait
+     */
     public BalanceVerificationDTO verifyClientBalance(Long clientId, Double montant) {
         log.info("Vérification du solde pour client {} montant {}", clientId, montant);
 
@@ -980,6 +985,7 @@ public class MouvementServiceImpl {
 
             Double soldeDisponible = compteClient.getSolde();
             Boolean sufficient = soldeDisponible >= montant;
+            Double soldeApresOperation = sufficient ? soldeDisponible - montant : soldeDisponible;
 
             String message = sufficient
                     ? "Solde suffisant pour effectuer l'opération"
@@ -990,7 +996,10 @@ public class MouvementServiceImpl {
                     .sufficient(sufficient)
                     .soldeDisponible(soldeDisponible)
                     .montantDemande(montant)
+                    .soldeApresOperation(soldeApresOperation)
                     .message(message)
+                    .clientNom(client.getNom())
+                    .clientPrenom(client.getPrenom())
                     .build();
 
         } catch (Exception e) {

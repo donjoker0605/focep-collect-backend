@@ -1,7 +1,8 @@
 package org.example.collectfocep.mappers;
 
-import org.example.collectfocep.dto.MouvementCommissionDTO;
-import org.example.collectfocep.dto.MouvementProjection;
+import org.example.collectfocep.dto.*;
+import org.example.collectfocep.entities.Client;
+import org.example.collectfocep.entities.Collecteur;
 import org.example.collectfocep.entities.Mouvement;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
@@ -35,5 +36,46 @@ public interface MouvementMapperV2 {
     @Named("getCompteDestinationNumero")
     default String getCompteDestinationNumero(Mouvement mouvement) {
         return mouvement.getCompteDestinationNumero();
+    }
+
+    /**
+     * Mapper vers MouvementDTO
+     */
+    @Mapping(source = "client", target = "client", qualifiedByName = "clientToBasicDTO")
+    @Mapping(source = "collecteur", target = "collecteur", qualifiedByName = "collecteurToBasicDTO")
+    @Mapping(source = "journal.id", target = "journalId")
+    @Mapping(source = "journal.reference", target = "journalReference")
+    MouvementDTO toDTO(Mouvement mouvement);
+
+    @Named("clientToBasicDTO")
+    default ClientBasicDTO clientToBasicDTO(Client client) {
+        if (client == null) return null;
+
+        return ClientBasicDTO.builder()
+                .id(client.getId())
+                .nom(client.getNom())
+                .prenom(client.getPrenom())
+                .numeroCni(client.getNumeroCni())
+                .numeroCompte(client.getNumeroCompte())
+                .telephone(client.getTelephone())
+                .ville(client.getVille())
+                .quartier(client.getQuartier())
+                .valide(client.getValide())
+                .build();
+    }
+
+    @Named("collecteurToBasicDTO")
+    default CollecteurBasicDTO collecteurToBasicDTO(Collecteur collecteur) {
+        if (collecteur == null) return null;
+
+        return CollecteurBasicDTO.builder()
+                .id(collecteur.getId())
+                .nom(collecteur.getNom())
+                .prenom(collecteur.getPrenom())
+                .adresseMail(collecteur.getAdresseMail())
+                .telephone(collecteur.getTelephone())
+                .agenceId(collecteur.getAgence() != null ? collecteur.getAgence().getId() : null)
+                .agenceNom(collecteur.getAgence() != null ? collecteur.getAgence().getNom() : null)
+                .build();
     }
 }
