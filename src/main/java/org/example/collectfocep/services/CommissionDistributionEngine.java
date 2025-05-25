@@ -5,7 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.dto.*;
 import org.example.collectfocep.entities.*;
 import org.example.collectfocep.repositories.*;
-import org.example.collectfocep.services.impl.MouvementService;
+import org.example.collectfocep.services.impl.MouvementServiceImpl;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,7 +24,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class CommissionDistributionEngine {
 
-    private final MouvementService mouvementService;
+    private final MouvementServiceImpl mouvementServiceImpl;
     private final CompteRepository compteRepository;
     private final CollecteurRepository collecteurRepository;
     private final CompteAttenteRepository compteAttenteRepository;
@@ -76,7 +76,7 @@ public class CommissionDistributionEngine {
         log.info("Persistance de {} mouvements comptables", distribution.getMovements().size());
 
         for (Mouvement mouvement : distribution.getMovements()) {
-            mouvementService.effectuerMouvement(mouvement);
+            mouvementServiceImpl.effectuerMouvement(mouvement);
         }
     }
 

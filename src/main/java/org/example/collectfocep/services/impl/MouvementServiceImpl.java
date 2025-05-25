@@ -3,6 +3,7 @@ package org.example.collectfocep.services.impl;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Timer;
 import org.example.collectfocep.constants.ErrorMessages;
+import org.example.collectfocep.dto.BalanceVerificationDTO;
 import org.example.collectfocep.dto.MouvementCommissionDTO;
 import org.example.collectfocep.dto.MouvementProjection;
 import org.example.collectfocep.entities.*;
@@ -15,20 +16,25 @@ import org.example.collectfocep.exceptions.MontantMaxRetraitException;
 import org.example.collectfocep.services.interfaces.CompteService;
 import org.example.collectfocep.services.interfaces.JournalService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.exceptions.BusinessException;
+
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
 @Slf4j
-public class MouvementService {
+public class MouvementServiceImpl {
     private final CompteRepository compteRepository;
     private final CompteClientRepository compteClientRepository;
     private final CompteCollecteurRepository compteCollecteurRepository;
@@ -54,7 +60,7 @@ public class MouvementService {
     private final Timer mouvementTimer;
 
     @Autowired
-    public MouvementService(
+    public MouvementServiceImpl(
             SystemAccountService systemAccountService,
             CollecteurAccountService collecteurAccountService,
             MouvementRepository mouvementRepository,
@@ -941,5 +947,55 @@ public class MouvementService {
         return mouvements.stream()
                 .map(mouvementMapper::toCommissionDto)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    public Page<Mouvement> findByCollecteurAndDate(Long collecteurId, String date, Pageable pageable) {
+        log.info("Recherche des mouvements pour collecteur {} à la date {}", collecteurId, date);
+
+        try {
+            LocalDate localDate = LocalDate.parse(date);
+            LocalDateTime startOfDay = localDate.atStartOfDay();
+            LocalDateTime endOfDay = localDate.atTime(LocalTime.MAX);
+
+            return mouvementRepository.findByCollecteurIdAndDateHeureBetween(
+                    collecteurId, startOfDay, endOfDay, pageable);
+        } catch (Exception e) {
+            log.error("Erreur lors de la recherche des mouvements", e);
+            throw new BusinessException("Erreur lors de la recherche des mouvements: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public BalanceVerificationDTO verifyClientBalance(Long clientId, Double montant) {
+        log.info("Vérification du solde pour client {} montant {}", clientId, montant);
+
+        try {
+            Client client = clientRepository.findById(clientId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Client non trouvé"));
+
+            // Récupérer le compte épargne du client
+            CompteClient compteClient = compteClientRepository.findByClient(client)
+                    .orElseThrow(() -> new ResourceNotFoundException("Compte client non trouvé"));
+
+            Double soldeDisponible = compteClient.getSolde();
+            Boolean sufficient = soldeDisponible >= montant;
+
+            String message = sufficient
+                    ? "Solde suffisant pour effectuer l'opération"
+                    : String.format("Solde insuffisant. Solde disponible: %.2f FCFA, Montant demandé: %.2f FCFA",
+                    soldeDisponible, montant);
+
+            return BalanceVerificationDTO.builder()
+                    .sufficient(sufficient)
+                    .soldeDisponible(soldeDisponible)
+                    .montantDemande(montant)
+                    .message(message)
+                    .build();
+
+        } catch (Exception e) {
+            log.error("Erreur lors de la vérification du solde", e);
+            throw new BusinessException("Erreur lors de la vérification du solde: " + e.getMessage());
+        }
     }
 }

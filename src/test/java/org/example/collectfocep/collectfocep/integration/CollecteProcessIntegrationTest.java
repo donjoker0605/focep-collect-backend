@@ -2,10 +2,9 @@ package org.example.collectfocep.collectfocep.integration;
 
 import org.example.collectfocep.CollectFocepApplication;
 import org.example.collectfocep.collectfocep.config.TestDatabaseConfig;
-import org.example.collectfocep.dto.EpargneRequest;
 import org.example.collectfocep.entities.*;
 import org.example.collectfocep.repositories.*;
-import org.example.collectfocep.services.impl.MouvementService;
+import org.example.collectfocep.services.impl.MouvementServiceImpl;
 import org.example.collectfocep.services.interfaces.ClientService;
 import org.example.collectfocep.services.interfaces.CollecteurService;
 import org.example.collectfocep.services.interfaces.CompteService;
@@ -20,9 +19,7 @@ import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -45,7 +42,7 @@ public class CollecteProcessIntegrationTest {
     private JournalService journalService;
 
     @Autowired
-    private MouvementService mouvementService;
+    private MouvementServiceImpl mouvementServiceImpl;
 
     @Autowired
     private ClientRepository clientRepository;
@@ -171,7 +168,7 @@ public class CollecteProcessIntegrationTest {
     void testProcessusCompletCollecte() {
         // 1. Effectuer une épargne pour le client 1
         double montantEpargne1 = 5000.0;
-        Mouvement mouvementEpargne1 = mouvementService.enregistrerEpargne(client1, montantEpargne1, journal);
+        Mouvement mouvementEpargne1 = mouvementServiceImpl.enregistrerEpargne(client1, montantEpargne1, journal);
 
         // Vérifier l'enregistrement de l'épargne
         assertNotNull(mouvementEpargne1);
@@ -190,7 +187,7 @@ public class CollecteProcessIntegrationTest {
 
         // 2. Effectuer une épargne pour le client 2
         double montantEpargne2 = 3000.0;
-        Mouvement mouvementEpargne2 = mouvementService.enregistrerEpargne(client2, montantEpargne2, journal);
+        Mouvement mouvementEpargne2 = mouvementServiceImpl.enregistrerEpargne(client2, montantEpargne2, journal);
 
         // Vérifier l'enregistrement de l'épargne
         assertNotNull(mouvementEpargne2);
@@ -205,7 +202,7 @@ public class CollecteProcessIntegrationTest {
 
         // 3. Effectuer un retrait pour le client 1
         double montantRetrait = 2000.0;
-        Mouvement mouvementRetrait = mouvementService.enregistrerRetrait(client1, montantRetrait, journal);
+        Mouvement mouvementRetrait = mouvementServiceImpl.enregistrerRetrait(client1, montantRetrait, journal);
 
         // Vérifier l'enregistrement du retrait
         assertNotNull(mouvementRetrait);
@@ -223,7 +220,7 @@ public class CollecteProcessIntegrationTest {
         assertEquals(-(montantEpargne1 + montantEpargne2 - montantRetrait), compteCollecteur.getSolde());
 
         // 4. Récupérer la liste des mouvements du journal
-        List<Mouvement> mouvements = mouvementService.findByJournalId(journal.getId());
+        List<Mouvement> mouvements = mouvementServiceImpl.findByJournalId(journal.getId());
         assertEquals(3, mouvements.size());
 
         // 5. Clôturer le journal
@@ -237,7 +234,7 @@ public class CollecteProcessIntegrationTest {
 
         // Option 1: si votre code vérifie la clôture de journal avant d'ajouter des mouvements
         try {
-            Mouvement mouvementApresClotureAttendu = mouvementService.enregistrerEpargne(client1, 1000.0, journalFinal);
+            Mouvement mouvementApresClotureAttendu = mouvementServiceImpl.enregistrerEpargne(client1, 1000.0, journalFinal);
             // Selon l'implémentation, vous pouvez soit recevoir une exception, soit avoir un comportement spécifique
             // Cette assertion dépend de votre implémentation
             fail("Une exception aurait dû être levée pour un journal clôturé");
@@ -267,8 +264,8 @@ public class CollecteProcessIntegrationTest {
         double montantEpargne1 = 5000.0;
         double montantEpargne2 = 3000.0;
 
-        Mouvement mouvementEpargne1 = mouvementService.enregistrerEpargne(client1, montantEpargne1, journal);
-        Mouvement mouvementEpargne2 = mouvementService.enregistrerEpargne(client2, montantEpargne2, journal);
+        Mouvement mouvementEpargne1 = mouvementServiceImpl.enregistrerEpargne(client1, montantEpargne1, journal);
+        Mouvement mouvementEpargne2 = mouvementServiceImpl.enregistrerEpargne(client2, montantEpargne2, journal);
 
         // Vérifier l'état initial
         compteCollecteur = compteCollecteurRepository.findById(compteCollecteur.getId()).orElseThrow();
@@ -281,7 +278,7 @@ public class CollecteProcessIntegrationTest {
 
         // 3. Simuler un versement du collecteur à l'agence
         double montantVersement = montantEpargne1 + montantEpargne2;
-        Mouvement mouvementVersement = mouvementService.enregistrerVersement(collecteur, montantVersement, journal);
+        Mouvement mouvementVersement = mouvementServiceImpl.enregistrerVersement(collecteur, montantVersement, journal);
 
         // Vérifier l'enregistrement du versement
         assertNotNull(mouvementVersement);
@@ -298,7 +295,7 @@ public class CollecteProcessIntegrationTest {
         assertEquals(soldeLiaisonInitial - montantVersement, compteLiaison.getSolde(), 0.001);
 
         // 5. Vérifier les mouvements du journal
-        List<Mouvement> mouvements = mouvementService.findByJournalId(journal.getId());
+        List<Mouvement> mouvements = mouvementServiceImpl.findByJournalId(journal.getId());
         assertEquals(3, mouvements.size()); // 2 épargnes + 1 versement
 
         // 6. Clôturer le journal

@@ -5,7 +5,7 @@ import org.example.collectfocep.entities.*;
 import org.example.collectfocep.exceptions.ResourceNotFoundException;
 import org.example.collectfocep.repositories.*;
 import org.example.collectfocep.services.CompteTransferService;
-import org.example.collectfocep.services.impl.MouvementService;
+import org.example.collectfocep.services.impl.MouvementServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -41,7 +41,7 @@ public class CompteTransferServiceTest {
     private MouvementRepository mouvementRepository;
 
     @Mock
-    private MouvementService mouvementService;
+    private MouvementServiceImpl mouvementServiceImpl;
 
     @Mock
     private CompteLiaisonRepository compteLiaisonRepository;
@@ -177,7 +177,7 @@ public class CompteTransferServiceTest {
                 .thenReturn(Optional.of(compteLiaisonSource));
         when(compteLiaisonRepository.findByAgenceAndTypeCompte(agence2, "LIAISON"))
                 .thenReturn(Optional.of(compteLiaisonTarget));
-        when(mouvementService.effectuerMouvement(any(Mouvement.class))).thenReturn(new Mouvement());
+        when(mouvementServiceImpl.effectuerMouvement(any(Mouvement.class))).thenReturn(new Mouvement());
         when(mouvementRepository.calculatePendingCommissions(anyLong(), anyLong(), any()))
                 .thenReturn(50.0);
 
@@ -192,7 +192,7 @@ public class CompteTransferServiceTest {
         // Vérifier que handleInterAgencyTransfer EST appelée (agences différentes)
         verify(compteLiaisonRepository).findByAgenceAndTypeCompte(agence1, "LIAISON");
         verify(compteLiaisonRepository).findByAgenceAndTypeCompte(agence2, "LIAISON");
-        verify(mouvementService).effectuerMouvement(any(Mouvement.class));
+        verify(mouvementServiceImpl).effectuerMouvement(any(Mouvement.class));
     }
 
     @Test

@@ -10,7 +10,7 @@ import org.example.collectfocep.entities.Mouvement;
 import org.example.collectfocep.repositories.ClientRepository;
 import org.example.collectfocep.repositories.JournalRepository;
 import org.example.collectfocep.security.service.SecurityService;
-import org.example.collectfocep.services.impl.MouvementService;
+import org.example.collectfocep.services.impl.MouvementServiceImpl;
 import org.example.collectfocep.web.controllers.MouvementController;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,8 +21,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-import org.springframework.security.test.context.support.WithMockUser;
-import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers;
 
 
 import java.time.LocalDateTime;
@@ -32,7 +30,6 @@ import java.util.Optional;
 
 import static org.hamcrest.Matchers.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -45,7 +42,7 @@ public class MouvementControllerTest {
     private MockMvc mockMvc;
 
     @Mock
-    private MouvementService mouvementService;
+    private MouvementServiceImpl mouvementServiceImpl;
 
     @Mock
     private SecurityService securityService;
@@ -123,7 +120,7 @@ public class MouvementControllerTest {
         when(securityService.isClientInCollecteurAgence(1L, 1L)).thenReturn(true);
         when(clientRepository.findById(1L)).thenReturn(Optional.of(client));
         when(journalRepository.findById(1L)).thenReturn(Optional.of(journal));
-        when(mouvementService.enregistrerEpargne(eq(client), eq(5000.0), eq(journal))).thenReturn(mouvement);
+        when(mouvementServiceImpl.enregistrerEpargne(eq(client), eq(5000.0), eq(journal))).thenReturn(mouvement);
 
         // Act & Assert
         mockMvc.perform(post("/api/mouvements/epargne")
@@ -138,7 +135,7 @@ public class MouvementControllerTest {
         verify(securityService).isClientInCollecteurAgence(1L, 1L);
         verify(clientRepository).findById(1L);
         verify(journalRepository).findById(1L);
-        verify(mouvementService).enregistrerEpargne(eq(client), eq(5000.0), eq(journal));
+        verify(mouvementServiceImpl).enregistrerEpargne(eq(client), eq(5000.0), eq(journal));
     }
 
 
@@ -158,7 +155,7 @@ public class MouvementControllerTest {
         mouvementRetrait.setDateOperation(LocalDateTime.now());
         mouvementRetrait.setJournal(journal);
 
-        when(mouvementService.enregistrerRetrait(eq(client), eq(2000.0), eq(journal))).thenReturn(mouvementRetrait);
+        when(mouvementServiceImpl.enregistrerRetrait(eq(client), eq(2000.0), eq(journal))).thenReturn(mouvementRetrait);
 
         // Act & Assert
         mockMvc.perform(post("/api/mouvements/retrait")
@@ -174,7 +171,7 @@ public class MouvementControllerTest {
         verify(securityService).isClientInCollecteurAgence(1L, 1L);
         verify(clientRepository).findById(1L);
         verify(journalRepository).findById(1L);
-        verify(mouvementService).enregistrerRetrait(eq(client), eq(2000.0), eq(journal));
+        verify(mouvementServiceImpl).enregistrerRetrait(eq(client), eq(2000.0), eq(journal));
     }
 
     @Test
@@ -182,7 +179,7 @@ public class MouvementControllerTest {
         // Arrange
         List<Mouvement> mouvements = Arrays.asList(mouvement);
         when(securityService.canAccessJournal(any(), eq(1L))).thenReturn(true);
-        when(mouvementService.findByJournalId(1L)).thenReturn(mouvements);
+        when(mouvementServiceImpl.findByJournalId(1L)).thenReturn(mouvements);
 
         // Act & Assert
         mockMvc.perform(get("/api/mouvements/journal/1")
@@ -193,7 +190,7 @@ public class MouvementControllerTest {
                 .andExpect(jsonPath("$[0].montant", is(5000.0)));
 
         verify(securityService).canAccessJournal(any(), eq(1L));
-        verify(mouvementService).findByJournalId(1L);
+        verify(mouvementServiceImpl).findByJournalId(1L);
     }
 
     @Test
@@ -212,7 +209,7 @@ public class MouvementControllerTest {
 
         verify(securityService).canManageClient(any(), eq(1L));
         verify(clientRepository).findById(1L);
-        verify(mouvementService, never()).enregistrerEpargne(any(), anyDouble(), any());
+        verify(mouvementServiceImpl, never()).enregistrerEpargne(any(), anyDouble(), any());
     }
 
     @Test
@@ -233,6 +230,6 @@ public class MouvementControllerTest {
         verify(securityService).canManageClient(any(), eq(1L));
         verify(securityService).isClientInCollecteurAgence(1L, 1L);
         verify(clientRepository).findById(1L);
-        verify(mouvementService, never()).enregistrerEpargne(any(), anyDouble(), any());
+        verify(mouvementServiceImpl, never()).enregistrerEpargne(any(), anyDouble(), any());
     }
 }

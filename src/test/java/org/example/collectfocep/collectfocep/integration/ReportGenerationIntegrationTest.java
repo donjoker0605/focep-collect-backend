@@ -5,7 +5,7 @@ import org.example.collectfocep.entities.*;
 import org.example.collectfocep.repositories.*;
 import org.example.collectfocep.services.ReportGenerationService;
 import org.example.collectfocep.services.ReportService;
-import org.example.collectfocep.services.impl.MouvementService;
+import org.example.collectfocep.services.impl.MouvementServiceImpl;
 import org.example.collectfocep.services.interfaces.ClientService;
 import org.example.collectfocep.services.interfaces.CollecteurService;
 import org.example.collectfocep.services.interfaces.CompteService;
@@ -52,7 +52,7 @@ public class ReportGenerationIntegrationTest {
     private JournalService journalService;
 
     @Autowired
-    private MouvementService mouvementService;
+    private MouvementServiceImpl mouvementServiceImpl;
 
     @Autowired
     private ClientRepository clientRepository;
@@ -182,7 +182,7 @@ public class ReportGenerationIntegrationTest {
 
         // Créer un mouvement d'épargne pour chaque client ce jour-là
         for (Client client : clients) {
-            Mouvement mouvement = mouvementService.enregistrerEpargne(client, amount, dailyJournal);
+            Mouvement mouvement = mouvementServiceImpl.enregistrerEpargne(client, amount, dailyJournal);
             mouvement.setDateOperation(LocalDateTime.of(movementDate.getYear(),
                     movementDate.getMonthValue(),
                     movementDate.getDayOfMonth(),
@@ -204,7 +204,7 @@ public class ReportGenerationIntegrationTest {
                 });
 
         // Créer un mouvement de retrait
-        Mouvement mouvement = mouvementService.enregistrerRetrait(client, amount, dailyJournal);
+        Mouvement mouvement = mouvementServiceImpl.enregistrerRetrait(client, amount, dailyJournal);
         mouvement.setDateOperation(LocalDateTime.of(date.getYear(),
                 date.getMonthValue(),
                 date.getDayOfMonth(),

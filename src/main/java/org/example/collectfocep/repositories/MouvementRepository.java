@@ -148,4 +148,19 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
 
     @Query("SELECT m FROM Mouvement m WHERE m.collecteur.id = :collecteurId ORDER BY m.dateMouvement DESC")
     List<Mouvement> findRecentByCollecteur(@Param("collecteurId") Long collecteurId, Pageable pageable);
+
+    Page<Mouvement> findByCollecteurIdAndDateHeureBetween(
+            Long collecteurId,
+            LocalDateTime startDate,
+            LocalDateTime endDate,
+            Pageable pageable
+    );
+
+    List<Mouvement> findByCollecteurIdAndDateHeureBetween(
+            Long collecteurId,
+            LocalDateTime startDate,
+            LocalDateTime endDate
+    );
+
+    Page<Mouvement> findByCollecteurId(Long collecteurId, Pageable pageable);
 }

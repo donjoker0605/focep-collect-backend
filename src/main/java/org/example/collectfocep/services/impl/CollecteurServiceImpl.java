@@ -5,16 +5,9 @@ import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.Validation.CollecteurValidator;
-import org.example.collectfocep.dto.CollecteurCreateDTO;
-import org.example.collectfocep.dto.CollecteurDTO;
-import org.example.collectfocep.dto.CollecteurUpdateDTO;
-import org.example.collectfocep.entities.Agence;
-import org.example.collectfocep.entities.Collecteur;
-import org.example.collectfocep.entities.HistoriqueMontantMax;
-import org.example.collectfocep.exceptions.CollecteurServiceException;
-import org.example.collectfocep.exceptions.ResourceNotFoundException;
-import org.example.collectfocep.exceptions.UnauthorizedAccessException;
-import org.example.collectfocep.exceptions.UnauthorizedException;
+import org.example.collectfocep.dto.*;
+import org.example.collectfocep.entities.*;
+import org.example.collectfocep.exceptions.*;
 import org.example.collectfocep.mappers.CollecteurMapper;
 import org.example.collectfocep.repositories.AgenceRepository;
 import org.example.collectfocep.repositories.CollecteurRepository;
@@ -25,14 +18,18 @@ import org.example.collectfocep.services.interfaces.CompteService;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -257,5 +254,73 @@ public class CollecteurServiceImpl implements CollecteurService {
         updateDTO.setActive(dto.isActive());
 
         return updateCollecteur(id, updateDTO);
+    }
+
+    @Override
+    public CollecteurDashboardDTO getDashboardStats(Long collecteurId) {
+        log.info("Calcul des statistiques dashboard pour collecteur: {}", collecteurId);
+
+        try {
+            Collecteur collecteur = getCollecteurById(collecteurId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
+
+            // Compter les clients
+            Integer totalClients = clientRepository.countByCollecteurId(collecteurId);
+
+            // Calculer les totaux des mouvements
+            LocalDateTime startOfMonth = LocalDate.now().withDayOfMonth(1).atStartOfDay();
+            LocalDateTime now = LocalDateTime.now();
+
+            List<Mouvement> mouvementsDuMois = mouvementRepository
+                    .findByCollecteurIdAndDateHeureBetween(collecteurId, startOfMonth, now);
+
+            Double totalEpargne = mouvementsDuMois.stream()
+                    .filter(m -> "EPARGNE".equals(m.getTypeMouvement()))
+                    .mapToDouble(Mouvement::getMontant)
+                    .sum();
+
+            Double totalRetraits = mouvementsDuMois.stream()
+                    .filter(m -> "RETRAIT".equals(m.getTypeMouvement()))
+                    .mapToDouble(Mouvement::getMontant)
+                    .sum();
+
+            Double soldeTotal = totalEpargne - totalRetraits;
+
+            // Récupérer les 5 dernières transactions
+            PageRequest lastTransactions = PageRequest.of(0, 5, Sort.by("dateHeure").descending());
+            Page<Mouvement> recentMovements = mouvementRepository
+                    .findByCollecteurId(collecteurId, lastTransactions);
+
+            List<MouvementDTO> transactionsRecentes = recentMovements.getContent()
+                    .stream()
+                    .map(mouvementMapper::toDTO)
+                    .collect(Collectors.toList());
+
+            // Récupérer le journal actuel (si existe)
+            JournalDTO journalActuel = null;
+            try {
+                Journal journal = journalService.getJournalActif(collecteurId);
+                if (journal != null) {
+                    journalActuel = journalMapper.toDTO(journal);
+                }
+            } catch (Exception e) {
+                log.warn("Aucun journal actif trouvé pour le collecteur: {}", collecteurId);
+            }
+
+            return CollecteurDashboardDTO.builder()
+                    .collecteurId(collecteurId)
+                    .totalClients(totalClients)
+                    .totalEpargne(totalEpargne)
+                    .totalRetraits(totalRetraits)
+                    .soldeTotal(soldeTotal)
+                    .transactionsRecentes(transactionsRecentes)
+                    .journalActuel(journalActuel)
+                    .lastUpdate(LocalDateTime.now())
+                    .build();
+
+        } catch (Exception e) {
+            log.error("Erreur lors du calcul des statistiques dashboard", e);
+            throw new BusinessException("Erreur lors du calcul des statistiques: " + e.getMessage());
+        }
     }
 }

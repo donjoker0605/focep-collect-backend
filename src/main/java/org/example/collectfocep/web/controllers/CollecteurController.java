@@ -261,23 +261,15 @@ public class CollecteurController {
     // ✅ ENDPOINT UTILE POUR LE DASHBOARD
     @GetMapping("/{id}/dashboard")
     @PreAuthorize("@securityService.canManageCollecteur(authentication, #id)")
-    public ResponseEntity<ApiResponse<Object>> getCollecteurDashboard(@PathVariable Long id) {
+    public ResponseEntity<ApiResponse<CollecteurDashboardDTO>> getCollecteurDashboard(@PathVariable Long id) {
         log.info("Récupération du dashboard pour le collecteur: {}", id);
 
         try {
-            // Ici vous pouvez implémenter la logique pour récupérer
-            // les statistiques du collecteur
-            // Pour l'instant, retourner des données basiques
+            // Calculer les statistiques du collecteur
+            CollecteurDashboardDTO dashboard = collecteurService.getDashboardStats(id);
+
             return ResponseEntity.ok(
-                    ApiResponse.success(
-                            Map.of(
-                                    "collecteurId", id,
-                                    "totalClients", 0,
-                                    "totalEpargne", 0,
-                                    "message", "Dashboard en cours de développement"
-                            ),
-                            "Dashboard récupéré"
-                    )
+                    ApiResponse.success(dashboard, "Dashboard récupéré avec succès")
             );
         } catch (Exception e) {
             log.error("Erreur lors de la récupération du dashboard", e);

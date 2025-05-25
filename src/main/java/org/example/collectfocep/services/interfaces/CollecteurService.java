@@ -2,6 +2,7 @@ package org.example.collectfocep.services.interfaces;
 
 import org.example.collectfocep.dto.CollecteurCreateDTO;
 import org.example.collectfocep.dto.CollecteurDTO;
+import org.example.collectfocep.dto.CollecteurDashboardDTO;
 import org.example.collectfocep.dto.CollecteurUpdateDTO;
 import org.example.collectfocep.entities.Collecteur;
 import org.springframework.data.domain.Page;
@@ -25,6 +26,7 @@ public interface CollecteurService {
     boolean hasActiveOperations(Collecteur collecteur);
     Collecteur updateMontantMaxRetrait(Long collecteurId, Double nouveauMontant, String justification);
     CollecteurDTO convertToDTO(Collecteur collecteur);
+    CollecteurDashboardDTO getDashboardStats(Long collecteurId);
 
     // Méthodes deprecated pour compatibilité - À SUPPRIMER
     @Deprecated

@@ -2,9 +2,7 @@ package org.example.collectfocep.web.controllers;
 
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
-import org.example.collectfocep.dto.EpargneRequest;
-import org.example.collectfocep.dto.MouvementCommissionDTO;
-import org.example.collectfocep.dto.RetraitRequest;
+import org.example.collectfocep.dto.*;
 import org.example.collectfocep.entities.Client;
 import org.example.collectfocep.entities.Journal;
 import org.example.collectfocep.entities.Mouvement;
@@ -14,11 +12,14 @@ import org.example.collectfocep.exceptions.UnauthorizedException;
 import org.example.collectfocep.mappers.MouvementMapper;
 import org.example.collectfocep.repositories.ClientRepository;
 import org.example.collectfocep.repositories.JournalRepository;
-import org.example.collectfocep.services.impl.MouvementService;
+import org.example.collectfocep.services.impl.MouvementServiceImpl;
 import org.example.collectfocep.security.service.SecurityService;
 import org.example.collectfocep.util.ApiResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -26,7 +27,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/mouvements")
@@ -38,19 +38,19 @@ public class MouvementController {
     private final JournalRepository journalRepository;
     private final MouvementMapper mouvementMapper;
     @Autowired
-    private MouvementService mouvementService;
+    private MouvementServiceImpl mouvementServiceImpl;
 
     @Value("${app.mouvement.use-projection:true}")
     private boolean useProjection;
 
     @Autowired
     public MouvementController(
-            MouvementService mouvementService,
+            MouvementServiceImpl mouvementServiceImpl,
             SecurityService securityService,
             ClientRepository clientRepository,
             JournalRepository journalRepository,
             MouvementMapper mouvementMapper) {
-        this.mouvementService = mouvementService;
+        this.mouvementServiceImpl = mouvementServiceImpl;
         this.securityService = securityService;
         this.clientRepository = clientRepository;
         this.journalRepository = journalRepository;
@@ -83,7 +83,7 @@ public class MouvementController {
             }
 
             // Enregistrer l'épargne
-            Mouvement mouvement = mouvementService.enregistrerEpargne(client, request.getMontant(), journal);
+            Mouvement mouvement = mouvementServiceImpl.enregistrerEpargne(client, request.getMontant(), journal);
 
             // Convertir en DTO pour la réponse
             MouvementCommissionDTO responseDto = mouvementMapper.toCommissionDto(mouvement);
@@ -122,7 +122,7 @@ public class MouvementController {
                         .orElseThrow(() -> new ResourceNotFoundException("Journal non trouvé"));
             }
 
-            Mouvement mouvement = mouvementService.enregistrerRetrait(client, request.getMontant(), journal);
+            Mouvement mouvement = mouvementServiceImpl.enregistrerRetrait(client, request.getMontant(), journal);
 
             // ✅ FIX PRINCIPAL : Utiliser DTO au lieu de l'entité brute
             MouvementCommissionDTO responseDto = mouvementMapper.toCommissionDto(mouvement);
@@ -148,11 +148,11 @@ public class MouvementController {
             // Stratégie configurable
             if ("projection".equals(strategy) || (useProjection && "auto".equals(strategy))) {
                 // Approche projection (plus rapide)
-                mouvementDTOs = mouvementService.findMouvementsDtoByJournalId(journalId);
+                mouvementDTOs = mouvementServiceImpl.findMouvementsDtoByJournalId(journalId);
             } else {
                 // Approche entity avec JOIN FETCH (plus flexible)
-                mouvementDTOs = mouvementService.convertToDto(
-                        mouvementService.findByJournalIdWithAccounts(journalId)
+                mouvementDTOs = mouvementServiceImpl.convertToDto(
+                        mouvementServiceImpl.findByJournalIdWithAccounts(journalId)
                 );
             }
 
@@ -162,6 +162,59 @@ public class MouvementController {
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error("MOUVEMENT_ERROR", "Erreur: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/journal/transactions")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'COLLECTEUR')")
+    public ResponseEntity<ApiResponse<Page<MouvementDTO>>> getJournalTransactions(
+            @RequestParam Long collecteurId,
+            @RequestParam String date,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "dateHeure,desc") String sort) {
+
+        log.info("Récupération des transactions du journal pour collecteur: {} à la date: {}", collecteurId, date);
+
+        try {
+            PageRequest pageRequest = PageRequest.of(page, size,
+                    Sort.by(Sort.Direction.fromString(sort.split(",")[1]), sort.split(",")[0]));
+
+            Page<Mouvement> mouvements = mouvementServiceImpl.findByCollecteurAndDate(collecteurId, date, pageRequest);
+            Page<MouvementDTO> dtoPage = mouvements.map(mouvementMapper::toDTO);
+
+            ApiResponse<Page<MouvementDTO>> response = ApiResponse.success(dtoPage);
+            response.addMeta("totalElements", mouvements.getTotalElements());
+            response.addMeta("totalPages", mouvements.getTotalPages());
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Erreur lors de la récupération des transactions du journal", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Erreur: " + e.getMessage()));
+        }
+    }
+
+    @PostMapping("/verify-balance")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'COLLECTEUR')")
+    public ResponseEntity<ApiResponse<BalanceVerificationDTO>> verifyBalance(
+            @Valid @RequestBody BalanceVerificationRequest request) {
+
+        log.info("Vérification du solde pour client: {} montant: {}", request.getClientId(), request.getMontant());
+
+        try {
+            BalanceVerificationDTO result = mouvementServiceImpl.verifyClientBalance(
+                    request.getClientId(),
+                    request.getMontant()
+            );
+
+            return ResponseEntity.ok(
+                    ApiResponse.success(result, "Solde vérifié avec succès")
+            );
+        } catch (Exception e) {
+            log.error("Erreur lors de la vérification du solde", e);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(ApiResponse.error("Erreur: " + e.getMessage()));
         }
     }
 }

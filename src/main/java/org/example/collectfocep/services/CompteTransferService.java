@@ -6,7 +6,7 @@ import org.example.collectfocep.entities.*;
 import org.example.collectfocep.exceptions.CompteNotFoundException;
 import org.example.collectfocep.exceptions.ResourceNotFoundException;
 import org.example.collectfocep.repositories.*;
-import org.example.collectfocep.services.impl.MouvementService;
+import org.example.collectfocep.services.impl.MouvementServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,7 +24,7 @@ public class CompteTransferService {
     private final ClientRepository clientRepository;
     private final CollecteurRepository collecteurRepository;
     private final MouvementRepository mouvementRepository;
-    private final MouvementService mouvementService;
+    private final MouvementServiceImpl mouvementServiceImpl;
     private final CompteLiaisonRepository compteLiaisonRepository;
     private final TransfertCompteRepository transfertCompteRepository;
     private final AuditLogRepository auditLogRepository;
@@ -36,7 +36,7 @@ public class CompteTransferService {
             ClientRepository clientRepository,
             CollecteurRepository collecteurRepository,
             MouvementRepository mouvementRepository,
-            MouvementService mouvementService,
+            MouvementServiceImpl mouvementServiceImpl,
             CompteLiaisonRepository compteLiaisonRepository,
             TransfertCompteRepository transfertCompteRepository,
             AuditLogRepository auditLogRepository) {
@@ -45,7 +45,7 @@ public class CompteTransferService {
         this.clientRepository = clientRepository;
         this.collecteurRepository = collecteurRepository;
         this.mouvementRepository = mouvementRepository;
-        this.mouvementService = mouvementService;
+        this.mouvementServiceImpl = mouvementServiceImpl;
         this.compteLiaisonRepository = compteLiaisonRepository;
         this.transfertCompteRepository = transfertCompteRepository;
         this.auditLogRepository = auditLogRepository;
@@ -155,7 +155,7 @@ public class CompteTransferService {
                 .dateOperation(LocalDateTime.now())
                 .build();
 
-        mouvementService.effectuerMouvement(transferMouvement);
+        mouvementServiceImpl.effectuerMouvement(transferMouvement);
 
         log.info("Transfert inter-agences effectué: {} FCFA transférés de l'agence {} vers {}",
                 soldeToTransfer,
