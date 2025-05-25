@@ -5,25 +5,30 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import jakarta.validation.constraints.NotNull;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @Data
 @Builder
-@NoArgsConstructor
 @AllArgsConstructor
+@NoArgsConstructor
 public class JournalDTO {
     private Long id;
+    private String reference;
+    private LocalDateTime dateOuverture;
+    private LocalDateTime dateCloture;
+    private Boolean estCloture;
+    private Long collecteurId;
+    private String collecteurNom;
 
-    @NotNull(message = "La date de début est obligatoire")
     private LocalDate dateDebut;
-
-    @NotNull(message = "La date de fin est obligatoire")
     private LocalDate dateFin;
 
-    @NotNull(message = "L'ID du collecteur est obligatoire")
-    private Long collecteurId;
+    public boolean isActif() {
+        return !Boolean.TRUE.equals(estCloture);
+    }
 
-    private boolean estCloture;
-    private LocalDate dateCloture;
+    public String getStatutText() {
+        return Boolean.TRUE.equals(estCloture) ? "CLOTURÉ" : "OUVERT";
+    }
 }

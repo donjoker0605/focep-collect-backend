@@ -29,5 +29,7 @@ public class Agence {
     @OneToMany(mappedBy = "agence", cascade = CascadeType.ALL)
     private List<Client> clients;
 
-
+    public String getNom() {
+        return this.nomAgence;
+    }
 }

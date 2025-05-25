@@ -46,15 +46,16 @@ public class Journal {
     @Column(name = "date_cloture")
     private LocalDateTime dateCloture;
 
+    @Column(name = "reference")
+    private String reference;
+
     @Version
     private Long version;
 
-    // ✅ CORRECTION DU GETTER - maintenant le champ existe
     public String getStatut() {
         return this.statut;
     }
 
-    // ✅ MÉTHODE UTILITAIRE POUR CALCULER LE STATUT BASÉ SUR estCloture
     public String getStatutCalcule() {
         return this.estCloture ? "CLOTURE" : "OUVERT";
     }

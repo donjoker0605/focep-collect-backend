@@ -13,14 +13,24 @@ import java.util.Map;
 @AllArgsConstructor
 @NoArgsConstructor
 public class NotificationDTO {
+
     private Long id;
     private String titre;
     private String message;
-    private String type; // INFO, WARNING, ERROR, SUCCESS
+    private String type;
     private Boolean lu;
-    private LocalDateTime dateCreation;
     private String destinataire;
     private Map<String, Object> metadata;
     private String actionUrl;
     private String actionLabel;
+    private LocalDateTime dateCreation;
+
+    // Méthodes utilitaires
+    public boolean isUnread() {
+        return !Boolean.TRUE.equals(lu);
+    }
+
+    public boolean hasAction() {
+        return actionUrl != null && !actionUrl.trim().isEmpty();
+    }
 }

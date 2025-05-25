@@ -1,6 +1,7 @@
 package org.example.collectfocep.mappers;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.collectfocep.dto.NotificationDTO;
 import org.example.collectfocep.entities.Notification;
@@ -38,7 +39,7 @@ public interface NotificationMapper {
         }
         try {
             ObjectMapper mapper = new ObjectMapper();
-            return mapper.readValue(json, Map.class);
+            return mapper.readValue(json, new TypeReference<Map<String, Object>>() {});
         } catch (JsonProcessingException e) {
             return null;
         }

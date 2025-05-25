@@ -278,7 +278,8 @@ public class CollecteurServiceImpl implements CollecteurService {
                     .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
 
             // Compter les clients
-            Integer totalClients = clientRepository.countByCollecteurId(collecteurId);
+            Long totalClientsCount = clientRepository.countByCollecteurId(collecteurId);
+            Integer totalClients = totalClientsCount != null ? totalClientsCount.intValue() : 0;
 
             // Calculer les totaux des mouvements pour le mois courant
             LocalDateTime startOfMonth = LocalDate.now().withDayOfMonth(1).atStartOfDay();

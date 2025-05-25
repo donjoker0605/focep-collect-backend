@@ -15,29 +15,36 @@ import java.time.LocalDateTime;
 public interface NotificationRepository extends JpaRepository<Notification, Long> {
 
     /**
-     * Trouver les notifications par destinataire, triées par date de création décroissante
+     * Trouve les notifications pour un utilisateur, triées par date de création décroissante
      */
     Page<Notification> findByDestinataireOrderByDateCreationDesc(String destinataire, Pageable pageable);
 
     /**
-     * Compter les notifications non lues d'un destinataire
+     * Compte les notifications non lues pour un utilisateur
      */
     Long countByDestinataireAndLuFalse(String destinataire);
 
     /**
-     * Marquer toutes les notifications d'un utilisateur comme lues
+     * Marque toutes les notifications d'un utilisateur comme lues
      */
     @Modifying
     @Query("UPDATE Notification n SET n.lu = true WHERE n.destinataire = :destinataire AND n.lu = false")
-    void markAllAsReadByDestinataire(@Param("destinataire") String destinataire);
+    void markAllAsReadByUser(@Param("destinataire") String destinataire);
 
     /**
-     * Supprimer les notifications anciennes
+     * Supprime les notifications anciennes et déjà lues
      */
-    void deleteByDateCreationBefore(LocalDateTime cutoffDate);
+    @Modifying
+    @Query("DELETE FROM Notification n WHERE n.dateCreation < :cutoffDate AND n.lu = true")
+    void deleteByDateCreationBeforeAndLuTrue(@Param("cutoffDate") LocalDateTime cutoffDate);
 
     /**
-     * Trouver les notifications non lues par destinataire
+     * Trouve les notifications récentes (non lues ou créées dans les X derniers jours)
      */
-    Page<Notification> findByDestinataireAndLuFalseOrderByDateCreationDesc(String destinataire, Pageable pageable);
+    @Query("SELECT n FROM Notification n WHERE n.destinataire = :destinataire " +
+            "AND (n.lu = false OR n.dateCreation > :cutoffDate) " +
+            "ORDER BY n.dateCreation DESC")
+    Page<Notification> findRecentByUser(@Param("destinataire") String destinataire,
+                                        @Param("cutoffDate") LocalDateTime cutoffDate,
+                                        Pageable pageable);
 }

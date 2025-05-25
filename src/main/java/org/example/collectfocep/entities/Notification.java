@@ -1,10 +1,7 @@
 package org.example.collectfocep.entities;
 
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 import java.time.LocalDateTime;
 
@@ -14,7 +11,8 @@ import java.time.LocalDateTime;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-public class Notification extends AuditableEntity {
+@EqualsAndHashCode(callSuper = false)
+public class Notification {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -31,23 +29,27 @@ public class Notification extends AuditableEntity {
     private NotificationType type;
 
     @Column(nullable = false)
+    @Builder.Default // Résout le problème @Builder avec l'initialisation
     private Boolean lu = false;
 
     @Column(nullable = false)
-    private String destinataire; // Email ou ID utilisateur
+    private String destinataire;
 
     @Column(columnDefinition = "JSON")
-    private String metadata; // Stockage JSON des métadonnées
+    private String metadata;
 
     private String actionUrl;
     private String actionLabel;
 
     @Column(nullable = false)
-    private LocalDateTime dateCreation;
+    @Builder.Default // Pour permettre l'initialisation automatique
+    private LocalDateTime dateCreation = LocalDateTime.now();
 
     @PrePersist
     protected void onCreate() {
-        dateCreation = LocalDateTime.now();
+        if (dateCreation == null) {
+            dateCreation = LocalDateTime.now();
+        }
     }
 
     public enum NotificationType {

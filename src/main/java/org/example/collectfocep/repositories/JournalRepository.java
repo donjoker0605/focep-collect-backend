@@ -54,4 +54,6 @@ public interface JournalRepository extends JpaRepository<Journal, Long> {
      */
     @Query("SELECT COUNT(c) FROM Client c WHERE c.collecteur.id = :collecteurId")
     Integer countByCollecteurId(@Param("collecteurId") Long collecteurId);
+
+    List<Journal> findByCollecteurIdAndEstClotureFalseOrderByDateDebutDesc(Long collecteurId);
 }

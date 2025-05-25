@@ -148,6 +148,7 @@ public class MouvementServiceImpl {
     /**
      * Effectue un mouvement entre deux comptes avec gestion des transactions
      */
+    @Override
     @Transactional(
             propagation = Propagation.REQUIRED,
             isolation = Isolation.READ_COMMITTED,
@@ -213,7 +214,8 @@ public class MouvementServiceImpl {
             } catch (Exception e) {
                 log.error("Erreur lors de l'exécution du mouvement - Cause: {}", e.getMessage(), e);
                 status.setRollbackOnly();
-                throw new BusinessException("Erreur lors de l'exécution du mouvement", "MOVEMENT_ERROR", e.getMessage());
+                throw new BusinessException("Erreur lors de la recherche des mouvements: " + e.getMessage(),
+                        "SEARCH_ERROR", e.getMessage());
             }
         });
     }
@@ -221,10 +223,7 @@ public class MouvementServiceImpl {
     /**
      * Traitement asynchrone des commissions dans une nouvelle transaction
      */
-    @Transactional(
-            propagation = Propagation.REQUIRES_NEW,
-            isolation = Isolation.READ_COMMITTED
-    )
+    @Override
     public void traiterCommissionsAsync(Mouvement mouvement) {
         log.info("Début du traitement asynchrone des commissions pour mouvement ID={}", mouvement.getId());
 
@@ -367,6 +366,7 @@ public class MouvementServiceImpl {
         }
     }
 
+    @Override
     @Transactional(
             propagation = Propagation.REQUIRED,
             isolation = Isolation.READ_COMMITTED,
@@ -444,6 +444,7 @@ public class MouvementServiceImpl {
     /**
      * Enregistre une opération de retrait avec gestion des transactions
      */
+    @Override
     @Transactional(
             propagation = Propagation.REQUIRED,
             isolation = Isolation.READ_COMMITTED,
@@ -569,6 +570,7 @@ public class MouvementServiceImpl {
     /**
      * Enregistre un versement avec gestion des transactions
      */
+    @Override
     @Transactional(
             propagation = Propagation.REQUIRED,
             isolation = Isolation.READ_COMMITTED,
@@ -777,6 +779,7 @@ public class MouvementServiceImpl {
     /**
      * Clôture une journée avec gestion des transactions
      */
+    @Override
     @Transactional(
             propagation = Propagation.REQUIRED,
             isolation = Isolation.READ_COMMITTED,
@@ -846,22 +849,20 @@ public class MouvementServiceImpl {
         log.debug("Validation du retrait réussie");
     }
 
-    protected double calculerMontantCommission(Mouvement mouvement) {
-        // Récupérer le montant du mouvement
+    @Override
+    public double calculerMontantCommission(Mouvement mouvement) {
         double montant = mouvement.getMontant();
         log.debug("Calcul du montant de commission pour mouvement ID={}, Montant={}, Type={}",
                 mouvement.getId(), montant, mouvement.getSens());
 
-        // S'il s'agit d'une épargne, nous calculons généralement un pourcentage fixe
-        // Selon la description, cela peut être un montant fixe, un pourcentage ou par palier
-        // Pour simplifier, nous utilisons un pourcentage fixe par défaut (2%)
+        // S'il s'agit d'une épargne
         if ("epargne".equals(mouvement.getSens())) {
             double commission = montant * 0.02;
             log.debug("Commission pour épargne: {}% de {} = {}", 2, montant, commission);
             return commission;
         }
 
-        // Pour les retraits, on peut avoir une logique différente
+        // Pour les retraits
         if ("retrait".equals(mouvement.getSens())) {
             double commission = montant * 0.01;
             log.debug("Commission pour retrait: {}% de {} = {}", 1, montant, commission);
@@ -870,7 +871,7 @@ public class MouvementServiceImpl {
 
         // Pour d'autres types d'opérations, aucune commission
         log.debug("Pas de commission pour opération de type: {}", mouvement.getSens());
-        return 0.0;
+        return 0.0; 
     }
 
     private Mouvement creerMouvementRetrait(
@@ -915,6 +916,7 @@ public class MouvementServiceImpl {
         return mouvement;
     }
 
+    @Override
     @Transactional(readOnly = true)
     public List<Mouvement> findByJournalId(Long journalId) {
         log.debug("Récupération des mouvements pour le journal: {}", journalId);
@@ -924,6 +926,7 @@ public class MouvementServiceImpl {
     /**
      * Méthode optimisée utilisant les projections
      */
+    @Override
     @Transactional(readOnly = true)
     public List<MouvementCommissionDTO> findMouvementsDtoByJournalId(Long journalId) {
         List<MouvementProjection> projections = mouvementRepository.findMouvementProjectionsByJournalId(journalId);
@@ -935,6 +938,7 @@ public class MouvementServiceImpl {
     /**
      * Méthode avec JOIN FETCH (plus flexible)
      */
+    @Override
     @Transactional(readOnly = true)
     public List<Mouvement> findByJournalIdWithAccounts(Long journalId) {
         return mouvementRepository.findByJournalIdWithAccounts(journalId);
@@ -943,6 +947,7 @@ public class MouvementServiceImpl {
     /**
      * Conversion des entités en DTO
      */
+    @Override
     public List<MouvementCommissionDTO> convertToDto(List<Mouvement> mouvements) {
         return mouvements.stream()
                 .map(mouvementMapper::toCommissionDto)
@@ -953,6 +958,7 @@ public class MouvementServiceImpl {
     /**
      * Trouver les mouvements par collecteur et date
      */
+    @Override
     public Page<Mouvement> findByCollecteurAndDate(Long collecteurId, String date, Pageable pageable) {
         log.info("Recherche des mouvements pour collecteur {} à la date {}", collecteurId, date);
 
@@ -965,7 +971,8 @@ public class MouvementServiceImpl {
                     collecteurId, startOfDay, endOfDay, pageable);
         } catch (Exception e) {
             log.error("Erreur lors de la recherche des mouvements", e);
-            throw new BusinessException("Erreur lors de la recherche des mouvements: " + e.getMessage());
+            throw new BusinessException("Erreur lors de la recherche des mouvements: " + e.getMessage(),
+                    "SEARCH_ERROR", e.getMessage());
         }
     }
 

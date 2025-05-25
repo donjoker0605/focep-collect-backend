@@ -87,7 +87,7 @@ public class JournalServiceImpl implements JournalService {
         return journalRepository.findByCollecteurAndDateRange(collecteurId, startDate, endDate);
     }
 
-    // ✅ MÉTHODES SUPPLÉMENTAIRES de l'ancienne classe
+    // MÉTHODES SUPPLÉMENTAIRES de l'ancienne classe
 
     @Override
     @Transactional
@@ -102,10 +102,22 @@ public class JournalServiceImpl implements JournalService {
         return mouvementRepository.save(mouvement);
     }
 
-    // ✅ MÉTHODE pour la compatibilité avec Collecteur
+    // MÉTHODE pour la compatibilité avec Collecteur
     @Override
     public List<Journal> getJournauxByCollecteurAndDateRange(
             Collecteur collecteur, LocalDate dateDebut, LocalDate dateFin) {
         return journalRepository.findByCollecteurAndDateDebutBetween(collecteur, dateDebut, dateFin);
+    }
+
+    @Override
+    public Journal getJournalActif(Long collecteurId) {
+        // Récupérer le journal actif (non clôturé) le plus récent pour le collecteur
+        List<Journal> journauxActifs = journalRepository.findByCollecteurIdAndEstClotureFalseOrderByDateDebutDesc(collecteurId);
+
+        if (journauxActifs.isEmpty()) {
+            throw new ResourceNotFoundException("Aucun journal actif trouvé pour le collecteur: " + collecteurId);
+        }
+
+        return journauxActifs.get(0); // Retourner le plus récent
     }
 }

@@ -40,11 +40,13 @@ public class Client {
     @Column(name = "photo_path")
     private String photoPath;
 
+    @Column(name = "numero_compte", unique = true)
+    private String numeroCompte;
+
     @Column(nullable = false)
     @Builder.Default
-    private boolean valide = true;
+    private Boolean valide = true;
 
-    // ✅ AJOUT DES CHAMPS DATE MANQUANTS
     @CreationTimestamp
     @Column(name = "date_creation", nullable = false, updatable = false)
     private LocalDateTime dateCreation;
@@ -60,6 +62,14 @@ public class Client {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "id_agence", nullable = false)
     private Agence agence;
+
+    public Boolean getValide() {
+        return this.valide;
+    }
+
+    public String getNumeroCompte() {
+        return this.numeroCompte;
+    }
 
     // Méthodes utilitaires pour récupérer les IDs (lecture seule)
     @Transient
@@ -84,10 +94,21 @@ public class Client {
         if (dateCreation == null) {
             dateCreation = LocalDateTime.now();
         }
+        // Générer le numéro de compte s'il n'existe pas
+        if (numeroCompte == null || numeroCompte.trim().isEmpty()) {
+            numeroCompte = generateNumeroCompte();
+        }
     }
 
     @PreUpdate
     private void updateModificationDate() {
         dateModification = LocalDateTime.now();
+    }
+
+    private String generateNumeroCompte() {
+        // Format: CLI-{agenceId}-{timestamp}
+        long timestamp = System.currentTimeMillis();
+        Long agenceId = getAgenceId();
+        return String.format("CLI-%d-%d", agenceId != null ? agenceId : 0, timestamp);
     }
 }

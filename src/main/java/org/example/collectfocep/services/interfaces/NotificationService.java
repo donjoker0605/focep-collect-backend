@@ -7,33 +7,34 @@ import org.springframework.data.domain.Pageable;
 public interface NotificationService {
 
     /**
-     * Trouver les notifications d'un utilisateur
+     * Trouve les notifications pour un utilisateur donné
      */
-    Page<Notification> findByUser(String destinataire, Pageable pageable);
+    Page<Notification> findByUser(String userEmail, Pageable pageable);
 
     /**
-     * Compter les notifications non lues
-     */
-    Long getUnreadCount(String destinataire);
-
-    /**
-     * Marquer une notification comme lue
+     * Marque une notification comme lue
      */
     void markAsRead(Long notificationId);
 
     /**
-     * Créer une nouvelle notification
+     * Marque toutes les notifications d'un utilisateur comme lues
      */
-    Notification createNotification(String destinataire, String titre, String message,
-                                    Notification.NotificationType type);
+    void markAllAsRead(String userEmail);
 
     /**
-     * Marquer toutes les notifications comme lues
+     * Obtient le nombre de notifications non lues pour un utilisateur
      */
-    void markAllAsRead(String destinataire);
+    Long getUnreadCount(String userEmail);
 
     /**
-     * Supprimer les anciennes notifications
+     * Crée une nouvelle notification
      */
-    void deleteOldNotifications(int daysOld);
+    Notification createNotification(String titre, String message,
+                                    Notification.NotificationType type,
+                                    String destinataire);
+
+    /**
+     * Supprime les anciennes notifications (plus de X jours)
+     */
+    void cleanupOldNotifications(int daysToKeep);
 }

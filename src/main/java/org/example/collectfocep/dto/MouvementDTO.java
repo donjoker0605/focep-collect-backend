@@ -13,31 +13,21 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 public class MouvementDTO {
     private Long id;
-    private String typeMouvement; // EPARGNE, RETRAIT
     private Double montant;
+    private String libelle;
+    private String sens;
     private LocalDateTime dateHeure;
-    private String description;
-    private String reference;
-    private String status;
-
-    // Informations du client
-    private ClientBasicDTO client;
-
-    // Informations du collecteur
-    private CollecteurBasicDTO collecteur;
-
-    // Informations du journal
-    private Long journalId;
-    private String journalReference;
-
-    // Informations des comptes
-    private Long compteSourceId;
-    private Long compteDestinationId;
-
-    // Commission
-    private Double commissionMontant;
-    private String commissionType;
-
     private LocalDateTime dateCreation;
     private LocalDateTime dateModification;
+    private String description;
+    private String status;
+    private String reference;
+    private Long compteSourceId;
+    private Long compteDestinationId;
+    private Long journalId;
+    private String journalReference;
+    private Double commissionMontant;
+    private String commissionType;
+    private ClientBasicDTO client;
+    private CollecteurBasicDTO collecteur;
 }
