@@ -15,6 +15,7 @@ import org.example.collectfocep.repositories.*;
 import org.example.collectfocep.exceptions.MontantMaxRetraitException;
 import org.example.collectfocep.services.interfaces.CompteService;
 import org.example.collectfocep.services.interfaces.JournalService;
+import org.example.collectfocep.services.interfaces.MouvementService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -34,7 +35,7 @@ import java.util.stream.Collectors;
 
 @Service
 @Slf4j
-public class MouvementServiceImpl {
+public class MouvementServiceImpl implements MouvementService {
     private final CompteRepository compteRepository;
     private final CompteClientRepository compteClientRepository;
     private final CompteCollecteurRepository compteCollecteurRepository;
@@ -871,7 +872,7 @@ public class MouvementServiceImpl {
 
         // Pour d'autres types d'opérations, aucune commission
         log.debug("Pas de commission pour opération de type: {}", mouvement.getSens());
-        return 0.0; 
+        return 0.0;
     }
 
     private Mouvement creerMouvementRetrait(

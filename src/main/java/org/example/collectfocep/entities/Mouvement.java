@@ -100,19 +100,19 @@ public class Mouvement {
         return this.client;
     }
 
-    // ✅ MÉTHODES UTILITAIRES POUR SYNCHRONISER LES DATES
     @PrePersist
     @PreUpdate
-    public void synchroniserDates() {
-        if (this.dateMouvement == null && this.dateOperation != null) {
-            this.dateMouvement = this.dateOperation;
-        }
+    private void synchronizeDates() {
+        // Si dateOperation est null, utiliser dateMouvement
         if (this.dateOperation == null && this.dateMouvement != null) {
             this.dateOperation = this.dateMouvement;
         }
+        // Si dateOperation existe, elle prévaut (ne pas écraser)
+        if (this.dateOperation == null) {
+            this.dateOperation = LocalDateTime.now();
+        }
     }
 
-    // ✅ MÉTHODE UTILITAIRE POUR DÉTERMINER LE TYPE BASÉ SUR LE SENS
     public String getTypeMouvementCalcule() {
         if (this.typeMouvement != null) {
             return this.typeMouvement;

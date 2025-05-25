@@ -168,7 +168,14 @@ public class CompteTransferService {
      */
     public double getPendingCommissions(Long compteId, Long collecteurId) {
         LocalDateTime dateLimit = LocalDateTime.now().minusDays(30);
-        return mouvementRepository.calculatePendingCommissions(compteId, collecteurId, dateLimit);
+
+        try {
+            return mouvementRepository.calculatePendingCommissions(compteId, collecteurId, dateLimit);
+        } catch (Exception e) {
+            log.error("Erreur lors du calcul des commissions en attente pour compte {} et collecteur {}: {}",
+                    compteId, collecteurId, e.getMessage());
+            return 0.0; // Valeur par défaut en cas d'erreur
+        }
     }
     /**
      * Récupère les détails d'un transfert spécifique à partir de l'historique des transferts.

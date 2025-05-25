@@ -3,40 +3,35 @@ package org.example.collectfocep.exceptions;
 
 
 public class BusinessException extends RuntimeException {
-
-    private final String errorCode;
+    private final String code; // ✅ Renommé
     private final String details;
 
-    // ✅ CONSTRUCTEUR AVEC 3 PARAMÈTRES (celui que vous utilisez)
-    public BusinessException(String message, String errorCode, String details) {
+    public BusinessException(String message, String code, String details) {
         super(message);
-        this.errorCode = errorCode;
+        this.code = code; // ✅ Cohérent
         this.details = details;
     }
 
-    // ✅ CONSTRUCTEUR AVEC 1 PARAMÈTRE (pour compatibilité)
     public BusinessException(String message) {
         super(message);
-        this.errorCode = "BUSINESS_ERROR";
+        this.code = "BUSINESS_ERROR";
         this.details = null;
     }
 
-    // ✅ CONSTRUCTEUR AVEC MESSAGE ET CAUSE
     public BusinessException(String message, Throwable cause) {
         super(message, cause);
-        this.errorCode = "BUSINESS_ERROR";
+        this.code = "BUSINESS_ERROR";
         this.details = null;
     }
 
-    // ✅ CONSTRUCTEUR COMPLET
-    public BusinessException(String message, String errorCode, String details, Throwable cause) {
+    public BusinessException(String message, String code, String details, Throwable cause) {
         super(message, cause);
-        this.errorCode = errorCode;
+        this.code = code;
         this.details = details;
     }
 
-    public String getErrorCode() {
-        return errorCode;
+    public String getCode() { // ✅ Nom cohérent avec l'usage
+        return code;
     }
 
     public String getDetails() {

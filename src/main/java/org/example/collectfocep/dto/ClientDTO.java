@@ -4,6 +4,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
+import java.time.LocalDateTime;
+
 @Data
 public class ClientDTO {
     private Long id;
@@ -28,4 +30,7 @@ public class ClientDTO {
 
     @NotNull(message = "L'ID de l'agence est obligatoire")
     private Long agenceId;
+    private String numeroCompte;
+    private LocalDateTime dateCreation;
+    private LocalDateTime dateModification;
 }
