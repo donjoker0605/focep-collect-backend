@@ -41,12 +41,12 @@ public interface MouvementMapperV2 {
     }
 
     /**
-     * Mapper vers MouvementDTO - CORRIGÉ
+     * Mapper vers MouvementDTO - ✅ CORRIGÉ
      */
     @Mapping(source = "client", target = "client", qualifiedByName = "clientToBasicDTO")
     @Mapping(source = "collecteur", target = "collecteur", qualifiedByName = "collecteurToBasicDTO")
     @Mapping(source = "journal.id", target = "journalId")
-    @Mapping(source = "dateOperation", target = "dateHeure")
+    @Mapping(source = "dateOperation", target = "dateOperation")
     @Mapping(source = "libelle", target = "description")
     @Mapping(target = "reference", expression = "java(generateReference(mouvement))")
     @Mapping(target = "status", constant = "COMPLETED")
@@ -56,7 +56,6 @@ public interface MouvementMapperV2 {
     @Mapping(target = "commissionMontant", ignore = true)
     @Mapping(target = "commissionType", ignore = true)
     @Mapping(source = "dateOperation", target = "dateCreation")
-    // ✅ CORRECTION CRITIQUE: Utiliser dateOperation au lieu de dateModification inexistante
     @Mapping(source = "dateOperation", target = "dateModification")
     MouvementDTO toDTO(Mouvement mouvement);
 

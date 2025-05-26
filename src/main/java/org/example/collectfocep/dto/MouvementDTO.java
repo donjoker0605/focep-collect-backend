@@ -16,7 +16,7 @@ public class MouvementDTO {
     private Double montant;
     private String libelle;
     private String sens;
-    private LocalDateTime dateHeure;
+    private LocalDateTime dateOperation;
     private LocalDateTime dateCreation;
     private LocalDateTime dateModification;
     private String description;

@@ -75,6 +75,7 @@ public class Mouvement {
     @JsonIgnoreProperties({"mouvements"})
     private TransfertCompte transfert;
 
+
     public void setJournal(Journal journal) {
         this.journal = journal;
     }

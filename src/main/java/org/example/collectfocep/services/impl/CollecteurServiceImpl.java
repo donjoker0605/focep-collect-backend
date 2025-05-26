@@ -285,17 +285,17 @@ public class CollecteurServiceImpl implements CollecteurService {
             LocalDateTime startOfMonth = LocalDate.now().withDayOfMonth(1).atStartOfDay();
             LocalDateTime now = LocalDateTime.now();
 
-            Double totalEpargne = mouvementRepository.sumEpargneByCollecteurIdAndDateHeureBetween(
+            Double totalEpargne = mouvementRepository.sumEpargneByCollecteurIdAndDateOperationBetween(
                     collecteurId, startOfMonth, now);
 
-            Double totalRetraits = mouvementRepository.sumRetraitByCollecteurIdAndDateHeureBetween(
+            Double totalRetraits = mouvementRepository.sumRetraitByCollecteurIdAndDateOperationBetween(
                     collecteurId, startOfMonth, now);
 
             Double soldeTotal = (totalEpargne != null ? totalEpargne : 0.0) -
                     (totalRetraits != null ? totalRetraits : 0.0);
 
             // Récupérer les 5 dernières transactions
-            PageRequest lastTransactions = PageRequest.of(0, 5, Sort.by("dateHeure").descending());
+            PageRequest lastTransactions = PageRequest.of(0, 5, Sort.by("dateOperation").descending());
             Page<Mouvement> recentMovements = mouvementRepository
                     .findByCollecteurId(collecteurId, lastTransactions);
 

@@ -42,7 +42,7 @@ public class MouvementMapper {
         dto.setMontant(mouvement.getMontant());
         dto.setLibelle(mouvement.getLibelle());
         dto.setSens(mouvement.getSens());
-        dto.setDateHeure(mouvement.getDateOperation());
+        dto.setDateOperation(mouvement.getDateOperation());
         dto.setDateCreation(mouvement.getDateOperation());
         dto.setDateModification(mouvement.getDateOperation()); // Fallback
         dto.setDescription(mouvement.getLibelle());

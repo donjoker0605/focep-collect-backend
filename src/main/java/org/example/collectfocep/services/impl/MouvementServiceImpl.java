@@ -968,7 +968,7 @@ public class MouvementServiceImpl implements MouvementService {
             LocalDateTime startOfDay = localDate.atStartOfDay();
             LocalDateTime endOfDay = localDate.atTime(LocalTime.MAX);
 
-            return mouvementRepository.findByCollecteurIdAndDateHeureBetween(
+            return mouvementRepository.findByCollecteurIdAndDateOperationBetween(
                     collecteurId, startOfDay, endOfDay, pageable);
         } catch (Exception e) {
             log.error("Erreur lors de la recherche des mouvements", e);

@@ -24,12 +24,14 @@ public interface CollecteurMapper {
     @Mapping(target = "dateModificationMontantMax", ignore = true)
     @Mapping(target = "modifiePar", ignore = true)
     @Mapping(target = "rapport", ignore = true)
+    @Mapping(target = "rapportId", ignore = true) // ✅ AJOUT
     @Mapping(target = "clients", ignore = true)
     @Mapping(target = "comptes", ignore = true)
     Collecteur toEntity(CollecteurCreateDTO dto);
 
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "agence", ignore = true)
+    @Mapping(target = "agenceId", ignore = true) // ✅ AJOUT
     @Mapping(target = "role", ignore = true)
     @Mapping(target = "password", ignore = true)
     @Mapping(target = "numeroCni", ignore = true)
@@ -39,6 +41,7 @@ public interface CollecteurMapper {
     @Mapping(target = "dateModificationMontantMax", ignore = true)
     @Mapping(target = "modifiePar", ignore = true)
     @Mapping(target = "rapport", ignore = true)
+    @Mapping(target = "rapportId", ignore = true)
     @Mapping(target = "clients", ignore = true)
     @Mapping(target = "comptes", ignore = true)
     void updateEntityFromDTO(CollecteurUpdateDTO dto, @MappingTarget Collecteur collecteur);

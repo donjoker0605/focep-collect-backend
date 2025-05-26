@@ -59,22 +59,7 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
     @Query("SELECT m FROM Mouvement m WHERE m.collecteur.id = :collecteurId")
     Page<Mouvement> findByCollecteurId(@Param("collecteurId") Long collecteurId, Pageable pageable);
 
-    @Query("SELECT m FROM Mouvement m WHERE m.collecteur.id = :collecteurId " +
-            "AND m.dateOperation BETWEEN :startDate AND :endDate")
-    List<Mouvement> findByCollecteurIdAndDateOperationBetween(
-            @Param("collecteurId") Long collecteurId,
-            @Param("startDate") LocalDateTime startDate,
-            @Param("endDate") LocalDateTime endDate
-    );
 
-    @Query("SELECT m FROM Mouvement m WHERE m.collecteur.id = :collecteurId " +
-            "AND m.dateOperation BETWEEN :startDate AND :endDate")
-    Page<Mouvement> findByCollecteurIdAndDateOperationBetween(
-            @Param("collecteurId") Long collecteurId,
-            @Param("startDate") LocalDateTime startDate,
-            @Param("endDate") LocalDateTime endDate,
-            Pageable pageable
-    );
 
     // =====================================
     // REQUÊTES DE COMPTAGE ET SOMMES PAR COLLECTEUR
@@ -275,35 +260,20 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
     );
 
     // =====================================
-    // MÉTHODES BRIDGE TEMPORAIRES - DÉPRÉCIÉ
-    // =====================================
+// REQUÊTES PAR COLLECTEUR ET DATE - VERSION CORRIGÉE
+// =====================================
 
-    @Deprecated
-    @Query("SELECT COALESCE(SUM(m.montant), 0) FROM Mouvement m " +
-            "WHERE m.collecteur.id = :collecteurId " +
-            "AND (m.typeMouvement = 'RETRAIT' OR m.sens = 'retrait') " +
-            "AND COALESCE(m.dateOperation, m.dateMouvement) BETWEEN :startDate AND :endDate")
-    Double sumRetraitByCollecteurIdAndDateHeureBetween(
-            @Param("collecteurId") Long collecteurId,
-            @Param("startDate") LocalDateTime startDate,
-            @Param("endDate") LocalDateTime endDate
-    );
-
-    @Deprecated
-    @Query("SELECT COALESCE(SUM(m.montant), 0) FROM Mouvement m " +
-            "WHERE m.collecteur.id = :collecteurId " +
-            "AND (m.typeMouvement = 'EPARGNE' OR m.sens = 'epargne') " +
-            "AND COALESCE(m.dateOperation, m.dateMouvement) BETWEEN :startDate AND :endDate")
-    Double sumEpargneByCollecteurIdAndDateHeureBetween(
-            @Param("collecteurId") Long collecteurId,
-            @Param("startDate") LocalDateTime startDate,
-            @Param("endDate") LocalDateTime endDate
-    );
-
-    @Deprecated
     @Query("SELECT m FROM Mouvement m WHERE m.collecteur.id = :collecteurId " +
-            "AND COALESCE(m.dateOperation, m.dateMouvement) BETWEEN :startDate AND :endDate")
-    Page<Mouvement> findByCollecteurIdAndDateHeureBetween(
+            "AND m.dateOperation BETWEEN :startDate AND :endDate")
+    List<Mouvement> findByCollecteurIdAndDateOperationBetween(
+            @Param("collecteurId") Long collecteurId,
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate
+    );
+
+    @Query("SELECT m FROM Mouvement m WHERE m.collecteur.id = :collecteurId " +
+            "AND m.dateOperation BETWEEN :startDate AND :endDate")
+    Page<Mouvement> findByCollecteurIdAndDateOperationBetween(
             @Param("collecteurId") Long collecteurId,
             @Param("startDate") LocalDateTime startDate,
             @Param("endDate") LocalDateTime endDate,

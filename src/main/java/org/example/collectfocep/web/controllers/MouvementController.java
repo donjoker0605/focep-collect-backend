@@ -172,7 +172,7 @@ public class MouvementController {
             @RequestParam String date,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
-            @RequestParam(defaultValue = "dateHeure,desc") String sort) {
+            @RequestParam(defaultValue = "dateOperation,desc") String sort) {
 
         log.info("Récupération des transactions du journal pour collecteur: {} à la date: {}", collecteurId, date);
 

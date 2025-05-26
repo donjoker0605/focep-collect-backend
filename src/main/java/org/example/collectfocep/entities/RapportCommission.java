@@ -33,4 +33,8 @@ public class RapportCommission {
     private double partEMF;
     private double tvaSurPartEMF;
     private boolean estValide;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "rapport_mensuel_id")
+    private RapportMensuel rapportMensuel;
 }
