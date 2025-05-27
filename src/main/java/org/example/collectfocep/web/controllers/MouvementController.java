@@ -177,8 +177,25 @@ public class MouvementController {
         log.info("Récupération des transactions du journal pour collecteur: {} à la date: {}", collecteurId, date);
 
         try {
+            // ✅ FIX CRITIQUE : Forcer le nom de champ correct
+            String[] sortParts = sort.split(",");
+            String sortField = sortParts[0];
+            String sortDirection = sortParts.length > 1 ? sortParts[1] : "desc";
+
+            // ✅ SÉCURITÉ : Remplacer dateHeure par dateOperation si présent
+            if ("dateHeure".equals(sortField)) {
+                sortField = "dateOperation";
+                log.warn("Paramètre de tri 'dateHeure' détecté et remplacé par 'dateOperation'");
+            }
+
+            // ✅ VALIDATION : S'assurer que le champ existe
+            if (!"dateOperation".equals(sortField) && !"montant".equals(sortField) && !"id".equals(sortField)) {
+                log.warn("Champ de tri non reconnu: {}. Utilisation de 'dateOperation' par défaut", sortField);
+                sortField = "dateOperation";
+            }
+
             PageRequest pageRequest = PageRequest.of(page, size,
-                    Sort.by(Sort.Direction.fromString(sort.split(",")[1]), sort.split(",")[0]));
+                    Sort.by(Sort.Direction.fromString(sortDirection), sortField));
 
             Page<Mouvement> mouvements = mouvementServiceImpl.findByCollecteurAndDate(collecteurId, date, pageRequest);
             Page<MouvementDTO> dtoPage = mouvements.map(mouvementMapper::toDTO);

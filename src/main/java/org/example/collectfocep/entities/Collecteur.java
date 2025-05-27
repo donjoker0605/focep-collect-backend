@@ -3,7 +3,7 @@ package org.example.collectfocep.entities;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
-import lombok.experimental.SuperBuilder; // ✅ IMPORT NÉCESSAIRE pour SuperBuilder
+import lombok.experimental.SuperBuilder;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -63,11 +63,7 @@ public class Collecteur extends Utilisateur {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "rapport_id", insertable = false, updatable = false)
     @JsonIgnoreProperties({"collecteurs"})
-    private RapportMensuel rapport; // ✅ Cette classe doit exister
-
-    @Version
-    @Builder.Default
-    private Long version = 0L;
+    private RapportMensuel rapport;
 
     // Méthodes utilitaires (gardez vos méthodes existantes)
     public void addClient(Client client) {

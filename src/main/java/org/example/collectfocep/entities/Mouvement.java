@@ -30,23 +30,20 @@ public class Mouvement {
     @Column(nullable = false)
     private String sens; // "debit" ou "credit"
 
+    // ✅ UNE SEULE DATE : dateOperation
     @Column(name = "date_operation", nullable = false)
     private LocalDateTime dateOperation;
 
-    // ✅ AJOUT DES CHAMPS MANQUANTS
+    // ✅ TYPE DE MOUVEMENT
     @Column(name = "type_mouvement")
     private String typeMouvement; // "EPARGNE" ou "RETRAIT"
 
-    @Column(name = "date_mouvement")
-    private LocalDateTime dateMouvement;
-
-    // ✅ RELATION AVEC CLIENT
+    // ✅ RELATIONS
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "client_id")
     @JsonIgnoreProperties({"mouvements", "collecteur", "agence"})
     private Client client;
 
-    // ✅ RELATION AVEC COLLECTEUR
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "collecteur_id")
     @JsonIgnoreProperties({"mouvements", "clients", "agence"})
@@ -75,11 +72,7 @@ public class Mouvement {
     @JsonIgnoreProperties({"mouvements"})
     private TransfertCompte transfert;
 
-
-    public void setJournal(Journal journal) {
-        this.journal = journal;
-    }
-
+    // ✅ MÉTHODES UTILITAIRES
     public String getCompteSourceNumero() {
         return compteSource != null ? compteSource.getNumeroCompte() : null;
     }
@@ -88,13 +81,8 @@ public class Mouvement {
         return compteDestination != null ? compteDestination.getNumeroCompte() : null;
     }
 
-    // ✅ GETTERS CORRIGÉS - maintenant les champs existent
     public String getTypeMouvement() {
         return this.typeMouvement;
-    }
-
-    public LocalDateTime getDateMouvement() {
-        return this.dateMouvement;
     }
 
     public Client getClient() {
@@ -103,12 +91,7 @@ public class Mouvement {
 
     @PrePersist
     @PreUpdate
-    private void synchronizeDates() {
-        // Si dateOperation est null, utiliser dateMouvement
-        if (this.dateOperation == null && this.dateMouvement != null) {
-            this.dateOperation = this.dateMouvement;
-        }
-        // Si dateOperation existe, elle prévaut (ne pas écraser)
+    private void setDefaultValues() {
         if (this.dateOperation == null) {
             this.dateOperation = LocalDateTime.now();
         }
