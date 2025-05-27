@@ -278,108 +278,145 @@ public class CollecteurServiceImpl implements CollecteurService {
             Collecteur collecteur = getCollecteurById(collecteurId)
                     .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
 
-            // CORRECTION: Gestion des valeurs null avec vérifications plus strictes
             // Compter les clients
-            Long totalClientsCount = null;
-            try {
-                totalClientsCount = clientRepository.countByCollecteurId(collecteurId);
-            } catch (Exception e) {
-                log.warn("Erreur lors du comptage des clients pour collecteur {}: {}", collecteurId, e.getMessage());
-                totalClientsCount = 0L;
-            }
+            Long totalClientsCount = clientRepository.countByCollecteurId(collecteurId);
             Integer totalClients = totalClientsCount != null ? totalClientsCount.intValue() : 0;
 
             // Calculer les totaux des mouvements pour le mois courant
             LocalDateTime startOfMonth = LocalDate.now().withDayOfMonth(1).atStartOfDay();
             LocalDateTime now = LocalDateTime.now();
 
-            Double totalEpargne = null;
-            Double totalRetraits = null;
+            Double totalEpargne = mouvementRepository.sumEpargneByCollecteurIdAndDateOperationBetween(
+                    collecteurId, startOfMonth, now);
+
+            Double totalRetraits = mouvementRepository.sumRetraitByCollecteurIdAndDateOperationBetween(
+                    collecteurId, startOfMonth, now);
+
+            Double soldeTotal = (totalEpargne != null ? totalEpargne : 0.0) -
+                    (totalRetraits != null ? totalRetraits : 0.0);
+
+            // ✅ CORRECTION: Utiliser le bon type DTO
+            List<CollecteurDashboardDTO.MouvementDTO> transactionsRecentes = List.of();
 
             try {
-                totalEpargne = mouvementRepository.sumEpargneByCollecteurIdAndDateOperationBetween(
-                        collecteurId, startOfMonth, now);
-            } catch (Exception e) {
-                log.warn("Erreur lors du calcul total épargne pour collecteur {}: {}", collecteurId, e.getMessage());
-                totalEpargne = 0.0;
-            }
-
-            try {
-                totalRetraits = mouvementRepository.sumRetraitByCollecteurIdAndDateOperationBetween(
-                        collecteurId, startOfMonth, now);
-            } catch (Exception e) {
-                log.warn("Erreur lors du calcul total retraits pour collecteur {}: {}", collecteurId, e.getMessage());
-                totalRetraits = 0.0;
-            }
-
-            // CORRECTION: Utiliser des valeurs par défaut sûres
-            double epargneAmount = totalEpargne != null ? totalEpargne : 0.0;
-            double retraitsAmount = totalRetraits != null ? totalRetraits : 0.0;
-            Double soldeTotal = epargneAmount - retraitsAmount;
-
-            // Récupérer les 5 dernières transactions avec gestion d'erreur
-            List<MouvementDTO> transactionsRecentes = new ArrayList<>();
-            try {
+                // Récupérer les 5 dernières transactions
                 PageRequest lastTransactions = PageRequest.of(0, 5, Sort.by("dateOperation").descending());
                 Page<Mouvement> recentMovements = mouvementRepository
                         .findByCollecteurId(collecteurId, lastTransactions);
 
+                // ✅ MAPPER CORRECTEMENT VERS LE BON TYPE
                 transactionsRecentes = recentMovements.getContent()
                         .stream()
-                        .map(mouvementMapper::toDTO)
+                        .map(this::mapToCollecteurDashboardMouvementDTO) // ✅ Nouvelle méthode de mapping
                         .collect(Collectors.toList());
             } catch (Exception e) {
-                log.warn("Erreur lors de la récupération des transactions récentes pour collecteur {}: {}",
-                        collecteurId, e.getMessage());
-                transactionsRecentes = new ArrayList<>();
+                log.warn("Erreur lors de la récupération des transactions récentes: {}", e.getMessage());
+                transactionsRecentes = List.of(); // Fallback à une liste vide
             }
 
-            // Récupérer le journal actuel (si existe) avec gestion d'erreur
-            JournalDTO journalActuel = null;
+            // Récupérer le journal actuel (si existe)
+            CollecteurDashboardDTO.JournalDTO journalActuel = null;
             try {
                 Journal journal = journalService.getJournalActif(collecteurId);
                 if (journal != null) {
-                    journalActuel = journalMapper.toDTO(journal);
+                    journalActuel = mapToCollecteurDashboardJournalDTO(journal, soldeTotal);
                 }
             } catch (Exception e) {
-                log.warn("Aucun journal actif trouvé pour le collecteur {}: {}", collecteurId, e.getMessage());
-                // journalActuel reste null, ce qui est acceptable
+                log.warn("Aucun journal actif trouvé pour le collecteur: {}", collecteurId);
             }
 
-            CollecteurDashboardDTO dashboard = CollecteurDashboardDTO.builder()
-                    .collecteurId(collecteurId)
-                    .totalClients(totalClients)
-                    .totalEpargne(epargneAmount)
-                    .totalRetraits(retraitsAmount)
-                    .soldeTotal(soldeTotal)
-                    .transactionsRecentes(transactionsRecentes != null ? transactionsRecentes : new ArrayList<>())
-                    .journalActuel(journalActuel) // Peut être null
-                    .lastUpdate(LocalDateTime.now())
-                    .build();
-
-            log.info("Dashboard calculé avec succès pour collecteur {}: {} clients, {} FCFA épargne, {} FCFA retraits",
-                    collecteurId, totalClients, epargneAmount, retraitsAmount);
-
-            return dashboard;
-
-        } catch (ResourceNotFoundException e) {
-            // Propager l'exception si le collecteur n'existe pas
-            log.error("Collecteur non trouvé: {}", collecteurId);
-            throw e;
-        } catch (Exception e) {
-            log.error("Erreur lors du calcul des statistiques dashboard pour collecteur {}", collecteurId, e);
-
-            // CORRECTION: Retourner un dashboard minimal en cas d'erreur au lieu de planter
             return CollecteurDashboardDTO.builder()
                     .collecteurId(collecteurId)
-                    .totalClients(0)
-                    .totalEpargne(0.0)
-                    .totalRetraits(0.0)
-                    .soldeTotal(0.0)
-                    .transactionsRecentes(new ArrayList<>())
-                    .journalActuel(null)
+                    .collecteurNom(collecteur.getNom())
+                    .collecteurPrenom(collecteur.getPrenom())
+                    .totalClients(totalClients)
+                    .totalEpargne(totalEpargne != null ? totalEpargne : 0.0)
+                    .totalRetraits(totalRetraits != null ? totalRetraits : 0.0)
+                    .soldeTotal(soldeTotal)
+                    .transactionsRecentes(transactionsRecentes) // ✅ Type correct maintenant
+                    .journalActuel(journalActuel)
                     .lastUpdate(LocalDateTime.now())
+
+                    // ✅ Valeurs par défaut pour éviter les erreurs
+                    .transactionsAujourdhui(0L)
+                    .montantEpargneAujourdhui(0.0)
+                    .montantRetraitAujourdhui(0.0)
+                    .nouveauxClientsAujourdhui(0L)
+                    .montantEpargneSemaine(0.0)
+                    .montantRetraitSemaine(0.0)
+                    .transactionsSemaine(0L)
+                    .montantEpargneMois(totalEpargne != null ? totalEpargne : 0.0)
+                    .montantRetraitMois(totalRetraits != null ? totalRetraits : 0.0)
+                    .transactionsMois(0L)
+                    .objectifMensuel(collecteur.getMontantMaxRetrait())
+                    .progressionObjectif(calculerProgressionObjectif(totalEpargne, collecteur.getMontantMaxRetrait()))
+                    .commissionsMois(0.0)
+                    .commissionsAujourdhui(0.0)
+                    .clientsActifs(List.of())
+                    .alertes(List.of())
                     .build();
+
+        } catch (Exception e) {
+            log.error("Erreur lors du calcul des statistiques dashboard", e);
+            throw new BusinessException("Erreur lors du calcul des statistiques: " + e.getMessage());
         }
+    }
+
+    private CollecteurDashboardDTO.MouvementDTO mapToCollecteurDashboardMouvementDTO(Mouvement mouvement) {
+        return CollecteurDashboardDTO.MouvementDTO.builder()
+                .id(mouvement.getId())
+                .type(determinerTypeMouvement(mouvement))
+                .montant(mouvement.getMontant())
+                .date(mouvement.getDateOperation() != null ? mouvement.getDateOperation() : LocalDateTime.now())
+                .clientNom(obtenirNomClient(mouvement))
+                .clientPrenom(obtenirPrenomClient(mouvement))
+                .statut("VALIDE")
+                .build();
+    }
+
+    private CollecteurDashboardDTO.JournalDTO mapToCollecteurDashboardJournalDTO(Journal journal, Double soldeActuel) {
+        return CollecteurDashboardDTO.JournalDTO.builder()
+                .id(journal.getId())
+                .statut(journal.getStatut())
+                .dateDebut(journal.getDateDebut().atStartOfDay())
+                .dateFin(journal.getDateFin().atStartOfDay())
+                .soldeInitial(0.0)
+                .soldeActuel(soldeActuel)
+                .nombreTransactions(0L)
+                .build();
+    }
+
+    private String determinerTypeMouvement(Mouvement mouvement) {
+        if (mouvement.getLibelle() != null) {
+            String libelle = mouvement.getLibelle().toLowerCase();
+            if (libelle.contains("épargne") || libelle.contains("depot")) {
+                return "EPARGNE";
+            } else if (libelle.contains("retrait")) {
+                return "RETRAIT";
+            }
+        }
+        return mouvement.getSens() != null ? mouvement.getSens().toUpperCase() : "INCONNU";
+    }
+
+    private String obtenirNomClient(Mouvement mouvement) {
+        if (mouvement.getClient() != null) {
+            return mouvement.getClient().getNom();
+        }
+        // Logique de fallback si nécessaire
+        return "N/A";
+    }
+
+    private String obtenirPrenomClient(Mouvement mouvement) {
+        if (mouvement.getClient() != null) {
+            return mouvement.getClient().getPrenom();
+        }
+        // Logique de fallback si nécessaire
+        return "N/A";
+    }
+
+    private Double calculerProgressionObjectif(Double montantMois, Double objectif) {
+        if (objectif == null || objectif == 0) return 0.0;
+        if (montantMois == null) return 0.0;
+        return (montantMois / objectif) * 100;
     }
 }

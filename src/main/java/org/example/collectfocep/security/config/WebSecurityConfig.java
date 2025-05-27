@@ -6,6 +6,7 @@ import org.example.collectfocep.security.filters.UserManagementFilter;
 import org.example.collectfocep.security.service.SecurityService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
@@ -68,6 +69,26 @@ public class WebSecurityConfig {
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
+    }
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        return http
+                .authorizeHttpRequests(auth -> auth
+                        // Routes publiques
+                        .requestMatchers("/api/auth/**", "/api/public/**").permitAll()
+
+                        // 🎯 DASHBOARD COLLECTEUR - ACCÈS SIMPLE
+                        .requestMatchers(HttpMethod.GET, "/api/collecteurs/*/dashboard")
+                        .hasRole("COLLECTEUR")
+
+                        // Autres routes
+                        .requestMatchers("/api/collecteurs/**").hasAnyRole("ADMIN", "SUPER_ADMIN", "COLLECTEUR")
+                        .anyRequest().authenticated()
+                )
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .build();
     }
 
     @Bean

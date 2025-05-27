@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.entities.*;
 import org.example.collectfocep.repositories.*;
 import org.example.collectfocep.security.config.RoleConfig;
+import org.example.collectfocep.security.filters.JwtAuthenticationFilter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.CacheConfig;
 import org.springframework.cache.annotation.CacheEvict;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Service;
 import jakarta.validation.Valid;
 
 import java.util.Collection;
+import java.util.Map;
 import java.util.Optional;
 
 @Valid
@@ -220,47 +222,150 @@ public class SecurityService {
     }
 
     /**
-     * ✅ MÉTHODE MODIFIÉE: Vérifie si l'utilisateur peut accéder à un collecteur spécifique
      * Mise en cache pour optimiser les performances
      * Permet maintenant au collecteur d'accéder à ses propres données
      */
     @Cacheable(key = "{'collecteur-access', #authentication.name, #collecteurId}")
     public boolean canManageCollecteur(Authentication authentication, Long collecteurId) {
-        if (authentication == null) return false;
+        try {
+            log.info("🔐 Vérification accès collecteur {} pour auth: {}", collecteurId, authentication != null ? authentication.getName() : "null");
 
-        // Vérifier les rôles
-        if (hasRole(authentication.getAuthorities(), RoleConfig.SUPER_ADMIN)) {
-            log.debug("Accès collecteur autorisé pour Super Admin: {}", authentication.getName());
-            return true;
+            if (authentication == null || !authentication.isAuthenticated()) {
+                log.warn("❌ Authentication null ou non authentifié");
+                return false;
+            }
+
+            // ✅ EXTRACTION CORRECTE DU USER ID ET DU RÔLE
+            Long tokenUserId = extractUserIdFromAuthentication(authentication);
+            String role = getRoleFromAuthentication(authentication);
+
+            log.info("🎯 Auth Details: tokenUserId={}, collecteurId={}, role={}",
+                    tokenUserId, collecteurId, role);
+
+            // Super Admin peut tout gérer
+            if ("ROLE_SUPER_ADMIN".equals(role)) {
+                log.info("✅ Accès autorisé pour Super Admin");
+                return true;
+            }
+
+            // Admin peut gérer les collecteurs de son agence
+            if ("ROLE_ADMIN".equals(role)) {
+                boolean canManage = verifyAdminCanManageCollecteur(authentication.getName(), collecteurId);
+                log.info("🎯 Admin {} peut gérer collecteur {}: {}", authentication.getName(), collecteurId, canManage);
+                return canManage;
+            }
+
+            // ✅ CORRECTION CRITIQUE: Collecteur peut gérer ses propres données
+            if ("ROLE_COLLECTEUR".equals(role)) {
+                if (tokenUserId != null) {
+                    boolean canAccess = collecteurId.equals(tokenUserId);
+                    log.info("🎯 Collecteur {} peut accéder à collecteur {}: {}",
+                            tokenUserId, collecteurId, canAccess);
+                    return canAccess;
+                } else {
+                    // ✅ FALLBACK: Rechercher par email si userId pas disponible
+                    log.warn("⚠️ TokenUserId null, fallback par email pour: {}", authentication.getName());
+                    return isOwnerCollecteur(authentication, collecteurId);
+                }
+            }
+
+            log.warn("❌ Rôle non reconnu ou accès refusé: {}", role);
+            return false;
+
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la vérification des droits: {}", e.getMessage(), e);
+            return false;
         }
-
-        String userEmail = authentication.getName();
-
-        if (hasRole(authentication.getAuthorities(), RoleConfig.ADMIN)) {
-            return adminRepository.findByAdresseMail(userEmail)
-                    .map(admin -> {
-                        // Charger le collecteur
-                        Optional<Collecteur> collecteurOpt = collecteurRepository.findById(collecteurId);
-                        if (collecteurOpt.isEmpty()) return false;
-
-                        // Vérifier que le collecteur appartient à l'agence de l'admin
-                        return collecteurOpt.get().getAgence().getId().equals(admin.getAgence().getId());
-                    })
-                    .orElse(false);
-        }
-
-        // ✅ CORRECTION CRITIQUE: Permettre au collecteur de gérer ses propres données
-        if (hasRole(authentication.getAuthorities(), RoleConfig.COLLECTEUR)) {
-            boolean isOwner = isOwnerCollecteur(authentication, collecteurId);
-            log.debug("Collecteur {} peut gérer collecteur {}: {}", userEmail, collecteurId, isOwner);
-            return isOwner;
-        }
-
-        return false;
     }
 
+    private Long extractUserIdFromAuthentication(Authentication auth) {
+        try {
+            // Méthode 1: Depuis le Principal personnalisé
+            if (auth.getPrincipal() instanceof JwtAuthenticationFilter.JwtUserPrincipal) {
+                JwtAuthenticationFilter.JwtUserPrincipal principal =
+                        (JwtAuthenticationFilter.JwtUserPrincipal) auth.getPrincipal();
+                Long userId = principal.getUserId();
+                log.debug("✅ UserId extrait du Principal: {}", userId);
+                return userId;
+            }
+
+            // Méthode 2: Depuis les détails de l'Authentication
+            if (auth.getDetails() instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> details = (Map<String, Object>) auth.getDetails();
+                Object userId = details.get("userId");
+                if (userId instanceof Number) {
+                    Long extractedId = ((Number) userId).longValue();
+                    log.debug("✅ UserId extrait des détails: {}", extractedId);
+                    return extractedId;
+                }
+            }
+
+            // Méthode 3: Fallback - rechercher dans la DB par email
+            String email = auth.getName();
+            log.debug("⚠️ Fallback: recherche collecteur par email: {}", email);
+            Optional<Collecteur> collecteur = collecteurRepository.findByAdresseMail(email);
+            if (collecteur.isPresent()) {
+                Long fallbackId = collecteur.get().getId();
+                log.debug("✅ UserId trouvé via fallback: {}", fallbackId);
+                return fallbackId;
+            }
+
+            log.warn("❌ Impossible d'extraire userId pour: {}", email);
+            return null;
+
+        } catch (Exception e) {
+            log.error("❌ Erreur extraction userId: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private String getRoleFromAuthentication(Authentication auth) {
+        try {
+            if (auth.getAuthorities() != null && !auth.getAuthorities().isEmpty()) {
+                String role = auth.getAuthorities().iterator().next().getAuthority();
+                log.debug("✅ Rôle extrait: {}", role);
+                return role;
+            }
+            log.warn("❌ Aucun rôle trouvé dans l'authentication");
+            return null;
+        } catch (Exception e) {
+            log.error("❌ Erreur extraction rôle: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private boolean verifyAdminCanManageCollecteur(String adminEmail, Long collecteurId) {
+        try {
+            Optional<Admin> adminOpt = adminRepository.findByAdresseMail(adminEmail);
+            if (adminOpt.isEmpty()) {
+                log.debug("❌ Admin non trouvé: {}", adminEmail);
+                return false;
+            }
+
+            Optional<Collecteur> collecteurOpt = collecteurRepository.findById(collecteurId);
+            if (collecteurOpt.isEmpty()) {
+                log.debug("❌ Collecteur non trouvé: {}", collecteurId);
+                return false;
+            }
+
+            // Vérifier que le collecteur appartient à l'agence de l'admin
+            Long adminAgenceId = adminOpt.get().getAgence().getId();
+            Long collecteurAgenceId = collecteurOpt.get().getAgence().getId();
+            boolean canManage = adminAgenceId.equals(collecteurAgenceId);
+
+            log.debug("🎯 Admin agence: {}, Collecteur agence: {}, Peut gérer: {}",
+                    adminAgenceId, collecteurAgenceId, canManage);
+
+            return canManage;
+
+        } catch (Exception e) {
+            log.error("❌ Erreur vérification admin-collecteur: {}", e.getMessage());
+            return false;
+        }
+    }
     /**
-     * ✅ MÉTHODE EXISTANTE CONSERVÉE: Vérifie si l'utilisateur peut accéder à un client spécifique
+     * MÉTHODE EXISTANTE CONSERVÉE: Vérifie si l'utilisateur peut accéder à un client spécifique
      */
     @Cacheable(key = "{'client-access', #authentication.name, #clientId}")
     public boolean canManageClient(Authentication authentication, Long clientId) {
