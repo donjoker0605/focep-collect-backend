@@ -25,7 +25,10 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
     List<Mouvement> findByJournal(Journal journal);
     Page<Mouvement> findByJournal(Journal journal, Pageable pageable);
 
-    @Query("SELECT m FROM Mouvement m WHERE m.journal.id = :journalId")
+    /**
+     * Trouve les mouvements par journal
+     */
+    @Query("SELECT m FROM Mouvement m WHERE m.journal.id = :journalId ORDER BY m.dateOperation DESC")
     List<Mouvement> findByJournalId(@Param("journalId") Long journalId);
 
     @Query("SELECT COUNT(m) FROM Mouvement m WHERE m.journal = :journal")
@@ -56,10 +59,19 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
     @Query("SELECT m FROM Mouvement m WHERE m.collecteur.id = :collecteurId")
     List<Mouvement> findByCollecteurId(@Param("collecteurId") Long collecteurId);
 
-    @Query("SELECT m FROM Mouvement m WHERE m.collecteur.id = :collecteurId")
+    /**
+     * Trouve les mouvements récents d'un collecteur
+     */
+    @Query("""
+        SELECT m FROM Mouvement m
+        LEFT JOIN m.compteDestination cd
+        LEFT JOIN m.compteSource cs
+        LEFT JOIN CompteClient ccd ON cd.id = ccd.id
+        LEFT JOIN CompteClient ccs ON cs.id = ccs.id
+        WHERE (ccd.client.collecteur.id = :collecteurId OR ccs.client.collecteur.id = :collecteurId)
+        ORDER BY m.dateOperation DESC
+        """)
     Page<Mouvement> findByCollecteurId(@Param("collecteurId") Long collecteurId, Pageable pageable);
-
-
 
     // =====================================
     // REQUÊTES DE COMPTAGE ET SOMMES PAR COLLECTEUR
@@ -73,12 +85,22 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
             @Param("endDate") LocalDateTime endDate
     );
 
-    @Query("SELECT COALESCE(SUM(m.montant), 0.0) FROM Mouvement m " +
-            "WHERE m.collecteur.id = :collecteurId AND m.typeMouvement = :type")
+    /**
+     * Calcule la somme des montants par collecteur et type de mouvement
+     */
+    @Query("""
+        SELECT COALESCE(SUM(m.montant), 0.0)
+        FROM Mouvement m
+        LEFT JOIN m.compteDestination cd
+        LEFT JOIN m.compteSource cs
+        LEFT JOIN CompteClient ccd ON cd.id = ccd.id
+        LEFT JOIN CompteClient ccs ON cs.id = ccs.id
+        WHERE (ccd.client.collecteur.id = :collecteurId OR ccs.client.collecteur.id = :collecteurId)
+        AND m.sens = :type
+        """)
     Double sumMontantByCollecteurAndType(
             @Param("collecteurId") Long collecteurId,
-            @Param("type") String type
-    );
+            @Param("type") String type);
 
     @Query("SELECT COALESCE(SUM(m.montant), 0.0) FROM Mouvement m " +
             "WHERE m.collecteur.id = :collecteurId AND m.sens = :sens")
@@ -91,70 +113,142 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
     // REQUÊTES SPÉCIALISÉES PAR TYPE DE MOUVEMENT
     // =====================================
 
-    @Query("SELECT COALESCE(SUM(m.montant), 0) FROM Mouvement m " +
-            "WHERE m.collecteur.id = :collecteurId " +
-            "AND (m.typeMouvement = 'EPARGNE' OR m.sens = 'epargne') " +
-            "AND m.dateOperation BETWEEN :startDate AND :endDate")
+    /**
+     * Calcule la somme des épargnes pour un collecteur sur une période
+     */
+    @Query("""
+        SELECT COALESCE(SUM(m.montant), 0.0)
+        FROM Mouvement m
+        JOIN m.compteDestination cd
+        JOIN CompteClient cc ON cd.id = cc.id
+        JOIN cc.client c
+        WHERE c.collecteur.id = :collecteurId
+        AND m.sens = 'epargne'
+        AND m.dateOperation BETWEEN :startDate AND :endDate
+        """)
     Double sumEpargneByCollecteurIdAndDateOperationBetween(
             @Param("collecteurId") Long collecteurId,
             @Param("startDate") LocalDateTime startDate,
-            @Param("endDate") LocalDateTime endDate
-    );
+            @Param("endDate") LocalDateTime endDate);
 
-    @Query("SELECT COALESCE(SUM(m.montant), 0) FROM Mouvement m " +
-            "WHERE m.collecteur.id = :collecteurId " +
-            "AND (m.typeMouvement = 'RETRAIT' OR m.sens = 'retrait') " +
-            "AND m.dateOperation BETWEEN :startDate AND :endDate")
+    /**
+     * Calcule la somme des retraits pour un collecteur sur une période
+     */
+    @Query("""
+        SELECT COALESCE(SUM(m.montant), 0.0)
+        FROM Mouvement m
+        JOIN m.compteSource cs
+        JOIN CompteClient cc ON cs.id = cc.id
+        JOIN cc.client c
+        WHERE c.collecteur.id = :collecteurId
+        AND m.sens = 'retrait'
+        AND m.dateOperation BETWEEN :startDate AND :endDate
+        """)
     Double sumRetraitByCollecteurIdAndDateOperationBetween(
             @Param("collecteurId") Long collecteurId,
             @Param("startDate") LocalDateTime startDate,
-            @Param("endDate") LocalDateTime endDate
-    );
+            @Param("endDate") LocalDateTime endDate);
 
     // =====================================
-    // REQUÊTES PAR DATE (LocalDate)
+    // REQUÊTES PAR DATE (LocalDate) - ✅ CORRECTION CRITIQUE
     // =====================================
 
-    @Query("SELECT COUNT(m) FROM Mouvement m WHERE m.collecteur.id = :collecteurId " +
-            "AND DATE(m.dateMouvement) = :date")
+    /**
+     * Compte les mouvements par collecteur et date
+     */
+    @Query("""
+        SELECT COUNT(m)
+        FROM Mouvement m
+        LEFT JOIN m.compteDestination cd
+        LEFT JOIN m.compteSource cs
+        LEFT JOIN CompteClient ccd ON cd.id = ccd.id
+        LEFT JOIN CompteClient ccs ON cs.id = ccs.id
+        WHERE (ccd.client.collecteur.id = :collecteurId OR ccs.client.collecteur.id = :collecteurId)
+        AND DATE(m.dateOperation) = :date
+        """)
     Long countByCollecteurAndDate(
             @Param("collecteurId") Long collecteurId,
-            @Param("date") LocalDate date
-    );
+            @Param("date") LocalDate date);
 
-    @Query("SELECT COALESCE(SUM(m.montant), 0.0) FROM Mouvement m " +
-            "WHERE m.collecteur.id = :collecteurId AND m.typeMouvement = :type " +
-            "AND DATE(m.dateMouvement) = :date")
+    /**
+     * Calcule la somme des montants par collecteur, type et date
+     */
+    @Query("""
+        SELECT COALESCE(SUM(m.montant), 0.0)
+        FROM Mouvement m
+        LEFT JOIN m.compteDestination cd
+        LEFT JOIN m.compteSource cs
+        LEFT JOIN CompteClient ccd ON cd.id = ccd.id
+        LEFT JOIN CompteClient ccs ON cs.id = ccs.id
+        WHERE (ccd.client.collecteur.id = :collecteurId OR ccs.client.collecteur.id = :collecteurId)
+        AND m.sens = :type
+        AND DATE(m.dateOperation) = :date
+        """)
     Double sumMontantByCollecteurAndTypeAndDate(
             @Param("collecteurId") Long collecteurId,
             @Param("type") String type,
-            @Param("date") LocalDate date
-    );
+            @Param("date") LocalDate date);
 
-    @Query("SELECT COALESCE(SUM(m.montant), 0.0) FROM Mouvement m " +
-            "WHERE m.collecteur.id = :collecteurId AND m.typeMouvement = :type " +
-            "AND DATE(m.dateMouvement) BETWEEN :dateDebut AND :dateFin")
+    /**
+     * Calcule la somme des montants par collecteur, type et plage de dates
+     */
+    @Query("""
+        SELECT COALESCE(SUM(m.montant), 0.0)
+        FROM Mouvement m
+        LEFT JOIN m.compteDestination cd
+        LEFT JOIN m.compteSource cs
+        LEFT JOIN CompteClient ccd ON cd.id = ccd.id
+        LEFT JOIN CompteClient ccs ON cs.id = ccs.id
+        WHERE (ccd.client.collecteur.id = :collecteurId OR ccs.client.collecteur.id = :collecteurId)
+        AND m.sens = :type
+        AND DATE(m.dateOperation) BETWEEN :startDate AND :endDate
+        """)
     Double sumMontantByCollecteurAndTypeAndDateRange(
             @Param("collecteurId") Long collecteurId,
             @Param("type") String type,
-            @Param("dateDebut") LocalDate dateDebut,
-            @Param("dateFin") LocalDate dateFin
-    );
+            @Param("startDate") LocalDate startDate,
+            @Param("endDate") LocalDate endDate);
 
-    @Query("SELECT COUNT(m) FROM Mouvement m WHERE m.collecteur.id = :collecteurId " +
-            "AND DATE(m.dateMouvement) BETWEEN :dateDebut AND :dateFin")
+    /**
+     * Compte les mouvements par collecteur et plage de dates
+     */
+    @Query("""
+        SELECT COUNT(m)
+        FROM Mouvement m
+        LEFT JOIN m.compteDestination cd
+        LEFT JOIN m.compteSource cs
+        LEFT JOIN CompteClient ccd ON cd.id = ccd.id
+        LEFT JOIN CompteClient ccs ON cs.id = ccs.id
+        WHERE (ccd.client.collecteur.id = :collecteurId OR ccs.client.collecteur.id = :collecteurId)
+        AND DATE(m.dateOperation) BETWEEN :startDate AND :endDate
+        """)
     Long countByCollecteurAndDateRange(
             @Param("collecteurId") Long collecteurId,
-            @Param("dateDebut") LocalDate dateDebut,
-            @Param("dateFin") LocalDate dateFin
-    );
+            @Param("startDate") LocalDate startDate,
+            @Param("endDate") LocalDate endDate);
 
     // =====================================
     // REQUÊTES PAR CLIENT
     // =====================================
 
-    @Query("SELECT m FROM Mouvement m WHERE m.client.id = :clientId")
+    /**
+     * Trouve les mouvements par client
+     */
+    @Query("""
+        SELECT m FROM Mouvement m
+        LEFT JOIN m.compteDestination cd
+        LEFT JOIN m.compteSource cs
+        LEFT JOIN CompteClient ccd ON cd.id = ccd.id
+        LEFT JOIN CompteClient ccs ON cs.id = ccs.id
+        WHERE ccd.client.id = :clientId OR ccs.client.id = :clientId
+        ORDER BY m.dateOperation DESC
+        """)
     List<Mouvement> findByClientId(@Param("clientId") Long clientId);
+
+    /**
+     * Trouve les mouvements par type de mouvement
+     */
+    List<Mouvement> findBySensOrderByDateOperationDesc(String sens);
 
     @Query("SELECT m FROM Mouvement m WHERE m.client.id = :clientId " +
             "AND m.dateOperation BETWEEN :startDate AND :endDate")
@@ -177,11 +271,17 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
     // REQUÊTES DE DATES ET PÉRIODES
     // =====================================
 
-    @Query("SELECT m FROM Mouvement m WHERE m.dateOperation BETWEEN :debut AND :fin")
+    /**
+     * Trouve les mouvements entre deux dates
+     */
+    @Query("""
+        SELECT m FROM Mouvement m
+        WHERE m.dateOperation BETWEEN :startDate AND :endDate
+        ORDER BY m.dateOperation DESC
+        """)
     List<Mouvement> findByDateOperationBetween(
-            @Param("debut") LocalDateTime debut,
-            @Param("fin") LocalDateTime fin
-    );
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
 
     @Query("SELECT m FROM Mouvement m WHERE m.dateOperation BETWEEN :debut AND :fin")
     Page<Mouvement> findByDateOperationBetween(
@@ -191,7 +291,7 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
     );
 
     // =====================================
-    // REQUÊTES POUR COMMISSIONS ET BUSINESS - CORRECTION AJOUTÉE
+    // REQUÊTES POUR COMMISSIONS ET BUSINESS
     // =====================================
 
     @Query("SELECT COALESCE(SUM(m.montant), 0) FROM Mouvement m " +
@@ -227,20 +327,35 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
     // REQUÊTES OPTIMISÉES AVEC FETCH
     // =====================================
 
-    @Query("SELECT m FROM Mouvement m " +
-            "LEFT JOIN FETCH m.compteSource " +
-            "LEFT JOIN FETCH m.compteDestination " +
-            "LEFT JOIN FETCH m.journal " +
-            "WHERE m.journal.id = :journalId")
+    /**
+     * Trouve les mouvements par journal avec les comptes (JOIN FETCH pour éviter N+1)
+     */
+    @Query("""
+        SELECT m FROM Mouvement m
+        LEFT JOIN FETCH m.compteSource
+        LEFT JOIN FETCH m.compteDestination
+        WHERE m.journal.id = :journalId
+        ORDER BY m.dateOperation DESC
+        """)
     List<Mouvement> findByJournalIdWithAccounts(@Param("journalId") Long journalId);
 
-    @Query("SELECT new org.example.collectfocep.dto.MouvementProjection(" +
-            "m.id, m.montant, m.libelle, m.sens, m.dateOperation, " +
-            "cs.numeroCompte, cd.numeroCompte) " +
-            "FROM Mouvement m " +
-            "LEFT JOIN m.compteSource cs " +
-            "LEFT JOIN m.compteDestination cd " +
-            "WHERE m.journal.id = :journalId")
+    /**
+     * Récupère les projections des mouvements par journal (optimisé)
+     */
+    @Query("""
+        SELECT m.id as id,
+               m.montant as montant,
+               m.libelle as libelle,
+               m.sens as sens,
+               m.dateOperation as dateOperation,
+               cs.numeroCompte as compteSourceNumero,
+               cd.numeroCompte as compteDestinationNumero
+        FROM Mouvement m
+        LEFT JOIN m.compteSource cs
+        LEFT JOIN m.compteDestination cd
+        WHERE m.journal.id = :journalId
+        ORDER BY m.dateOperation DESC
+        """)
     List<MouvementProjection> findMouvementProjectionsByJournalId(@Param("journalId") Long journalId);
 
     // =====================================
@@ -252,16 +367,30 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
     @Query("SELECT m FROM Mouvement m WHERE m.journal = :journal AND m.sens = :sens")
     List<Mouvement> findByJournalAndSens(@Param("journal") Journal journal, @Param("sens") String sens);
 
-    @Query("SELECT m FROM Mouvement m WHERE m.collecteur.id = :collecteurId " +
-            "ORDER BY m.dateOperation DESC")
-    List<Mouvement> findRecentByCollecteur(
-            @Param("collecteurId") Long collecteurId,
-            Pageable pageable
-    );
+    /**
+     * Trouve les mouvements récents d'un collecteur avec limite
+     */
+    @Query("""
+        SELECT m FROM Mouvement m
+        LEFT JOIN m.compteDestination cd
+        LEFT JOIN m.compteSource cs
+        LEFT JOIN CompteClient ccd ON cd.id = ccd.id
+        LEFT JOIN CompteClient ccs ON cs.id = ccs.id
+        WHERE (ccd.client.collecteur.id = :collecteurId OR ccs.client.collecteur.id = :collecteurId)
+        ORDER BY m.dateOperation DESC
+        """)
+    List<Mouvement> findRecentByCollecteur(@Param("collecteurId") Long collecteurId, Pageable pageable);
+
+    // ✅ MÉTHODES DE COMPATIBILITÉ POUR L'EXISTANT
+
+    /**
+     * Trouve tous les mouvements par journal (méthode simple)
+     */
+    List<Mouvement> findByJournalIdOrderByDateOperationDesc(Long journalId);
 
     // =====================================
-// REQUÊTES PAR COLLECTEUR ET DATE - VERSION CORRIGÉE
-// =====================================
+    // REQUÊTES PAR COLLECTEUR ET DATE - VERSION CORRIGÉE
+    // =====================================
 
     @Query("SELECT m FROM Mouvement m WHERE m.collecteur.id = :collecteurId " +
             "AND m.dateOperation BETWEEN :startDate AND :endDate")
@@ -271,12 +400,34 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
             @Param("endDate") LocalDateTime endDate
     );
 
-    @Query("SELECT m FROM Mouvement m WHERE m.collecteur.id = :collecteurId " +
-            "AND m.dateOperation BETWEEN :startDate AND :endDate")
+    /**
+     * Trouve les mouvements par collecteur et date avec pagination
+     */
+    @Query("""
+        SELECT m FROM Mouvement m
+        LEFT JOIN m.compteDestination cd
+        LEFT JOIN m.compteSource cs
+        LEFT JOIN CompteClient ccd ON cd.id = ccd.id
+        LEFT JOIN CompteClient ccs ON cs.id = ccs.id
+        WHERE (ccd.client.collecteur.id = :collecteurId OR ccs.client.collecteur.id = :collecteurId)
+        AND m.dateOperation BETWEEN :startDate AND :endDate
+        ORDER BY m.dateOperation DESC
+        """)
     Page<Mouvement> findByCollecteurIdAndDateOperationBetween(
             @Param("collecteurId") Long collecteurId,
             @Param("startDate") LocalDateTime startDate,
             @Param("endDate") LocalDateTime endDate,
+            Pageable pageable);
+
+    // =====================================
+    // REQUÊTES PAR COLLECTEUR ET DATE AVEC LocalDate - ✅ NOUVELLE MÉTHODE CORRIGÉE
+    // =====================================
+
+    @Query("SELECT m FROM Mouvement m WHERE m.collecteur.id = :collecteurId " +
+            "AND DATE(m.dateOperation) = :date")
+    Page<Mouvement> findByCollecteurAndDate(
+            @Param("collecteurId") Long collecteurId,
+            @Param("date") String date,
             Pageable pageable
     );
 }

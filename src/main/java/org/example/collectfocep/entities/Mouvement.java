@@ -72,7 +72,6 @@ public class Mouvement {
     @JsonIgnoreProperties({"mouvements"})
     private TransfertCompte transfert;
 
-    // ✅ MÉTHODES UTILITAIRES
     public String getCompteSourceNumero() {
         return compteSource != null ? compteSource.getNumeroCompte() : null;
     }

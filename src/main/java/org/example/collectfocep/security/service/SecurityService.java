@@ -56,6 +56,44 @@ public class SecurityService {
     }
 
     /**
+     * ✅ NOUVELLE MÉTHODE: Vérifie si l'utilisateur authentifié est le propriétaire du collecteur
+     * Optimisée avec mise en cache pour éviter les requêtes répétées
+     */
+    @Cacheable(key = "{'owner-collecteur', #authentication.name, #collecteurId}")
+    public boolean isOwnerCollecteur(Authentication authentication, Long collecteurId) {
+        if (authentication == null || !authentication.isAuthenticated()) {
+            log.debug("Authentication null ou non authentifiée");
+            return false;
+        }
+
+        String email = authentication.getName();
+        log.debug("Vérification propriétaire collecteur: email={}, collecteurId={}", email, collecteurId);
+
+        try {
+            // Utiliser la méthode optimisée existante si disponible
+            if (hasRole(authentication.getAuthorities(), RoleConfig.COLLECTEUR)) {
+                Optional<Collecteur> collecteurAuth = collecteurRepository.findByAdresseMail(email);
+
+                if (collecteurAuth.isEmpty()) {
+                    log.debug("Collecteur non trouvé pour email: {}", email);
+                    return false;
+                }
+
+                boolean isOwner = collecteurAuth.get().getId().equals(collecteurId);
+                log.debug("Vérification propriétaire: collecteurAuth.id={}, collecteurId={}, isOwner={}",
+                        collecteurAuth.get().getId(), collecteurId, isOwner);
+
+                return isOwner;
+            }
+
+            return false;
+        } catch (Exception e) {
+            log.error("Erreur lors de la vérification du propriétaire collecteur", e);
+            return false;
+        }
+    }
+
+    /**
      * Vérifie si l'utilisateur peut accéder à une agence donnée
      *
      * @param auth     L'authentification de l'utilisateur
@@ -182,8 +220,9 @@ public class SecurityService {
     }
 
     /**
-     * Vérifie si l'utilisateur peut accéder à un collecteur spécifique
+     * ✅ MÉTHODE MODIFIÉE: Vérifie si l'utilisateur peut accéder à un collecteur spécifique
      * Mise en cache pour optimiser les performances
+     * Permet maintenant au collecteur d'accéder à ses propres données
      */
     @Cacheable(key = "{'collecteur-access', #authentication.name, #collecteurId}")
     public boolean canManageCollecteur(Authentication authentication, Long collecteurId) {
@@ -191,7 +230,7 @@ public class SecurityService {
 
         // Vérifier les rôles
         if (hasRole(authentication.getAuthorities(), RoleConfig.SUPER_ADMIN)) {
-            log.debug("Accès client autorisé pour Super Admin: {}", authentication.getName());
+            log.debug("Accès collecteur autorisé pour Super Admin: {}", authentication.getName());
             return true;
         }
 
@@ -210,17 +249,18 @@ public class SecurityService {
                     .orElse(false);
         }
 
+        // ✅ CORRECTION CRITIQUE: Permettre au collecteur de gérer ses propres données
         if (hasRole(authentication.getAuthorities(), RoleConfig.COLLECTEUR)) {
-            return collecteurRepository.findByAdresseMail(userEmail)
-                    .map(collecteur -> collecteur.getId().equals(collecteurId))
-                    .orElse(false);
+            boolean isOwner = isOwnerCollecteur(authentication, collecteurId);
+            log.debug("Collecteur {} peut gérer collecteur {}: {}", userEmail, collecteurId, isOwner);
+            return isOwner;
         }
 
         return false;
     }
 
     /**
-     * Vérifie si l'utilisateur peut accéder à un client spécifique
+     * ✅ MÉTHODE EXISTANTE CONSERVÉE: Vérifie si l'utilisateur peut accéder à un client spécifique
      */
     @Cacheable(key = "{'client-access', #authentication.name, #clientId}")
     public boolean canManageClient(Authentication authentication, Long clientId) {
@@ -373,6 +413,7 @@ public class SecurityService {
             return false;
         }
     }
+
     /**
      * Vérifie si l'utilisateur peut réinitialiser le mot de passe
      */

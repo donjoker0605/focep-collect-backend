@@ -34,11 +34,10 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class CollecteurController {
 
-    // ✅ INJECTION CORRECTE DE TOUTES LES DÉPENDANCES
     private final CollecteurService collecteurService;
     private final PasswordService passwordService;
     private final SecurityService securityService;
-    private final CollecteurRepository collecteurRepository; // ✅ AJOUTÉ
+    private final CollecteurRepository collecteurRepository;
 
     @PostMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
@@ -214,7 +213,6 @@ public class CollecteurController {
         }
     }
 
-    // ✅ MÉTHODE CORRIGÉE POUR RÉCUPÉRER TOUS LES COLLECTEURS
     @GetMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
     public ResponseEntity<ApiResponse<List<CollecteurDTO>>> getAllCollecteurs(
@@ -230,7 +228,6 @@ public class CollecteurController {
             Page<Collecteur> collecteursPage;
 
             if (search != null && !search.trim().isEmpty()) {
-                // ✅ UTILISATION DE LA MÉTHODE CORRECTE
                 collecteursPage = collecteurRepository.findByNomContainingIgnoreCaseOrPrenomContainingIgnoreCaseOrAdresseMailContainingIgnoreCase(
                         search.trim(), search.trim(), search.trim(), pageRequest);
             } else {
@@ -259,11 +256,16 @@ public class CollecteurController {
     }
 
     @GetMapping("/{id}/dashboard")
-    @PreAuthorize("@securityService.canManageCollecteur(authentication, #id)")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN') or @securityService.isOwnerCollecteur(authentication, #id)")
     public ResponseEntity<ApiResponse<CollecteurDashboardDTO>> getCollecteurDashboard(@PathVariable Long id) {
         log.info("Récupération du dashboard pour le collecteur: {}", id);
 
         try {
+            // Vérification supplémentaire côté contrôleur
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            log.debug("Authentication principal: {}", auth.getName());
+            log.debug("Authentication authorities: {}", auth.getAuthorities());
+
             CollecteurDashboardDTO dashboard = collecteurService.getDashboardStats(id);
 
             return ResponseEntity.ok(

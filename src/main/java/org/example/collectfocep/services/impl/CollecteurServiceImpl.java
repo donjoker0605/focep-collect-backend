@@ -28,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -277,34 +278,63 @@ public class CollecteurServiceImpl implements CollecteurService {
             Collecteur collecteur = getCollecteurById(collecteurId)
                     .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
 
+            // CORRECTION: Gestion des valeurs null avec vérifications plus strictes
             // Compter les clients
-            Long totalClientsCount = clientRepository.countByCollecteurId(collecteurId);
+            Long totalClientsCount = null;
+            try {
+                totalClientsCount = clientRepository.countByCollecteurId(collecteurId);
+            } catch (Exception e) {
+                log.warn("Erreur lors du comptage des clients pour collecteur {}: {}", collecteurId, e.getMessage());
+                totalClientsCount = 0L;
+            }
             Integer totalClients = totalClientsCount != null ? totalClientsCount.intValue() : 0;
 
             // Calculer les totaux des mouvements pour le mois courant
             LocalDateTime startOfMonth = LocalDate.now().withDayOfMonth(1).atStartOfDay();
             LocalDateTime now = LocalDateTime.now();
 
-            Double totalEpargne = mouvementRepository.sumEpargneByCollecteurIdAndDateOperationBetween(
-                    collecteurId, startOfMonth, now);
+            Double totalEpargne = null;
+            Double totalRetraits = null;
 
-            Double totalRetraits = mouvementRepository.sumRetraitByCollecteurIdAndDateOperationBetween(
-                    collecteurId, startOfMonth, now);
+            try {
+                totalEpargne = mouvementRepository.sumEpargneByCollecteurIdAndDateOperationBetween(
+                        collecteurId, startOfMonth, now);
+            } catch (Exception e) {
+                log.warn("Erreur lors du calcul total épargne pour collecteur {}: {}", collecteurId, e.getMessage());
+                totalEpargne = 0.0;
+            }
 
-            Double soldeTotal = (totalEpargne != null ? totalEpargne : 0.0) -
-                    (totalRetraits != null ? totalRetraits : 0.0);
+            try {
+                totalRetraits = mouvementRepository.sumRetraitByCollecteurIdAndDateOperationBetween(
+                        collecteurId, startOfMonth, now);
+            } catch (Exception e) {
+                log.warn("Erreur lors du calcul total retraits pour collecteur {}: {}", collecteurId, e.getMessage());
+                totalRetraits = 0.0;
+            }
 
-            // Récupérer les 5 dernières transactions
-            PageRequest lastTransactions = PageRequest.of(0, 5, Sort.by("dateOperation").descending());
-            Page<Mouvement> recentMovements = mouvementRepository
-                    .findByCollecteurId(collecteurId, lastTransactions);
+            // CORRECTION: Utiliser des valeurs par défaut sûres
+            double epargneAmount = totalEpargne != null ? totalEpargne : 0.0;
+            double retraitsAmount = totalRetraits != null ? totalRetraits : 0.0;
+            Double soldeTotal = epargneAmount - retraitsAmount;
 
-            List<MouvementDTO> transactionsRecentes = recentMovements.getContent()
-                    .stream()
-                    .map(mouvementMapper::toDTO)
-                    .collect(Collectors.toList());
+            // Récupérer les 5 dernières transactions avec gestion d'erreur
+            List<MouvementDTO> transactionsRecentes = new ArrayList<>();
+            try {
+                PageRequest lastTransactions = PageRequest.of(0, 5, Sort.by("dateOperation").descending());
+                Page<Mouvement> recentMovements = mouvementRepository
+                        .findByCollecteurId(collecteurId, lastTransactions);
 
-            // Récupérer le journal actuel (si existe)
+                transactionsRecentes = recentMovements.getContent()
+                        .stream()
+                        .map(mouvementMapper::toDTO)
+                        .collect(Collectors.toList());
+            } catch (Exception e) {
+                log.warn("Erreur lors de la récupération des transactions récentes pour collecteur {}: {}",
+                        collecteurId, e.getMessage());
+                transactionsRecentes = new ArrayList<>();
+            }
+
+            // Récupérer le journal actuel (si existe) avec gestion d'erreur
             JournalDTO journalActuel = null;
             try {
                 Journal journal = journalService.getJournalActif(collecteurId);
@@ -312,23 +342,44 @@ public class CollecteurServiceImpl implements CollecteurService {
                     journalActuel = journalMapper.toDTO(journal);
                 }
             } catch (Exception e) {
-                log.warn("Aucun journal actif trouvé pour le collecteur: {}", collecteurId);
+                log.warn("Aucun journal actif trouvé pour le collecteur {}: {}", collecteurId, e.getMessage());
+                // journalActuel reste null, ce qui est acceptable
             }
 
-            return CollecteurDashboardDTO.builder()
+            CollecteurDashboardDTO dashboard = CollecteurDashboardDTO.builder()
                     .collecteurId(collecteurId)
                     .totalClients(totalClients)
-                    .totalEpargne(totalEpargne != null ? totalEpargne : 0.0)
-                    .totalRetraits(totalRetraits != null ? totalRetraits : 0.0)
+                    .totalEpargne(epargneAmount)
+                    .totalRetraits(retraitsAmount)
                     .soldeTotal(soldeTotal)
-                    .transactionsRecentes(transactionsRecentes)
-                    .journalActuel(journalActuel)
+                    .transactionsRecentes(transactionsRecentes != null ? transactionsRecentes : new ArrayList<>())
+                    .journalActuel(journalActuel) // Peut être null
                     .lastUpdate(LocalDateTime.now())
                     .build();
 
+            log.info("Dashboard calculé avec succès pour collecteur {}: {} clients, {} FCFA épargne, {} FCFA retraits",
+                    collecteurId, totalClients, epargneAmount, retraitsAmount);
+
+            return dashboard;
+
+        } catch (ResourceNotFoundException e) {
+            // Propager l'exception si le collecteur n'existe pas
+            log.error("Collecteur non trouvé: {}", collecteurId);
+            throw e;
         } catch (Exception e) {
-            log.error("Erreur lors du calcul des statistiques dashboard", e);
-            throw new BusinessException("Erreur lors du calcul des statistiques: " + e.getMessage());
+            log.error("Erreur lors du calcul des statistiques dashboard pour collecteur {}", collecteurId, e);
+
+            // CORRECTION: Retourner un dashboard minimal en cas d'erreur au lieu de planter
+            return CollecteurDashboardDTO.builder()
+                    .collecteurId(collecteurId)
+                    .totalClients(0)
+                    .totalEpargne(0.0)
+                    .totalRetraits(0.0)
+                    .soldeTotal(0.0)
+                    .transactionsRecentes(new ArrayList<>())
+                    .journalActuel(null)
+                    .lastUpdate(LocalDateTime.now())
+                    .build();
         }
     }
 }

@@ -8,7 +8,7 @@ import org.example.collectfocep.entities.Client;
 import org.example.collectfocep.entities.Collecteur;
 import org.example.collectfocep.entities.Journal;
 import org.example.collectfocep.entities.Mouvement;
-import org.example.collectfocep.entities.CompteClient; // ✅ IMPORT MANQUANT AJOUTÉ
+import org.example.collectfocep.entities.CompteClient;
 import org.example.collectfocep.mappers.ClientMapper;
 import org.example.collectfocep.repositories.ClientRepository;
 import org.example.collectfocep.repositories.JournalRepository;
@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.temporal.WeekFields;
 import java.util.List;
 import java.util.Locale;
@@ -113,7 +114,7 @@ public class DashboardServiceImpl implements DashboardService {
                     .id(journalActuel.getId())
                     .dateDebut(journalActuel.getDateDebut())
                     .dateFin(journalActuel.getDateFin())
-                    .statut(journalActuel.getStatut()) // ✅ Maintenant le champ existe dans Journal
+                    .statut(journalActuel.getStatut())
                     .soldeInitial(0.0)
                     .soldeActuel(soldeTotal)
                     .nombreTransactions(transactionsAujourdhui)
@@ -129,7 +130,7 @@ public class DashboardServiceImpl implements DashboardService {
                         .id(mouvement.getId())
                         .type(mouvement.getTypeMouvement() != null ? mouvement.getTypeMouvement() : determinerTypeMouvement(mouvement))
                         .montant(mouvement.getMontant())
-                        .date(mouvement.getDateMouvement() != null ? mouvement.getDateMouvement() : mouvement.getDateOperation())
+                        .date(mouvement.getDateOperation() != null ? mouvement.getDateOperation() : LocalDateTime.now())
                         .clientNom(mouvement.getClient() != null ? mouvement.getClient().getNom() : obtenirNomClient(mouvement))
                         .clientPrenom(mouvement.getClient() != null ? mouvement.getClient().getPrenom() : obtenirPrenomClient(mouvement))
                         .statut("VALIDE")
@@ -171,7 +172,6 @@ public class DashboardServiceImpl implements DashboardService {
                 .build();
     }
 
-    // ✅ MÉTHODES UTILITAIRES POUR COMPENSER LES CHAMPS MANQUANTS (maintenant avec import CompteClient)
     private String determinerTypeMouvement(Mouvement mouvement) {
         if (mouvement.getLibelle() != null) {
             String libelle = mouvement.getLibelle().toLowerCase();
