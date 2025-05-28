@@ -343,20 +343,31 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
      * Récupère les projections des mouvements par journal (optimisé)
      */
     @Query("""
-        SELECT m.id as id,
-               m.montant as montant,
-               m.libelle as libelle,
-               m.sens as sens,
-               m.dateOperation as dateOperation,
-               cs.numeroCompte as compteSourceNumero,
-               cd.numeroCompte as compteDestinationNumero
-        FROM Mouvement m
-        LEFT JOIN m.compteSource cs
-        LEFT JOIN m.compteDestination cd
-        WHERE m.journal.id = :journalId
-        ORDER BY m.dateOperation DESC
-        """)
+    SELECT m.id as id,
+           m.montant as montant,
+           m.libelle as libelle,
+           m.sens as sens,
+           m.dateOperation as dateOperation,
+           COALESCE(cs.numeroCompte, '') as compteSourceNumero,
+           COALESCE(cd.numeroCompte, '') as compteDestinationNumero
+    FROM Mouvement m
+    LEFT JOIN m.compteSource cs
+    LEFT JOIN m.compteDestination cd
+    WHERE m.journal.id = :journalId
+    ORDER BY m.dateOperation DESC
+    """)
     List<MouvementProjection> findMouvementProjectionsByJournalId(@Param("journalId") Long journalId);
+
+    @Query("""
+    SELECT m FROM Mouvement m
+    LEFT JOIN FETCH m.compteSource cs
+    LEFT JOIN FETCH m.compteDestination cd
+    LEFT JOIN FETCH m.client c
+    LEFT JOIN FETCH m.collecteur col
+    WHERE m.journal.id = :journalId
+    ORDER BY m.dateOperation DESC
+    """)
+    List<Mouvement> findMouvementsWithDetailsByJournalId(@Param("journalId") Long journalId);
 
     // =====================================
     // REQUÊTES DE RECHERCHE ET FILTRAGE

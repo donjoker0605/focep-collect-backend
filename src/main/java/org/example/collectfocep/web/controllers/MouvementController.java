@@ -12,6 +12,7 @@ import org.example.collectfocep.exceptions.UnauthorizedException;
 import org.example.collectfocep.mappers.MouvementMapper;
 import org.example.collectfocep.repositories.ClientRepository;
 import org.example.collectfocep.repositories.JournalRepository;
+import org.example.collectfocep.services.impl.JournalMouvementService;
 import org.example.collectfocep.services.impl.MouvementServiceImpl;
 import org.example.collectfocep.security.service.SecurityService;
 import org.example.collectfocep.services.interfaces.JournalService; // ✅ IMPORT DÉJÀ PRÉSENT
@@ -40,7 +41,8 @@ public class MouvementController {
     private final ClientRepository clientRepository;
     private final JournalRepository journalRepository;
     private final MouvementMapper mouvementMapper;
-    private final JournalService journalService; // ✅ AJOUTER CETTE LIGNE
+    private final JournalService journalService;
+    private final JournalMouvementService journalMouvementService;
 
     @Autowired
     private MouvementServiceImpl mouvementServiceImpl;
@@ -55,13 +57,15 @@ public class MouvementController {
             ClientRepository clientRepository,
             JournalRepository journalRepository,
             MouvementMapper mouvementMapper,
-            JournalService journalService) {
+            JournalService journalService,
+            JournalMouvementService journalMouvementService) {
         this.mouvementServiceImpl = mouvementServiceImpl;
         this.securityService = securityService;
         this.clientRepository = clientRepository;
         this.journalRepository = journalRepository;
         this.mouvementMapper = mouvementMapper;
         this.journalService = journalService;
+        this.journalMouvementService = journalMouvementService;
     }
 
     @PostMapping("/epargne")
@@ -232,25 +236,20 @@ public class MouvementController {
 
     @GetMapping("/collecteur/{collecteurId}/jour")
     @PreAuthorize("@securityService.canManageCollecteur(authentication, #collecteurId)")
-    public ResponseEntity<ApiResponse<List<MouvementCommissionDTO>>> getOperationsDuJour(
+    public ResponseEntity<ApiResponse<List<MouvementJournalDTO>>> getOperationsDuJour(
             @PathVariable Long collecteurId,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) String date) {
+            @RequestParam(required = false) String date) {
 
         try {
-            LocalDate dateRecherche = date != null ? LocalDate.parse(date) : LocalDate.now();
-
-            Journal journal = journalService.getOrCreateJournalDuJour(collecteurId, dateRecherche);
-
-            // Récupérer les mouvements de ce journal
-            List<MouvementCommissionDTO> mouvements = mouvementServiceImpl.findMouvementsDtoByJournalId(journal.getId());
+            List<MouvementJournalDTO> operations = journalMouvementService.getOperationsDuJour(collecteurId, date);
 
             return ResponseEntity.ok(
-                    ApiResponse.success(mouvements, "Opérations du jour récupérées avec succès")
+                    ApiResponse.success(operations, "Opérations du jour récupérées avec succès")
             );
         } catch (Exception e) {
-            log.error("Erreur récupération opérations du jour", e);
+            log.error("Erreur récupération opérations du jour pour collecteur {}", collecteurId, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error("Erreur: " + e.getMessage()));
+                    .body(ApiResponse.error("Erreur lors de la récupération des opérations"));
         }
     }
 }
