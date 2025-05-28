@@ -37,25 +37,87 @@ public class JournalController {
         this.journalMapper = journalMapper;
     }
 
+    // ✅ NOUVEAU: Récupération automatique du journal du jour
+    @GetMapping("/collecteur/{collecteurId}/jour")
+    @PreAuthorize("@securityService.canManageCollecteur(authentication, #collecteurId)")
+    public ResponseEntity<ApiResponse<JournalDTO>> getJournalDuJour(
+            @PathVariable Long collecteurId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
 
+        log.info("📅 Récupération journal du jour pour collecteur: {}, date: {}", collecteurId, date);
+
+        try {
+            LocalDate dateRecherche = date != null ? date : LocalDate.now();
+            Journal journal = journalService.getOrCreateJournalDuJour(collecteurId, dateRecherche);
+
+            JournalDTO journalDTO = journalMapper.toDTO(journal);
+
+            return ResponseEntity.ok(
+                    ApiResponse.success(journalDTO, "Journal du jour récupéré avec succès"));
+        } catch (Exception e) {
+            log.error("Erreur récupération journal du jour", e);
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Erreur: " + e.getMessage()));
+        }
+    }
+
+    // ✅ NOUVEAU: Récupération du journal actif (aujourd'hui)
+    @GetMapping("/collecteur/{collecteurId}/actif")
+    @PreAuthorize("@securityService.canManageCollecteur(authentication, #collecteurId)")
+    public ResponseEntity<ApiResponse<JournalDTO>> getJournalActif(@PathVariable Long collecteurId) {
+        log.info("📅 Récupération journal actif pour collecteur: {}", collecteurId);
+
+        try {
+            Journal journal = journalService.getJournalActif(collecteurId);
+            JournalDTO journalDTO = journalMapper.toDTO(journal);
+
+            return ResponseEntity.ok(
+                    ApiResponse.success(journalDTO, "Journal actif récupéré avec succès"));
+        } catch (Exception e) {
+            log.error("Erreur récupération journal actif", e);
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Erreur: " + e.getMessage()));
+        }
+    }
+
+    // ✅ NOUVEAU: Clôture automatique du journal du jour
+    @PostMapping("/collecteur/{collecteurId}/cloture-jour")
+    @PreAuthorize("@securityService.canManageCollecteur(authentication, #collecteurId)")
+    @Audited(action = "CLOTURE_JOUR", entityType = "Journal")
+    public ResponseEntity<ApiResponse<JournalDTO>> cloturerJournalDuJour(
+            @PathVariable Long collecteurId,
+            @RequestBody(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+
+        log.info("🔒 Clôture journal du jour pour collecteur: {}, date: {}", collecteurId, date);
+
+        try {
+            LocalDate dateCloture = date != null ? date : LocalDate.now();
+            Journal journal = journalService.cloturerJournalDuJour(collecteurId, dateCloture);
+
+            JournalDTO journalDTO = journalMapper.toDTO(journal);
+
+            return ResponseEntity.ok(
+                    ApiResponse.success(journalDTO, "Journal du jour clôturé avec succès"));
+        } catch (Exception e) {
+            log.error("Erreur clôture journal du jour", e);
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("Erreur: " + e.getMessage()));
+        }
+    }
+
+    // MÉTHODES EXISTANTES CONSERVÉES
     @PostMapping
     @PreAuthorize("@securityService.canManageCollecteur(authentication, #journalDTO.collecteurId)")
     @Audited(action = "CREATION", entityType = "Journal")
     public ResponseEntity<ApiResponse<JournalDTO>> createJournal(@Valid @RequestBody JournalDTO journalDTO) {
         log.info("Création d'un nouveau journal pour le collecteur ID: {}", journalDTO.getCollecteurId());
 
-        // Conversion DTO -> Entity
         Journal journal = journalMapper.toEntity(journalDTO);
-
-        // Sauvegarde de l'entité
         Journal savedJournal = journalService.saveJournal(journal);
-
-        // Conversion Entity -> DTO pour la réponse
         JournalDTO savedDTO = journalMapper.toDto(savedJournal);
 
         return ResponseEntity.ok(
-                ApiResponse.success(savedDTO, "Journal créé avec succès")
-        );
+                ApiResponse.success(savedDTO, "Journal créé avec succès"));
     }
 
     @GetMapping("/collecteur/{collecteurId}")
@@ -70,7 +132,6 @@ public class JournalController {
         return ResponseEntity.ok(journaux);
     }
 
-    // Nouvelle méthode avec pagination
     @GetMapping("/collecteur/{collecteurId}/page")
     @PreAuthorize("@securityService.canManageCollecteur(authentication, #collecteurId)")
     public ResponseEntity<ApiResponse<Page<Journal>>> getJournauxByCollecteurPaginated(
@@ -105,8 +166,7 @@ public class JournalController {
         Journal journal = journalService.cloturerJournal(journalId);
 
         return ResponseEntity.ok(
-                ApiResponse.success(journal, "Journal clôturé avec succès")
-        );
+                ApiResponse.success(journal, "Journal clôturé avec succès"));
     }
 
     @GetMapping("/{id}")
@@ -116,7 +176,6 @@ public class JournalController {
                 .orElseThrow(() -> new ResourceNotFoundException("Journal non trouvé"));
 
         return ResponseEntity.ok(
-                ApiResponse.success(journal, "Journal récupéré avec succès")
-        );
+                ApiResponse.success(journal, "Journal récupéré avec succès"));
     }
 }

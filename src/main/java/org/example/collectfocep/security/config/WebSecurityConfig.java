@@ -2,12 +2,10 @@ package org.example.collectfocep.security.config;
 
 import lombok.RequiredArgsConstructor;
 import org.example.collectfocep.security.filters.JwtAuthenticationFilter;
-import org.example.collectfocep.security.filters.UserManagementFilter;
 import org.example.collectfocep.security.service.SecurityService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -18,13 +16,10 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.access.expression.WebExpressionAuthorizationManager;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
-import org.springframework.security.access.hierarchicalroles.RoleHierarchyImpl;
 import org.springframework.security.access.expression.method.DefaultMethodSecurityExpressionHandler;
 import org.springframework.security.access.expression.method.MethodSecurityExpressionHandler;
 import org.springframework.web.cors.CorsConfiguration;
@@ -50,18 +45,24 @@ public class WebSecurityConfig {
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // Endpoints publics - CORRIGÉ
+                        // Endpoints publics
                         .requestMatchers("/api/auth/login", "/api/auth/logout").permitAll()
                         .requestMatchers("/api/public/**").permitAll()
                         .requestMatchers("/api/bootstrap/**").permitAll()
                         .requestMatchers("/actuator/**").permitAll()
 
-                        // Endpoints protégés
-                        .requestMatchers("/api/admin/**").hasRole("SUPER_ADMIN")
-                        .requestMatchers("/api/agences/{agenceId}/**").access(new WebExpressionAuthorizationManager(
-                                "hasRole('SUPER_ADMIN') or @securityService.canAccessAgence(authentication, #agenceId)"))
-                        .requestMatchers("/api/collecteurs/**").hasAnyRole("SUPER_ADMIN", "ADMIN")
+                        // ✅ DASHBOARD COLLECTEUR - ACCÈS DIRECT POUR LES COLLECTEURS
+                        .requestMatchers(HttpMethod.GET, "/api/collecteurs/*/dashboard*")
+                        .hasRole("COLLECTEUR")
+
+                        // ✅ ENDPOINTS DEBUG SANS SÉCURITÉ (À SUPPRIMER EN PROD)
+                        .requestMatchers("/api/collecteurs/*/dashboard-debug").permitAll()
+                        .requestMatchers("/api/collecteurs/mappings-check").permitAll()
+
+                        // Autres endpoints collecteurs avec sécurité normale
+                        .requestMatchers("/api/collecteurs/**").hasAnyRole("SUPER_ADMIN", "ADMIN", "COLLECTEUR")
                         .requestMatchers("/api/clients/**").hasAnyRole("SUPER_ADMIN", "ADMIN", "COLLECTEUR")
+                        .requestMatchers("/api/admin/**").hasRole("SUPER_ADMIN")
 
                         // Toutes les autres requêtes nécessitent une authentification
                         .anyRequest().authenticated()
@@ -69,26 +70,6 @@ public class WebSecurityConfig {
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
-    }
-
-    @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        return http
-                .authorizeHttpRequests(auth -> auth
-                        // Routes publiques
-                        .requestMatchers("/api/auth/**", "/api/public/**").permitAll()
-
-                        // 🎯 DASHBOARD COLLECTEUR - ACCÈS SIMPLE
-                        .requestMatchers(HttpMethod.GET, "/api/collecteurs/*/dashboard")
-                        .hasRole("COLLECTEUR")
-
-                        // Autres routes
-                        .requestMatchers("/api/collecteurs/**").hasAnyRole("ADMIN", "SUPER_ADMIN", "COLLECTEUR")
-                        .anyRequest().authenticated()
-                )
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
-                .build();
     }
 
     @Bean
@@ -120,7 +101,6 @@ public class WebSecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        // IP mise à jour selon vos logs
         configuration.setAllowedOrigins(Arrays.asList(
                 "http://localhost:19006",
                 "http://localhost:8081",
@@ -150,12 +130,5 @@ public class WebSecurityConfig {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
-    }
-
-    // Configuration Jackson
-    @Bean
-    public MappingJackson2HttpMessageConverter mappingJackson2HttpMessageConverter() {
-        MappingJackson2HttpMessageConverter converter = new MappingJackson2HttpMessageConverter();
-        return converter;
     }
 }

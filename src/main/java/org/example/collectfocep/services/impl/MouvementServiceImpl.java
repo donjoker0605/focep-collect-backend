@@ -375,63 +375,60 @@ public class MouvementServiceImpl implements MouvementService {
             timeout = 30
     )
     public Mouvement enregistrerEpargne(Client client, double montant, Journal journal) {
-        Timer.Sample sample = Timer.start();
-        log.info("Début enregistrement épargne: Client={} (ID={}), Montant={}, Journal={}",
-                client.getNom() + " " + client.getPrenom(), client.getId(), montant, journal != null ? journal.getId() : "null");
+        log.info("Début enregistrement épargne: Client={} (ID={}), Montant={}",
+                client.getNom() + " " + client.getPrenom(), client.getId(), montant);
 
         return transactionService.executeInTransaction(status -> {
             try {
-                log.debug("Démarrage transaction d'épargne");
-
-                // 1. Recharger le client avec toutes ses relations pour éviter les problèmes de lazy loading
+                // 1. Recharger le client avec toutes ses relations
                 Client clientWithRelations = clientRepository.findByIdWithAllRelations(client.getId())
                         .orElseThrow(() -> new ResourceNotFoundException("Client non trouvé"));
 
-                // 2. Récupérer le compte client
+                // 2. ✅ RÉCUPÉRATION AUTOMATIQUE DU JOURNAL DU JOUR
+                Journal journalDuJour;
+                if (journal != null) {
+                    journalDuJour = journal; // Utiliser le journal fourni si disponible
+                } else {
+                    // ✅ CRÉATION/RÉCUPÉRATION AUTOMATIQUE
+                    journalDuJour = journalService.getOrCreateJournalDuJour(
+                            clientWithRelations.getCollecteur().getId(),
+                            LocalDate.now()
+                    );
+                    log.info("📅 Journal automatique: ID={}, Date={}",
+                            journalDuJour.getId(), journalDuJour.getDateDebut());
+                }
+
+                // 3. Récupérer les comptes
                 CompteClient compteClient = compteClientRepository.findByClient(clientWithRelations)
-                        .orElseGet(() -> {
-                            log.info("Compte client non trouvé pour client ID={}, création automatique", clientWithRelations.getId());
-                            return clientAccountInitializationService.ensureClientAccountExists(clientWithRelations);
-                        });
+                        .orElseGet(() -> clientAccountInitializationService.ensureClientAccountExists(clientWithRelations));
 
-                log.debug("Compte client trouvé/créé: ID={}, Numéro={}, Solde initial={}",
-                        compteClient.getId(), compteClient.getNumeroCompte(), compteClient.getSolde());
-
-                // 3. Récupérer le compte service du collecteur
                 CompteCollecteur compteService = getCompteServiceCollecteur(clientWithRelations.getCollecteur());
-                log.debug("Compte service collecteur trouvé: ID={}, Numéro={}, Solde initial={}",
-                        compteService.getId(), compteService.getNumeroCompte(), compteService.getSolde());
 
-                // 4. Créer le mouvement
+                // 4. Créer le mouvement avec le journal du jour
                 Mouvement mouvement = creerMouvementEpargne(
-                        compteService, // compte source (sera débité)
-                        compteClient,  // compte destination (sera crédité)
+                        compteService,
+                        compteClient,
                         montant,
                         clientWithRelations,
-                        journal
+                        journalDuJour // ✅ JOURNAL AUTOMATIQUE
                 );
 
-                // 5. Exécuter le mouvement
+                // 5. ✅ DÉFINIR LE TYPE DE MOUVEMENT
+                mouvement.setTypeMouvement("EPARGNE");
+                mouvement.setCollecteur(clientWithRelations.getCollecteur()); // ✅ LIEN COLLECTEUR
+                mouvement.setClient(clientWithRelations); // ✅ LIEN CLIENT
+
+                // 6. Exécuter le mouvement
                 Mouvement mouvementEnregistre = effectuerMouvement(mouvement);
-                log.info("Épargne enregistrée avec succès: ID={}, Client={} (ID={}), Montant={}",
-                        mouvementEnregistre.getId(), clientWithRelations.getNom() + " " + clientWithRelations.getPrenom(),
-                        clientWithRelations.getId(), montant);
 
-                // Incrémenter le compteur d'épargne de façon sécurisée
-                if (epargneCounter != null) {
-                    epargneCounter.increment();
-                }
-
-                // Enregistrer le temps d'exécution
-                if (sample != null && mouvementTimer != null) {
-                    sample.stop(mouvementTimer);
-                }
+                log.info("✅ Épargne enregistrée: ID={}, Journal={}, Client={}",
+                        mouvementEnregistre.getId(), journalDuJour.getId(),
+                        clientWithRelations.getNom());
 
                 return mouvementEnregistre;
 
             } catch (Exception e) {
-                log.error("Erreur lors de l'enregistrement de l'épargne - Client: {} (ID={}), Montant: {}, Erreur: {}",
-                        client.getNom() + " " + client.getPrenom(), client.getId(), montant, e.getMessage(), e);
+                log.error("❌ Erreur épargne: {}", e.getMessage(), e);
                 status.setRollbackOnly();
                 throw new BusinessException("Erreur lors de l'enregistrement de l'épargne",
                         "EPARGNE_ERROR", e.getMessage());
@@ -453,118 +450,78 @@ public class MouvementServiceImpl implements MouvementService {
             timeout = 30
     )
     public Mouvement enregistrerRetrait(Client client, double montant, Journal journal) {
-        log.info("Début enregistrement retrait: Client={} (ID={}), Montant={}, Journal={}",
-                client.getNom() + " " + client.getPrenom(), client.getId(), montant, journal != null ? journal.getId() : "null");
+        log.info("Début enregistrement retrait: Client={} (ID={}), Montant={}",
+                client.getNom() + " " + client.getPrenom(), client.getId(), montant);
 
         try {
-            // 1. CHARGER TOUTES LES ENTITÉS DANS LA MÊME TRANSACTION
-            log.debug("Rechargement des entités pour éviter les problèmes de lazy loading");
-
-            // Recharger le client avec ses relations
+            // 1. Recharger le client avec ses relations
             Client clientRecharge = clientRepository.findByIdWithAllRelations(client.getId())
-                    .orElseThrow(() -> {
-                        log.error("Client non trouvé lors du rechargement: ID={}", client.getId());
-                        return new ResourceNotFoundException("Client non trouvé");
-                    });
-            log.debug("Client rechargé: ID={}, Nom={}", clientRecharge.getId(),
-                    clientRecharge.getNom() + " " + clientRecharge.getPrenom());
+                    .orElseThrow(() -> new ResourceNotFoundException("Client non trouvé"));
 
-            // Recharger le collecteur du client avec ses relations
-            Collecteur collecteurRecharge = clientRecharge.getCollecteur();
-            if (collecteurRecharge == null) {
-                // CORRECTION: Utilisation du bon constructeur de BusinessException
-                throw new BusinessException("Le client n'est associé à aucun collecteur", "CLIENT_ERROR", "Collecteur manquant");
-            }
-            log.debug("Collecteur récupéré: ID={}, Nom={}, MontantMaxRetrait={}",
-                    collecteurRecharge.getId(), collecteurRecharge.getNom(), collecteurRecharge.getMontantMaxRetrait());
-
-            // Recharger le journal
-            Journal journalRecharge = journal;
+            // 2. ✅ RÉCUPÉRATION AUTOMATIQUE DU JOURNAL DU JOUR
+            Journal journalDuJour;
             if (journal != null) {
-                journalRecharge = journalRepository.findById(journal.getId())
-                        .orElseThrow(() -> new ResourceNotFoundException("Journal non trouvé"));
+                journalDuJour = journal;
+            } else {
+                journalDuJour = journalService.getOrCreateJournalDuJour(
+                        clientRecharge.getCollecteur().getId(),
+                        LocalDate.now()
+                );
+                log.info("📅 Journal automatique retrait: ID={}, Date={}",
+                        journalDuJour.getId(), journalDuJour.getDateDebut());
             }
 
-            // 2. RÉCUPÉRATION DES COMPTES
+            // 3. Récupération des comptes et validations
             CompteClient compteClient = compteClientRepository.findByClient(clientRecharge)
-                    .orElseThrow(() -> {
-                        log.error("Compte client non trouvé pour client ID={}", clientRecharge.getId());
-                        return new CompteNotFoundException(
-                                String.format(ErrorMessages.RESOURCE_NOT_FOUND, "Compte client")
-                        );
-                    });
-            log.debug("Compte client trouvé: ID={}, Numéro={}, Solde={}",
-                    compteClient.getId(), compteClient.getNumeroCompte(), compteClient.getSolde());
+                    .orElseThrow(() -> new CompteNotFoundException("Compte client non trouvé"));
 
-            CompteCollecteur compteService = getCompteServiceCollecteur(collecteurRecharge);
-            log.debug("Compte service collecteur trouvé: ID={}, Numéro={}, Solde={}",
-                    compteService.getId(), compteService.getNumeroCompte(), compteService.getSolde());
+            CompteCollecteur compteService = getCompteServiceCollecteur(clientRecharge.getCollecteur());
 
-            // 3. VALIDATIONS MÉTIER (plus de problème de lazy loading ici)
-            validateRetrait(compteClient, collecteurRecharge, montant);
-            log.debug("Validation du retrait réussie: Solde suffisant et montant dans la limite autorisée");
+            validateRetrait(compteClient, clientRecharge.getCollecteur(), montant);
 
-            // 4. CRÉATION ET EXÉCUTION DU MOUVEMENT
+            // 4. Création du mouvement avec journal automatique
             Mouvement mouvement = creerMouvementRetrait(
                     compteClient,
                     compteService,
                     montant,
                     clientRecharge,
-                    journalRecharge
+                    journalDuJour // ✅ JOURNAL AUTOMATIQUE
             );
 
-            // 5. EXÉCUTER LE MOUVEMENT DIRECTEMENT (sans transaction imbriquée)
-            log.debug("Exécution directe du mouvement de retrait");
+            // 5. ✅ DÉFINIR LE TYPE ET LES RELATIONS
+            mouvement.setTypeMouvement("RETRAIT");
+            mouvement.setCollecteur(clientRecharge.getCollecteur());
+            mouvement.setClient(clientRecharge);
 
-            // Validation des comptes
+            // 6. Exécution directe du mouvement
             Compte compteSource = validateAndGetCompte(mouvement.getCompteSource().getId());
             Compte compteDestination = validateAndGetCompte(mouvement.getCompteDestination().getId());
 
-            // Vérification du solde
             verifierSoldeDisponible(compteSource, mouvement.getMontant(), mouvement.getSens());
-            log.debug("Vérification du solde réussie - Compte: {}, Solde actuel: {}, Montant opération: {}",
-                    compteSource.getNumeroCompte(), compteSource.getSolde(), mouvement.getMontant());
 
-            // Enregistrer l'état avant modification pour journalisation
             double soldeSourceAvant = compteSource.getSolde();
             double soldeDestinationAvant = compteDestination.getSolde();
 
-            // Mise à jour des soldes
             mettreAJourSoldes(compteSource, compteDestination, mouvement.getMontant(), mouvement.getSens());
 
-            log.debug("Mise à jour des soldes - Source: {} ({} → {}), Destination: {} ({} → {})",
-                    compteSource.getNumeroCompte(), soldeSourceAvant, compteSource.getSolde(),
-                    compteDestination.getNumeroCompte(), soldeDestinationAvant, compteDestination.getSolde());
-
-            // Sauvegarde des modifications
             compteRepository.save(compteSource);
             compteRepository.save(compteDestination);
 
-            // Enregistrement du mouvement
             mouvement.setDateOperation(LocalDateTime.now());
             Mouvement mouvementEnregistre = mouvementRepository.save(mouvement);
 
-            log.info("Retrait enregistré avec succès: ID={}, Client={} (ID={}), Montant={}",
-                    mouvementEnregistre.getId(),
-                    clientRecharge.getNom() + " " + clientRecharge.getPrenom(),
-                    clientRecharge.getId(), montant);
-
-            log.info("SOLDES MIS À JOUR: Compte client {} ({}→{}), Compte service {} ({}→{})",
-                    compteSource.getNumeroCompte(), soldeSourceAvant, compteSource.getSolde(),
-                    compteDestination.getNumeroCompte(), soldeDestinationAvant, compteDestination.getSolde());
+            log.info("✅ Retrait enregistré: ID={}, Journal={}, Client={}",
+                    mouvementEnregistre.getId(), journalDuJour.getId(),
+                    clientRecharge.getNom());
 
             return mouvementEnregistre;
 
         } catch (SoldeInsuffisantException | MontantMaxRetraitException e) {
-            // Propager directement les exceptions spécifiques
-            log.error("Erreur lors de l'enregistrement du retrait - Client: {} (ID={}), Montant: {}, Erreur: {}",
-                    client.getNom() + " " + client.getPrenom(), client.getId(), montant, e.getMessage());
-            throw e; // Propager l'exception originale
+            throw e;
         } catch (Exception e) {
-            log.error("Erreur lors de l'enregistrement du retrait - Client: {} (ID={}), Montant: {}, Erreur: {}",
-                    client.getNom() + " " + client.getPrenom(), client.getId(), montant, e.getMessage(), e);
-            // CORRECTION: Utilisation du bon constructeur de BusinessException
-            throw new BusinessException("Erreur lors de l'enregistrement du retrait", "RETRAIT_ERROR", e.getMessage());
+            log.error("❌ Erreur retrait: {}", e.getMessage(), e);
+            throw new BusinessException("Erreur lors de l'enregistrement du retrait",
+                    "RETRAIT_ERROR", e.getMessage());
         }
     }
 
@@ -1015,4 +972,5 @@ public class MouvementServiceImpl implements MouvementService {
             throw new BusinessException("Erreur lors de la vérification du solde: " + e.getMessage());
         }
     }
+
 }

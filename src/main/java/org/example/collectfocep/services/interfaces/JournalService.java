@@ -13,6 +13,23 @@ import java.util.Optional;
 
 public interface JournalService {
 
+    /**
+     * ✅ MÉTHODE PRINCIPALE: Récupère ou crée le journal du jour automatiquement
+     * Garantit qu'il n'y a qu'un seul journal par collecteur/jour
+     */
+    Journal getOrCreateJournalDuJour(Long collecteurId, LocalDate date);
+
+    /**
+     * ✅ Récupère le journal actif (aujourd'hui) pour un collecteur
+     */
+    Journal getJournalActif(Long collecteurId);
+
+    /**
+     * ✅ Clôture automatique du journal d'une date donnée
+     */
+    Journal cloturerJournalDuJour(Long collecteurId, LocalDate date);
+
+    // MÉTHODES EXISTANTES CONSERVÉES POUR COMPATIBILITÉ
     List<Journal> getAllJournaux();
 
     Page<Journal> getAllJournaux(Pageable pageable);
@@ -35,8 +52,4 @@ public interface JournalService {
 
     List<Journal> getJournauxByCollecteurAndDateRange(Collecteur collecteur, LocalDate dateDebut, LocalDate dateFin);
 
-    /**
-     * Récupère le journal actif pour un collecteur donné
-     */
-    Journal getJournalActif(Long collecteurId);
 }

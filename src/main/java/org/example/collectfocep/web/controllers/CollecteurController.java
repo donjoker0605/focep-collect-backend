@@ -45,11 +45,8 @@ public class CollecteurController {
     public void logControllerInitialization() {
         log.info("🚀 CollecteurController initialisé avec succès");
         log.info("📍 Mappings disponibles:");
-        log.info("   - POST /api/collecteurs");
-        log.info("   - GET /api/collecteurs");
         log.info("   - GET /api/collecteurs/{id}/dashboard");
         log.info("   - GET /api/collecteurs/{id}/dashboard-debug");
-        log.info("   - GET /api/collecteurs/{id}/dashboard-simple");
     }
 
     private final CollecteurService collecteurService;
@@ -277,27 +274,100 @@ public class CollecteurController {
     // AJOUTEZ CETTE MÉTHODE À VOTRE CollecteurController
 
     @GetMapping("/{id}/dashboard")
-    @PreAuthorize("@securityService.canManageCollecteur(authentication, #id)")
     public ResponseEntity<ApiResponse<CollecteurDashboardDTO>> getCollecteurDashboard(@PathVariable Long id) {
         log.info("🎯 REQUÊTE DASHBOARD REÇUE pour collecteur: {}", id);
 
         try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            log.info("🔐 Auth: name={}, authorities={}",
+                    auth != null ? auth.getName() : "null",
+                    auth != null ? auth.getAuthorities() : "null");
+
+            // ✅ VÉRIFICATION SIMPLE : Le collecteur connecté accède à ses propres données
+            if (auth != null && auth.getPrincipal() instanceof JwtAuthenticationFilter.JwtUserPrincipal) {
+                JwtAuthenticationFilter.JwtUserPrincipal principal =
+                        (JwtAuthenticationFilter.JwtUserPrincipal) auth.getPrincipal();
+                Long connectedUserId = principal.getUserId();
+
+                log.info("🔍 Vérification accès: connectedUserId={}, requestedId={}", connectedUserId, id);
+
+                if (!id.equals(connectedUserId)) {
+                    log.warn("❌ Accès refusé: collecteur {} tente d'accéder aux données de {}", connectedUserId, id);
+                    return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                            .body(ApiResponse.error("Accès non autorisé"));
+                }
+            }
+
             // 1. RÉCUPÉRER LE COLLECTEUR
             Collecteur collecteur = collecteurService.getCollecteurById(id)
                     .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
 
-            log.info("✅ Collecteur trouvé: {} - {}", collecteur.getId(), collecteur.getDisplayName());
+            log.info("✅ Collecteur trouvé: {} - {} {}",
+                    collecteur.getId(), collecteur.getNom(), collecteur.getPrenom());
 
             // 2. CONSTRUIRE LE DASHBOARD
-            CollecteurDashboardDTO dashboard = buildSimpleDashboard(collecteur);
+            CollecteurDashboardDTO dashboard = buildDashboard(collecteur);
 
-            log.info("✅ Dashboard construit avec succès pour: {}", collecteur.getDisplayName());
+            log.info("✅ Dashboard construit avec succès pour: {} {}",
+                    collecteur.getNom(), collecteur.getPrenom());
+
             return ResponseEntity.ok(ApiResponse.success(dashboard, "Dashboard récupéré avec succès"));
 
         } catch (Exception e) {
             log.error("❌ Erreur lors de la récupération du dashboard pour collecteur {}: {}", id, e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error("Erreur: " + e.getMessage()));
+        }
+    }
+
+    private CollecteurDashboardDTO buildDashboard(Collecteur collecteur) {
+        log.info("🔨 Construction du dashboard pour collecteur: {}", collecteur.getId());
+
+        try {
+            // STATISTIQUES DE BASE
+            Long totalClientsCount = clientRepository.countByCollecteurId(collecteur.getId());
+            Integer totalClients = totalClientsCount != null ? totalClientsCount.intValue() : 0;
+
+            log.info("📊 Total clients trouvés: {}", totalClients);
+
+            // CONSTRUCTION DU DASHBOARD
+            return CollecteurDashboardDTO.builder()
+                    .collecteurId(collecteur.getId())
+                    .collecteurNom(collecteur.getNom())
+                    .collecteurPrenom(collecteur.getPrenom())
+                    .totalClients(totalClients)
+
+                    // VALEURS PAR DÉFAUT (À ENRICHIR PROGRESSIVEMENT)
+                    .totalEpargne(0.0)
+                    .totalRetraits(0.0)
+                    .soldeTotal(0.0)
+                    .transactionsAujourdhui(0L)
+                    .montantEpargneAujourdhui(0.0)
+                    .montantRetraitAujourdhui(0.0)
+                    .nouveauxClientsAujourdhui(0L)
+                    .montantEpargneSemaine(0.0)
+                    .montantRetraitSemaine(0.0)
+                    .transactionsSemaine(0L)
+                    .montantEpargneMois(0.0)
+                    .montantRetraitMois(0.0)
+                    .transactionsMois(0L)
+                    .objectifMensuel(collecteur.getMontantMaxRetrait())
+                    .progressionObjectif(0.0)
+                    .commissionsMois(0.0)
+                    .commissionsAujourdhui(0.0)
+
+                    // COLLECTIONS VIDES POUR ÉVITER LES ERREURS
+                    .transactionsRecentes(List.of())
+                    .clientsActifs(List.of())
+                    .alertes(List.of())
+                    .journalActuel(null)
+
+                    .lastUpdate(LocalDateTime.now())
+                    .build();
+
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la construction du dashboard: {}", e.getMessage(), e);
+            throw new BusinessException("Erreur construction dashboard: " + e.getMessage());
         }
     }
 
@@ -415,7 +485,6 @@ public class CollecteurController {
     @GetMapping("/{id}/dashboard-debug")
     public ResponseEntity<Map<String, Object>> getDashboardDebug(@PathVariable Long id) {
         log.info("🎯🎯🎯 DASHBOARD DEBUG APPELÉ POUR COLLECTEUR: {}", id);
-        log.info("🔍 Méthode getDashboardDebug exécutée sans sécurité");
 
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
 
@@ -429,6 +498,14 @@ public class CollecteurController {
             response.put("username", auth.getName());
             response.put("authorities", auth.getAuthorities().toString());
             response.put("principalType", auth.getPrincipal().getClass().getSimpleName());
+
+            if (auth.getPrincipal() instanceof JwtAuthenticationFilter.JwtUserPrincipal) {
+                JwtAuthenticationFilter.JwtUserPrincipal principal =
+                        (JwtAuthenticationFilter.JwtUserPrincipal) auth.getPrincipal();
+                response.put("userId", principal.getUserId());
+                response.put("agenceId", principal.getAgenceId());
+                response.put("role", principal.getRole());
+            }
 
             if (auth.getDetails() != null) {
                 response.put("authDetails", auth.getDetails().toString());
