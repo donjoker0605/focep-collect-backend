@@ -14,18 +14,21 @@ import org.example.collectfocep.repositories.ClientRepository;
 import org.example.collectfocep.repositories.JournalRepository;
 import org.example.collectfocep.services.impl.MouvementServiceImpl;
 import org.example.collectfocep.security.service.SecurityService;
+import org.example.collectfocep.services.interfaces.JournalService; // ✅ IMPORT DÉJÀ PRÉSENT
 import org.example.collectfocep.util.ApiResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @RestController
@@ -37,6 +40,8 @@ public class MouvementController {
     private final ClientRepository clientRepository;
     private final JournalRepository journalRepository;
     private final MouvementMapper mouvementMapper;
+    private final JournalService journalService; // ✅ AJOUTER CETTE LIGNE
+
     @Autowired
     private MouvementServiceImpl mouvementServiceImpl;
 
@@ -49,12 +54,14 @@ public class MouvementController {
             SecurityService securityService,
             ClientRepository clientRepository,
             JournalRepository journalRepository,
-            MouvementMapper mouvementMapper) {
+            MouvementMapper mouvementMapper,
+            JournalService journalService) {
         this.mouvementServiceImpl = mouvementServiceImpl;
         this.securityService = securityService;
         this.clientRepository = clientRepository;
         this.journalRepository = journalRepository;
         this.mouvementMapper = mouvementMapper;
+        this.journalService = journalService;
     }
 
     @PostMapping("/epargne")
@@ -76,14 +83,8 @@ public class MouvementController {
                 throw new UnauthorizedAgencyAccessException("Client n'appartient pas à votre agence");
             }
 
-            Journal journal = null;
-            if (request.getJournalId() != null) {
-                journal = journalRepository.findById(request.getJournalId())
-                        .orElseThrow(() -> new ResourceNotFoundException("Journal non trouvé"));
-            }
-
             // Enregistrer l'épargne
-            Mouvement mouvement = mouvementServiceImpl.enregistrerEpargne(client, request.getMontant(), journal);
+            Mouvement mouvement = mouvementServiceImpl.enregistrerEpargne(client, request.getMontant(), null);
 
             // Convertir en DTO pour la réponse
             MouvementCommissionDTO responseDto = mouvementMapper.toCommissionDto(mouvement);
@@ -116,15 +117,9 @@ public class MouvementController {
                 throw new UnauthorizedAgencyAccessException("Client n'appartient pas à votre agence");
             }
 
-            Journal journal = null;
-            if (request.getJournalId() != null) {
-                journal = journalRepository.findById(request.getJournalId())
-                        .orElseThrow(() -> new ResourceNotFoundException("Journal non trouvé"));
-            }
+            Mouvement mouvement = mouvementServiceImpl.enregistrerRetrait(client, request.getMontant(), null);
 
-            Mouvement mouvement = mouvementServiceImpl.enregistrerRetrait(client, request.getMontant(), journal);
-
-            // ✅ FIX PRINCIPAL : Utiliser DTO au lieu de l'entité brute
+            // FIX PRINCIPAL : Utiliser DTO au lieu de l'entité brute
             MouvementCommissionDTO responseDto = mouvementMapper.toCommissionDto(mouvement);
 
             return ResponseEntity.ok(
@@ -177,18 +172,18 @@ public class MouvementController {
         log.info("Récupération des transactions du journal pour collecteur: {} à la date: {}", collecteurId, date);
 
         try {
-            // ✅ FIX CRITIQUE : Forcer le nom de champ correct
+            // FIX CRITIQUE : Forcer le nom de champ correct
             String[] sortParts = sort.split(",");
             String sortField = sortParts[0];
             String sortDirection = sortParts.length > 1 ? sortParts[1] : "desc";
 
-            // ✅ SÉCURITÉ : Remplacer dateHeure par dateOperation si présent
+            // SÉCURITÉ : Remplacer dateHeure par dateOperation si présent
             if ("dateHeure".equals(sortField)) {
                 sortField = "dateOperation";
                 log.warn("Paramètre de tri 'dateHeure' détecté et remplacé par 'dateOperation'");
             }
 
-            // ✅ VALIDATION : S'assurer que le champ existe
+            // VALIDATION : S'assurer que le champ existe
             if (!"dateOperation".equals(sortField) && !"montant".equals(sortField) && !"id".equals(sortField)) {
                 log.warn("Champ de tri non reconnu: {}. Utilisation de 'dateOperation' par défaut", sortField);
                 sortField = "dateOperation";
@@ -231,6 +226,30 @@ public class MouvementController {
         } catch (Exception e) {
             log.error("Erreur lors de la vérification du solde", e);
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(ApiResponse.error("Erreur: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/collecteur/{collecteurId}/jour")
+    @PreAuthorize("@securityService.canManageCollecteur(authentication, #collecteurId)")
+    public ResponseEntity<ApiResponse<List<MouvementCommissionDTO>>> getOperationsDuJour(
+            @PathVariable Long collecteurId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) String date) {
+
+        try {
+            LocalDate dateRecherche = date != null ? LocalDate.parse(date) : LocalDate.now();
+
+            Journal journal = journalService.getOrCreateJournalDuJour(collecteurId, dateRecherche);
+
+            // Récupérer les mouvements de ce journal
+            List<MouvementCommissionDTO> mouvements = mouvementServiceImpl.findMouvementsDtoByJournalId(journal.getId());
+
+            return ResponseEntity.ok(
+                    ApiResponse.success(mouvements, "Opérations du jour récupérées avec succès")
+            );
+        } catch (Exception e) {
+            log.error("Erreur récupération opérations du jour", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error("Erreur: " + e.getMessage()));
         }
     }

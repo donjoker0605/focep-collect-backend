@@ -19,7 +19,11 @@ public class CacheConfig {
                 new ConcurrentMapCache("clients"),
                 new ConcurrentMapCache("collecteurs"),
                 new ConcurrentMapCache("comptes"),
-                new ConcurrentMapCache("security-permissions")
+                new ConcurrentMapCache("security-permissions"),
+                new ConcurrentMapCache("journal-actuel"),
+                new ConcurrentMapCache("journaux"),
+                new ConcurrentMapCache("dashboard-data"),
+                new ConcurrentMapCache("client-stafs")
         ));
         return cacheManager;
     }

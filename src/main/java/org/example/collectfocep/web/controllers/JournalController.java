@@ -80,18 +80,18 @@ public class JournalController {
         }
     }
 
-    // ✅ NOUVEAU: Clôture automatique du journal du jour
+    // Clôture automatique du journal du jour
     @PostMapping("/collecteur/{collecteurId}/cloture-jour")
     @PreAuthorize("@securityService.canManageCollecteur(authentication, #collecteurId)")
     @Audited(action = "CLOTURE_JOUR", entityType = "Journal")
     public ResponseEntity<ApiResponse<JournalDTO>> cloturerJournalDuJour(
             @PathVariable Long collecteurId,
-            @RequestBody(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) String date) {
 
         log.info("🔒 Clôture journal du jour pour collecteur: {}, date: {}", collecteurId, date);
 
         try {
-            LocalDate dateCloture = date != null ? date : LocalDate.now();
+            LocalDate dateCloture = date != null ? LocalDate.parse(date) : LocalDate.now();
             Journal journal = journalService.cloturerJournalDuJour(collecteurId, dateCloture);
 
             JournalDTO journalDTO = journalMapper.toDTO(journal);
