@@ -12,17 +12,17 @@ import org.example.collectfocep.exceptions.UnauthorizedException;
 import org.example.collectfocep.mappers.MouvementMapper;
 import org.example.collectfocep.repositories.ClientRepository;
 import org.example.collectfocep.repositories.JournalRepository;
+import org.example.collectfocep.repositories.MouvementRepository;
 import org.example.collectfocep.services.impl.JournalMouvementService;
 import org.example.collectfocep.services.impl.MouvementServiceImpl;
 import org.example.collectfocep.security.service.SecurityService;
-import org.example.collectfocep.services.interfaces.JournalService; // ✅ IMPORT DÉJÀ PRÉSENT
+import org.example.collectfocep.services.interfaces.JournalService;
 import org.example.collectfocep.util.ApiResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
-import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -40,6 +40,7 @@ public class MouvementController {
     private final SecurityService securityService;
     private final ClientRepository clientRepository;
     private final JournalRepository journalRepository;
+    private final MouvementRepository mouvementRepository; // ✅ AJOUTÉ
     private final MouvementMapper mouvementMapper;
     private final JournalService journalService;
     private final JournalMouvementService journalMouvementService;
@@ -56,6 +57,7 @@ public class MouvementController {
             SecurityService securityService,
             ClientRepository clientRepository,
             JournalRepository journalRepository,
+            MouvementRepository mouvementRepository, // ✅ AJOUTÉ
             MouvementMapper mouvementMapper,
             JournalService journalService,
             JournalMouvementService journalMouvementService) {
@@ -63,17 +65,102 @@ public class MouvementController {
         this.securityService = securityService;
         this.clientRepository = clientRepository;
         this.journalRepository = journalRepository;
+        this.mouvementRepository = mouvementRepository; // ✅ AJOUTÉ
         this.mouvementMapper = mouvementMapper;
         this.journalService = journalService;
         this.journalMouvementService = journalMouvementService;
     }
 
+    // ✅ NOUVEAU : ENDPOINT POUR RÉCUPÉRER UNE TRANSACTION PAR ID
+    @GetMapping("/{transactionId}")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'COLLECTEUR')")
+    public ResponseEntity<ApiResponse<MouvementDTO>> getTransactionById(@PathVariable Long transactionId) {
+        log.info("🔍 Récupération des détails de la transaction: {}", transactionId);
+
+        try {
+            Mouvement mouvement = mouvementRepository.findById(transactionId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Transaction non trouvée avec l'ID: " + transactionId));
+
+            // ✅ VÉRIFICATION DE SÉCURITÉ
+            if (!securityService.canAccessMouvement(SecurityContextHolder.getContext().getAuthentication(), mouvement)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(ApiResponse.error("UNAUTHORIZED", "Accès non autorisé à cette transaction"));
+            }
+
+            MouvementDTO dto = mouvementMapper.toDTO(mouvement);
+
+            return ResponseEntity.ok(
+                    ApiResponse.success(dto, "Détails de la transaction récupérés avec succès")
+            );
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la récupération de la transaction {}", transactionId, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("TRANSACTION_ERROR", "Erreur: " + e.getMessage()));
+        }
+    }
+
+    // ✅ NOUVEAU : ENDPOINT POUR RÉCUPÉRER TOUTES LES TRANSACTIONS D'UN COLLECTEUR
+    @GetMapping("/collecteur/{collecteurId}")
+    @PreAuthorize("@securityService.canManageCollecteur(authentication, #collecteurId)")
+    public ResponseEntity<ApiResponse<List<MouvementDTO>>> getTransactionsByCollecteur(
+            @PathVariable Long collecteurId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+
+        log.info("🔍 Récupération des transactions pour le collecteur: {}", collecteurId);
+
+        try {
+            PageRequest pageRequest = PageRequest.of(page, size, Sort.by("dateOperation").descending());
+            Page<Mouvement> mouvements = mouvementRepository.findByCollecteurId(collecteurId, pageRequest);
+
+            List<MouvementDTO> dtos = mouvements.getContent().stream()
+                    .map(mouvementMapper::toDTO)
+                    .toList();
+
+            return ResponseEntity.ok(
+                    ApiResponse.success(dtos, "Transactions du collecteur récupérées avec succès")
+            );
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la récupération des transactions du collecteur {}", collecteurId, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("COLLECTEUR_TRANSACTIONS_ERROR", "Erreur: " + e.getMessage()));
+        }
+    }
+
+    // ✅ NOUVEAU : ENDPOINT POUR RÉCUPÉRER LES TRANSACTIONS D'UN CLIENT
+    @GetMapping("/client/{clientId}")
+    @PreAuthorize("@securityService.canManageClient(authentication, #clientId)")
+    public ResponseEntity<ApiResponse<List<MouvementDTO>>> getTransactionsByClient(
+            @PathVariable Long clientId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+
+        log.info("🔍 Récupération des transactions pour le client: {}", clientId);
+
+        try {
+            PageRequest pageRequest = PageRequest.of(page, size, Sort.by("dateOperation").descending());
+            List<Mouvement> mouvements = mouvementRepository.findByClientId(clientId);
+
+            List<MouvementDTO> dtos = mouvements.stream()
+                    .map(mouvementMapper::toDTO)
+                    .toList();
+
+            return ResponseEntity.ok(
+                    ApiResponse.success(dtos, "Transactions du client récupérées avec succès")
+            );
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la récupération des transactions du client {}", clientId, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("CLIENT_TRANSACTIONS_ERROR", "Erreur: " + e.getMessage()));
+        }
+    }
+
+    // ✅ ENDPOINTS EXISTANTS CONSERVÉS
     @PostMapping("/epargne")
     @PreAuthorize("@securityService.canManageClient(authentication, #request.clientId)")
     public ResponseEntity<ApiResponse<MouvementCommissionDTO>> effectuerEpargne(@Valid @RequestBody EpargneRequest request) {
         log.info("Traitement d'une opération d'épargne pour le client: {}", request.getClientId());
         try {
-            // Validation des autorisations
             if (!securityService.canManageClient(SecurityContextHolder.getContext().getAuthentication(),
                     request.getClientId())) {
                 throw new UnauthorizedException("Non autorisé à gérer ce client");
@@ -82,15 +169,11 @@ public class MouvementController {
             Client client = clientRepository.findById(request.getClientId())
                     .orElseThrow(() -> new ResourceNotFoundException("Client non trouvé"));
 
-            // Vérifier que le client appartient à l'agence du collecteur
             if (!securityService.isClientInCollecteurAgence(request.getClientId(), request.getCollecteurId())) {
                 throw new UnauthorizedAgencyAccessException("Client n'appartient pas à votre agence");
             }
 
-            // Enregistrer l'épargne
             Mouvement mouvement = mouvementServiceImpl.enregistrerEpargne(client, request.getMontant(), null);
-
-            // Convertir en DTO pour la réponse
             MouvementCommissionDTO responseDto = mouvementMapper.toCommissionDto(mouvement);
 
             return ResponseEntity.ok(
@@ -108,7 +191,6 @@ public class MouvementController {
     public ResponseEntity<ApiResponse<MouvementCommissionDTO>> effectuerRetrait(@Valid @RequestBody RetraitRequest request) {
         log.info("Traitement d'une opération de retrait pour le client: {}", request.getClientId());
         try {
-            // Vérification explicite des autorisations
             if (!securityService.canManageClient(SecurityContextHolder.getContext().getAuthentication(),
                     request.getClientId())) {
                 throw new UnauthorizedException("Non autorisé à gérer ce client");
@@ -122,8 +204,6 @@ public class MouvementController {
             }
 
             Mouvement mouvement = mouvementServiceImpl.enregistrerRetrait(client, request.getMontant(), null);
-
-            // FIX PRINCIPAL : Utiliser DTO au lieu de l'entité brute
             MouvementCommissionDTO responseDto = mouvementMapper.toCommissionDto(mouvement);
 
             return ResponseEntity.ok(
@@ -144,12 +224,9 @@ public class MouvementController {
         try {
             List<MouvementCommissionDTO> mouvementDTOs;
 
-            // Stratégie configurable
             if ("projection".equals(strategy) || (useProjection && "auto".equals(strategy))) {
-                // Approche projection (plus rapide)
                 mouvementDTOs = mouvementServiceImpl.findMouvementsDtoByJournalId(journalId);
             } else {
-                // Approche entity avec JOIN FETCH (plus flexible)
                 mouvementDTOs = mouvementServiceImpl.convertToDto(
                         mouvementServiceImpl.findByJournalIdWithAccounts(journalId)
                 );
@@ -176,18 +253,15 @@ public class MouvementController {
         log.info("Récupération des transactions du journal pour collecteur: {} à la date: {}", collecteurId, date);
 
         try {
-            // FIX CRITIQUE : Forcer le nom de champ correct
             String[] sortParts = sort.split(",");
             String sortField = sortParts[0];
             String sortDirection = sortParts.length > 1 ? sortParts[1] : "desc";
 
-            // SÉCURITÉ : Remplacer dateHeure par dateOperation si présent
             if ("dateHeure".equals(sortField)) {
                 sortField = "dateOperation";
                 log.warn("Paramètre de tri 'dateHeure' détecté et remplacé par 'dateOperation'");
             }
 
-            // VALIDATION : S'assurer que le champ existe
             if (!"dateOperation".equals(sortField) && !"montant".equals(sortField) && !"id".equals(sortField)) {
                 log.warn("Champ de tri non reconnu: {}. Utilisation de 'dateOperation' par défaut", sortField);
                 sortField = "dateOperation";

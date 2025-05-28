@@ -590,4 +590,68 @@ public class SecurityService {
     public boolean canAccessCollecteur(Authentication authentication, Long collecteurId) {
         return canManageCollecteur(authentication, collecteurId);
     }
+
+    public boolean canAccessMouvement(Authentication authentication, Mouvement mouvement) {
+        if (authentication == null || mouvement == null) {
+            return false;
+        }
+
+        try {
+            // Récupérer les informations de l'utilisateur connecté
+            Long currentUserId = getCurrentUserId(authentication);
+            String currentUserRole = getCurrentUserRole(authentication);
+            Long currentUserAgenceId = getCurrentUserAgenceId(authentication);
+
+            // Super admin peut tout voir
+            if ("SUPER_ADMIN".equals(currentUserRole)) {
+                return true;
+            }
+
+            // Admin peut voir les mouvements de son agence
+            if ("ADMIN".equals(currentUserRole)) {
+                // Vérifier si le mouvement appartient à l'agence de l'admin
+                if (mouvement.getCollecteur() != null && mouvement.getCollecteur().getAgence() != null) {
+                    return currentUserAgenceId.equals(mouvement.getCollecteur().getAgence().getId());
+                }
+                return false;
+            }
+
+            // Collecteur peut voir ses propres mouvements
+            if ("COLLECTEUR".equals(currentUserRole)) {
+                if (mouvement.getCollecteur() != null) {
+                    return currentUserId.equals(mouvement.getCollecteur().getId());
+                }
+                return false;
+            }
+
+            return false;
+
+        } catch (Exception e) {
+            log.error("Erreur lors de la vérification d'accès au mouvement", e);
+            return false;
+        }
+    }
+
+    private Long getCurrentUserId(Authentication authentication) {
+        if (authentication.getPrincipal() instanceof JwtAuthenticationFilter.JwtUserPrincipal) {
+            return ((JwtAuthenticationFilter.JwtUserPrincipal) authentication.getPrincipal()).getUserId();
+        }
+        return null;
+    }
+
+    private String getCurrentUserRole(Authentication authentication) {
+        return authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .filter(role -> role.startsWith("ROLE_"))
+                .map(role -> role.substring(5)) // Enlever "ROLE_"
+                .findFirst()
+                .orElse(null);
+    }
+
+    private Long getCurrentUserAgenceId(Authentication authentication) {
+        if (authentication.getPrincipal() instanceof JwtAuthenticationFilter.JwtUserPrincipal) {
+            return ((JwtAuthenticationFilter.JwtUserPrincipal) authentication.getPrincipal()).getAgenceId();
+        }
+        return null;
+    }
 }
