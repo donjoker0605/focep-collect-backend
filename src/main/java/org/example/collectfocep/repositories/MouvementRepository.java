@@ -14,6 +14,7 @@ import org.springframework.stereotype.Repository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
@@ -441,4 +442,30 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
             @Param("date") String date,
             Pageable pageable
     );
+
+    @Query("""
+    SELECT m FROM Mouvement m
+    LEFT JOIN FETCH m.client c
+    LEFT JOIN FETCH m.collecteur col
+    LEFT JOIN FETCH m.compteSource cs
+    LEFT JOIN FETCH m.compteDestination cd
+    LEFT JOIN FETCH m.journal j
+    WHERE m.id = :mouvementId
+    """)
+    Optional<Mouvement> findByIdWithAllRelations(@Param("mouvementId") Long mouvementId);
+
+    /**
+     * CORRECTION CRITIQUE: Récupère les mouvements d'un client avec toutes les relations
+     */
+    @Query("""
+    SELECT m FROM Mouvement m
+    LEFT JOIN FETCH m.client c
+    LEFT JOIN FETCH m.collecteur col
+    LEFT JOIN FETCH m.compteSource cs
+    LEFT JOIN FETCH m.compteDestination cd
+    LEFT JOIN FETCH m.journal j
+    WHERE m.client.id = :clientId
+    ORDER BY m.dateOperation DESC
+    """)
+    List<Mouvement> findByClientIdWithAllRelations(@Param("clientId") Long clientId);
 }

@@ -71,20 +71,34 @@ public class MouvementController {
         this.journalMouvementService = journalMouvementService;
     }
 
-    // ✅ NOUVEAU : ENDPOINT POUR RÉCUPÉRER UNE TRANSACTION PAR ID
     @GetMapping("/{transactionId}")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'COLLECTEUR')")
     public ResponseEntity<ApiResponse<MouvementDTO>> getTransactionById(@PathVariable Long transactionId) {
         log.info("🔍 Récupération des détails de la transaction: {}", transactionId);
 
         try {
+            // ✅ CORRECTION: Charger avec toutes les relations
             Mouvement mouvement = mouvementRepository.findById(transactionId)
                     .orElseThrow(() -> new ResourceNotFoundException("Transaction non trouvée avec l'ID: " + transactionId));
 
-            // ✅ VÉRIFICATION DE SÉCURITÉ
+            // ✅ SÉCURITÉ: Vérifier les droits d'accès
             if (!securityService.canAccessMouvement(SecurityContextHolder.getContext().getAuthentication(), mouvement)) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
                         .body(ApiResponse.error("UNAUTHORIZED", "Accès non autorisé à cette transaction"));
+            }
+
+            // ✅ CORRECTION: Forcer le chargement des relations lazy
+            if (mouvement.getClient() != null) {
+                mouvement.getClient().getNom(); // Force lazy loading
+            }
+            if (mouvement.getCollecteur() != null) {
+                mouvement.getCollecteur().getNom(); // Force lazy loading
+            }
+            if (mouvement.getCompteSource() != null) {
+                mouvement.getCompteSource().getNumeroCompte(); // Force lazy loading
+            }
+            if (mouvement.getCompteDestination() != null) {
+                mouvement.getCompteDestination().getNumeroCompte(); // Force lazy loading
             }
 
             MouvementDTO dto = mouvementMapper.toDTO(mouvement);
@@ -127,19 +141,14 @@ public class MouvementController {
         }
     }
 
-    // ✅ NOUVEAU : ENDPOINT POUR RÉCUPÉRER LES TRANSACTIONS D'UN CLIENT
     @GetMapping("/client/{clientId}")
     @PreAuthorize("@securityService.canManageClient(authentication, #clientId)")
-    public ResponseEntity<ApiResponse<List<MouvementDTO>>> getTransactionsByClient(
-            @PathVariable Long clientId,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size) {
-
+    public ResponseEntity<ApiResponse<List<MouvementDTO>>> getTransactionsByClient(@PathVariable Long clientId) {
         log.info("🔍 Récupération des transactions pour le client: {}", clientId);
 
         try {
-            PageRequest pageRequest = PageRequest.of(page, size, Sort.by("dateOperation").descending());
-            List<Mouvement> mouvements = mouvementRepository.findByClientId(clientId);
+            // ✅ CORRECTION: Utiliser une requête avec JOIN FETCH
+            List<Mouvement> mouvements = mouvementRepository.findByClientIdWithAllRelations(clientId);
 
             List<MouvementDTO> dtos = mouvements.stream()
                     .map(mouvementMapper::toDTO)
@@ -155,7 +164,6 @@ public class MouvementController {
         }
     }
 
-    // ✅ ENDPOINTS EXISTANTS CONSERVÉS
     @PostMapping("/epargne")
     @PreAuthorize("@securityService.canManageClient(authentication, #request.clientId)")
     public ResponseEntity<ApiResponse<MouvementCommissionDTO>> effectuerEpargne(@Valid @RequestBody EpargneRequest request) {

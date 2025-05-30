@@ -3,12 +3,16 @@ package org.example.collectfocep.web.controllers;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.dto.ClientDTO;
+import org.example.collectfocep.dto.ClientDetailDTO;
 import org.example.collectfocep.dto.CompteDTO;
 import org.example.collectfocep.entities.Client;
 import org.example.collectfocep.entities.Compte;
+import org.example.collectfocep.entities.Mouvement;
 import org.example.collectfocep.exceptions.ResourceNotFoundException;
 import org.example.collectfocep.mappers.ClientMapper;
 import org.example.collectfocep.mappers.CompteMapper;
+import org.example.collectfocep.mappers.MouvementMapperV2;
+import org.example.collectfocep.repositories.MouvementRepository;
 import org.example.collectfocep.security.annotations.Audited;
 import org.example.collectfocep.services.interfaces.ClientService;
 import org.example.collectfocep.services.interfaces.CompteService;
@@ -16,12 +20,14 @@ import org.example.collectfocep.util.ApiResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/clients")
@@ -33,6 +39,8 @@ public class ClientController {
     private final CompteService compteService;
     private final ClientMapper clientMapper;
     private final CompteMapper compteMapper;
+    private final MouvementRepository mouvementRepository;
+    private final MouvementMapperV2 mouvementMapper;
 
     // Endpoint pour créer un client
     @PostMapping
@@ -142,5 +150,50 @@ public class ClientController {
         response.addMeta("totalPages", clientsPage.getTotalPages());
 
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/{id}/with-transactions")
+    @PreAuthorize("@securityService.canManageClient(authentication, #id)")
+    public ResponseEntity<ApiResponse<ClientDetailDTO>> getClientWithTransactions(@PathVariable Long id) {
+        log.info("🔍 Récupération du client avec transactions: {}", id);
+
+        try {
+            // 1. Récupérer le client
+            Client client = clientService.getClientById(id)
+                    .orElseThrow(() -> new ResourceNotFoundException("Client non trouvé avec l'ID: " + id));
+
+            // 2. Récupérer ses transactions
+            List<Mouvement> transactions = mouvementRepository.findByClientIdWithAllRelations(id);
+
+            // 3. Créer le DTO complet
+            ClientDetailDTO clientDetail = ClientDetailDTO.builder()
+                    .id(client.getId())
+                    .nom(client.getNom())
+                    .prenom(client.getPrenom())
+                    .numeroCni(client.getNumeroCni())
+                    .ville(client.getVille())
+                    .quartier(client.getQuartier())
+                    .telephone(client.getTelephone())
+                    .photoPath(client.getPhotoPath())
+                    .numeroCompte(client.getNumeroCompte())
+                    .valide(client.getValide())
+                    .dateCreation(client.getDateCreation())
+                    .dateModification(client.getDateModification())
+                    .collecteurId(client.getCollecteur() != null ? client.getCollecteur().getId() : null)
+                    .agenceId(client.getAgence() != null ? client.getAgence().getId() : null)
+                    .transactions(transactions.stream()
+                            .map(mouvementMapper::toDTO)
+                            .collect(Collectors.toList()))
+                    .totalTransactions(transactions.size())
+                    .build();
+
+            return ResponseEntity.ok(
+                    ApiResponse.success(clientDetail, "Client avec transactions récupéré avec succès")
+            );
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la récupération du client avec transactions {}", id, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("CLIENT_DETAIL_ERROR", "Erreur: " + e.getMessage()));
+        }
     }
 }
