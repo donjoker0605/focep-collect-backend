@@ -21,18 +21,4 @@ public class MouvementJournalDTO {
     private String typeMouvement;
     private String clientNom;
     private String clientPrenom;
-
-    // Constructeur pour mapping depuis projection
-    public MouvementJournalDTO(MouvementProjection projection, String typeMouvement, String clientNom, String clientPrenom) {
-        this.id = projection.getId();
-        this.montant = projection.getMontant();
-        this.libelle = projection.getLibelle();
-        this.sens = projection.getSens();
-        this.dateOperation = projection.getDateOperation();
-        this.compteSourceNumero = projection.getCompteSourceNumero();
-        this.compteDestinationNumero = projection.getCompteDestinationNumero();
-        this.typeMouvement = typeMouvement;
-        this.clientNom = clientNom;
-        this.clientPrenom = clientPrenom;
-    }
 }

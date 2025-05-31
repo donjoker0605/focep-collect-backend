@@ -23,6 +23,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -30,7 +31,10 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/mouvements")
@@ -318,20 +322,111 @@ public class MouvementController {
 
     @GetMapping("/collecteur/{collecteurId}/jour")
     @PreAuthorize("@securityService.canManageCollecteur(authentication, #collecteurId)")
-    public ResponseEntity<ApiResponse<List<MouvementJournalDTO>>> getOperationsDuJour(
+    public ResponseEntity<ApiResponse<JournalDuJourDTO>> getOperationsDuJour(
             @PathVariable Long collecteurId,
-            @RequestParam(required = false) String date) {
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+
+        log.info("📅 Récupération des opérations du jour - Collecteur: {}, Date: {}", collecteurId, date);
 
         try {
-            List<MouvementJournalDTO> operations = journalServiceImpl.getOrCreateJournalDuJour(collecteurId, date);
+            // 1. ✅ Date par défaut si non fournie
+            LocalDate dateRecherche = date != null ? date : LocalDate.now();
+
+            // 2. ✅ Récupération/création du journal
+            Journal journal = journalService.getOrCreateJournalDuJour(collecteurId, dateRecherche);
+
+            // 3. ✅ ÉTAPE MANQUANTE : Récupérer les mouvements de la journée
+            LocalDateTime startOfDay = dateRecherche.atStartOfDay();
+            LocalDateTime endOfDay = dateRecherche.atTime(LocalTime.MAX);
+
+            List<Mouvement> mouvements = mouvementRepository.findByCollecteurIdAndDateOperationBetween(
+                    collecteurId, startOfDay, endOfDay);
+
+            // 4. ✅ Conversion en DTOs
+            List<MouvementJournalDTO> operationsDTOs = mouvements.stream()
+                    .map(this::convertToMouvementJournalDTO)
+                    .collect(Collectors.toList());
+
+            // 5. ✅ Construction du DTO de réponse
+            JournalDuJourDTO response = JournalDuJourDTO.builder()
+                    .journalId(journal.getId())
+                    .collecteurId(collecteurId)
+                    .date(dateRecherche)
+                    .statut(journal.getStatut())
+                    .estCloture(journal.isEstCloture())
+                    .reference(journal.getReference())
+                    .nombreOperations(operationsDTOs.size())
+                    .operations(operationsDTOs)  // ✅ MAINTENANT `operations` existe !
+                    .build();
 
             return ResponseEntity.ok(
-                    ApiResponse.success(operations, "Opérations du jour récupérées avec succès")
+                    ApiResponse.success(response, "Opérations du jour récupérées avec succès")
             );
+
         } catch (Exception e) {
-            log.error("Erreur récupération opérations du jour pour collecteur {}", collecteurId, e);
+            log.error("❌ Erreur récupération opérations du jour pour collecteur {}", collecteurId, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error("Erreur lors de la récupération des opérations"));
+        }
+    }
+
+    private MouvementJournalDTO convertToMouvementJournalDTO(Mouvement mouvement) {
+        return MouvementJournalDTO.builder()
+                .id(mouvement.getId())
+                .typeMouvement(safeGetTypeMouvement(mouvement))
+                .montant(mouvement.getMontant())
+                .sens(mouvement.getSens())
+                .libelle(mouvement.getLibelle())
+                .dateOperation(mouvement.getDateOperation())
+                .compteSourceNumero(safeGetCompteSourceNumero(mouvement))
+                .compteDestinationNumero(safeGetCompteDestinationNumero(mouvement))
+                .clientNom(safeGetClientNom(mouvement))
+                .clientPrenom(safeGetClientPrenom(mouvement))
+                .build();
+    }
+
+    private String safeGetTypeMouvement(Mouvement mouvement) {
+        try {
+            return mouvement.getTypeMouvement();
+        } catch (Exception e) {
+            log.debug("Erreur chargement typeMouvement, utilisation du sens: {}", mouvement.getSens());
+            return mouvement.getSens() != null ? mouvement.getSens().toUpperCase() : "INCONNU";
+        }
+    }
+
+    private String safeGetCompteSourceNumero(Mouvement mouvement) {
+        try {
+            return mouvement.getCompteSourceNumero();
+        } catch (Exception e) {
+            log.debug("Erreur chargement compteSourceNumero pour mouvement {}", mouvement.getId());
+            return "N/A";
+        }
+    }
+
+    private String safeGetCompteDestinationNumero(Mouvement mouvement) {
+        try {
+            return mouvement.getCompteDestinationNumero();
+        } catch (Exception e) {
+            log.debug("Erreur chargement compteDestinationNumero pour mouvement {}", mouvement.getId());
+            return "N/A";
+        }
+    }
+
+    private String safeGetClientNom(Mouvement mouvement) {
+        try {
+            return mouvement.getClient() != null ? mouvement.getClient().getNom() : null;
+        } catch (Exception e) {
+            log.debug("Erreur chargement client nom pour mouvement {}", mouvement.getId());
+            return "N/A";
+        }
+    }
+
+    private String safeGetClientPrenom(Mouvement mouvement) {
+        try {
+            return mouvement.getClient() != null ? mouvement.getClient().getPrenom() : null;
+        } catch (Exception e) {
+            log.debug("Erreur chargement client prénom pour mouvement {}", mouvement.getId());
+            return "N/A";
         }
     }
 }

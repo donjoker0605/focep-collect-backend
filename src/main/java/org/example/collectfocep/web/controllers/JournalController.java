@@ -2,6 +2,7 @@ package org.example.collectfocep.web.controllers;
 
 import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.dto.JournalDTO;
+import org.example.collectfocep.dto.JournalDuJourDTO;
 import org.example.collectfocep.dto.MouvementJournalDTO;
 import org.example.collectfocep.entities.Journal;
 import org.example.collectfocep.entities.Mouvement;
@@ -54,48 +55,34 @@ public class JournalController {
      * Retourne le journal du jour avec toutes ses opérations
      */
     @GetMapping("/collecteur/{collecteurId}/jour")
-    @PreAuthorize("@securityService.canManageCollecteur(authentication, #collecteurId)")
-    public ResponseEntity<ApiResponse<MouvementJournalDTO>> getJournalDuJour(
+    public ResponseEntity<ApiResponse<JournalDuJourDTO>> getJournalDuJour(
             @PathVariable Long collecteurId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
 
-        log.info("📅 Récupération journal du jour - Collecteur: {}, Date: {}", collecteurId, date);
+        LocalDate dateRecherche = date != null ? date : LocalDate.now();
 
-        try {
-            LocalDate dateRecherche = date != null ? date : LocalDate.now();
+        // Récupération du journal
+        Journal journal = journalService.getOrCreateJournalDuJour(collecteurId, dateRecherche);
 
-            // Récupération/création automatique du journal
-            Journal journal = journalService.getOrCreateJournalDuJour(collecteurId, dateRecherche);
+        // Récupération des opérations
+        List<Mouvement> operations = mouvementRepository.findByCollecteurIdAndDateOperationBetween(
+                collecteurId, dateRecherche.atStartOfDay(), dateRecherche.atTime(LocalTime.MAX));
 
-            // Récupération de toutes les opérations du jour
-            LocalDateTime startOfDay = dateRecherche.atStartOfDay();
-            LocalDateTime endOfDay = dateRecherche.atTime(LocalTime.MAX);
+        // Construction du DTO approprié
+        JournalDuJourDTO response = JournalDuJourDTO.builder()
+                .journalId(journal.getId())
+                .collecteurId(collecteurId)
+                .date(dateRecherche)
+                .statut(journal.getStatut())
+                .estCloture(journal.isEstCloture())
+                .reference(journal.getReference())
+                .nombreOperations(operations.size())
+                .operations(operations.stream()
+                        .map(this::convertToMouvementJournalDTO)
+                        .collect(Collectors.toList()))
+                .build();
 
-            List<Mouvement> operations = mouvementRepository.findByCollecteurIdAndDateOperationBetween(
-                    collecteurId, startOfDay, endOfDay);
-
-            // Construction de la réponse complète
-            MouvementJournalDTO response = MouvementJournalDTO.builder()
-                    .journalId(journal.getId())
-                    .collecteurId(collecteurId)
-                    .date(dateRecherche)
-                    .statut(journal.getStatut())
-                    .estCloture(journal.isEstCloture())
-                    .reference(journal.getReference())
-                    .nombreOperations(operations.size())
-                    .operations(operations.stream()
-                            .map(this::convertToMouvementJournalDTO)
-                            .collect(Collectors.toList()))
-                    .build();
-
-            return ResponseEntity.ok(
-                    ApiResponse.success(response, "Journal du jour récupéré avec succès"));
-
-        } catch (Exception e) {
-            log.error("❌ Erreur récupération journal du jour", e);
-            return ResponseEntity.badRequest()
-                    .body(ApiResponse.error("JOURNAL_ERROR", "Erreur: " + e.getMessage()));
-        }
+        return ResponseEntity.ok(ApiResponse.success(response, "Journal du jour récupéré avec succès"));
     }
 
     /**
@@ -177,12 +164,13 @@ public class JournalController {
     private MouvementJournalDTO convertToMouvementJournalDTO(Mouvement mouvement) {
         return MouvementJournalDTO.builder()
                 .id(mouvement.getId())
-                .type(mouvement.getTypeMouvement())
+                .typeMouvement(mouvement.getTypeMouvement())  // ✅ Correction
                 .montant(mouvement.getMontant())
                 .sens(mouvement.getSens())
                 .libelle(mouvement.getLibelle())
                 .dateOperation(mouvement.getDateOperation())
                 .clientNom(mouvement.getClient() != null ? mouvement.getClient().getNom() : null)
+                .clientPrenom(mouvement.getClient() != null ? mouvement.getClient().getPrenom() : null)
                 .build();
     }
 }

@@ -404,13 +404,21 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
     // REQUÊTES PAR COLLECTEUR ET DATE - VERSION CORRIGÉE
     // =====================================
 
-    @Query("SELECT m FROM Mouvement m WHERE m.collecteur.id = :collecteurId " +
-            "AND m.dateOperation BETWEEN :startDate AND :endDate")
+    @Query("""
+    SELECT m FROM Mouvement m
+    LEFT JOIN FETCH m.compteSource cs
+    LEFT JOIN FETCH m.compteDestination cd
+    LEFT JOIN FETCH m.client c
+    LEFT JOIN FETCH m.collecteur col
+    LEFT JOIN FETCH m.journal j
+    WHERE m.collecteur.id = :collecteurId
+    AND m.dateOperation BETWEEN :startDate AND :endDate
+    ORDER BY m.dateOperation DESC
+    """)
     List<Mouvement> findByCollecteurIdAndDateOperationBetween(
             @Param("collecteurId") Long collecteurId,
             @Param("startDate") LocalDateTime startDate,
-            @Param("endDate") LocalDateTime endDate
-    );
+            @Param("endDate") LocalDateTime endDate);
 
     /**
      * Trouve les mouvements par collecteur et date avec pagination
