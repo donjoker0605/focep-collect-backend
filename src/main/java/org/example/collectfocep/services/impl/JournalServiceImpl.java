@@ -15,6 +15,8 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
@@ -42,64 +44,95 @@ public class JournalServiceImpl implements JournalService {
     }
 
     /**
-     * ✅ MÉTHODE PRINCIPALE: Récupère ou crée automatiquement le journal du jour
-     * Cette méthode garantit qu'il n'y a qu'un seul journal par collecteur/jour
+     * MÉTHODE PRINCIPALE CORRIGÉE: Journal automatique par jour
+     * Cette méthode est appelée automatiquement lors de chaque opération
      */
     @Override
-    @Transactional
+    @Transactional(
+            propagation = Propagation.REQUIRES_NEW,
+            isolation = Isolation.READ_COMMITTED,
+            rollbackFor = Exception.class
+    )
     public Journal getOrCreateJournalDuJour(Long collecteurId, LocalDate date) {
-        log.info("🔍 Recherche/création journal pour collecteur {} date {}", collecteurId, date);
+        if (date == null) {
+            date = LocalDate.now();
+        }
+
+        log.info("🔍 Recherche/création journal automatique - Collecteur: {}, Date: {}", collecteurId, date);
 
         // 1. Vérifier que le collecteur existe
         Collecteur collecteur = collecteurRepository.findById(collecteurId)
                 .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé: " + collecteurId));
 
-        // 2. Chercher un journal existant pour cette date
+        // 2. Chercher un journal existant pour cette date (avec retry en cas de concurrence)
         Optional<Journal> journalExistant = journalRepository.findByCollecteurAndDate(collecteur, date);
 
         if (journalExistant.isPresent()) {
             Journal journal = journalExistant.get();
-            log.info("✅ Journal existant trouvé: ID={}, Status={}", journal.getId(), journal.getStatut());
+            log.info(" Journal existant trouvé: ID={}, Status={}", journal.getId(), journal.getStatut());
             return journal;
         }
 
-        // 3. Créer un nouveau journal pour la date
-        Journal nouveauJournal = creerJournalDuJour(collecteur, date);
-        log.info("🆕 Nouveau journal créé: ID={} pour date {}", nouveauJournal.getId(), date);
-
-        return nouveauJournal;
+        // 3. CRÉATION SÉCURISÉE avec gestion des concurrence
+        return creerJournalDuJourSecurise(collecteur, date);
     }
 
     /**
-     * ✅ CRÉATION AUTOMATIQUE DU JOURNAL
+     * CRÉATION AUTOMATIQUE DU JOURNAL
      */
-    private Journal creerJournalDuJour(Collecteur collecteur, LocalDate date) {
-        String reference = genererReference(collecteur, date);
+    private Journal creerJournalDuJourSecurise(Collecteur collecteur, LocalDate date) {
+        try {
+            // Double-check : vérifier encore une fois avant création
+            Optional<Journal> existingCheck = journalRepository.findByCollecteurAndDate(collecteur, date);
+            if (existingCheck.isPresent()) {
+                log.info("✅ Journal créé par thread concurrent - Utilisation: {}", existingCheck.get().getId());
+                return existingCheck.get();
+            }
 
-        Journal journal = Journal.builder()
-                .collecteur(collecteur)
-                .dateDebut(date)
-                .dateFin(date) // ✅ MÊME DATE pour début et fin
-                .statut("OUVERT")
-                .estCloture(false)
-                .reference(reference)
-                .build();
+            // Créer un nouveau journal
+            String reference = genererReference(collecteur, date);
 
-        return journalRepository.save(journal);
+            Journal nouveauJournal = Journal.builder()
+                    .collecteur(collecteur)
+                    .dateDebut(date)
+                    .dateFin(date)
+                    .statut("OUVERT")
+                    .estCloture(false)
+                    .reference(reference)
+                    .build();
+
+            Journal journalSauvegarde = journalRepository.save(nouveauJournal);
+            log.info("🆕 Nouveau journal créé avec succès: ID={}, Référence={}",
+                    journalSauvegarde.getId(), reference);
+
+            return journalSauvegarde;
+
+        } catch (Exception e) {
+            log.error("❌ Erreur création journal pour collecteur {}: {}", collecteur.getId(), e.getMessage());
+
+            // Dernière tentative de récupération si création échoue
+            Optional<Journal> fallbackJournal = journalRepository.findByCollecteurAndDate(collecteur, date);
+            if (fallbackJournal.isPresent()) {
+                log.warn("⚠️ Utilisation journal existant après échec création: {}", fallbackJournal.get().getId());
+                return fallbackJournal.get();
+            }
+
+            throw new RuntimeException("Impossible de créer ou récupérer le journal du jour", e);
+        }
     }
 
     /**
-     * ✅ GÉNÉRATION DE RÉFÉRENCE UNIQUE
+     * GÉNÉRATION DE RÉFÉRENCE UNIQUE
      */
     private String genererReference(Collecteur collecteur, LocalDate date) {
         return String.format("J-%s-%s-%s",
-                collecteur.getAgence().getCodeAgence(),
+                collecteur.getAgence() != null ? collecteur.getAgence().getCodeAgence() : "DEFAULT",
                 collecteur.getId(),
                 date.format(DateTimeFormatter.ofPattern("yyyyMMdd")));
     }
 
     /**
-     * ✅ RÉCUPÉRATION DU JOURNAL ACTUEL (aujourd'hui)
+     * RÉCUPÉRATION DU JOURNAL ACTUEL (aujourd'hui)
      */
     @Override
     @Cacheable(value = "journal-actuel", key = "#collecteurId")
@@ -109,10 +142,13 @@ public class JournalServiceImpl implements JournalService {
     }
 
     /**
-     * ✅ CLÔTURE AUTOMATIQUE DU JOURNAL
+     * CLÔTURE AUTOMATIQUE DU JOURNAL
      */
     @Override
-    @Transactional
+    @Transactional(
+            propagation = Propagation.REQUIRES_NEW,
+            rollbackFor = Exception.class
+    )
     @CacheEvict(value = "journal-actuel", key = "#collecteurId")
     public Journal cloturerJournalDuJour(Long collecteurId, LocalDate date) {
         log.info("🔒 Clôture journal collecteur {} pour date {}", collecteurId, date);
@@ -129,10 +165,13 @@ public class JournalServiceImpl implements JournalService {
         }
 
         journal.cloturerJournal();
-        return journalRepository.save(journal);
+        Journal journalCloture = journalRepository.save(journal);
+
+        log.info("✅ Journal clôturé avec succès: ID={}", journalCloture.getId());
+        return journalCloture;
     }
 
-    // ✅ MÉTHODES EXISTANTES CONSERVÉES POUR COMPATIBILITÉ
+    // MÉTHODES EXISTANTES CONSERVÉES POUR COMPATIBILITÉ
     @Override
     public List<Journal> getAllJournaux() {
         return journalRepository.findAll();

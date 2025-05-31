@@ -13,7 +13,7 @@ import org.example.collectfocep.mappers.MouvementMapper;
 import org.example.collectfocep.repositories.ClientRepository;
 import org.example.collectfocep.repositories.JournalRepository;
 import org.example.collectfocep.repositories.MouvementRepository;
-import org.example.collectfocep.services.impl.JournalMouvementService;
+import org.example.collectfocep.services.impl.JournalServiceImpl;
 import org.example.collectfocep.services.impl.MouvementServiceImpl;
 import org.example.collectfocep.security.service.SecurityService;
 import org.example.collectfocep.services.interfaces.JournalService;
@@ -43,7 +43,7 @@ public class MouvementController {
     private final MouvementRepository mouvementRepository; // ✅ AJOUTÉ
     private final MouvementMapper mouvementMapper;
     private final JournalService journalService;
-    private final JournalMouvementService journalMouvementService;
+    private final JournalServiceImpl journalServiceImpl;
 
     @Autowired
     private MouvementServiceImpl mouvementServiceImpl;
@@ -57,18 +57,18 @@ public class MouvementController {
             SecurityService securityService,
             ClientRepository clientRepository,
             JournalRepository journalRepository,
-            MouvementRepository mouvementRepository, // ✅ AJOUTÉ
+            MouvementRepository mouvementRepository,
             MouvementMapper mouvementMapper,
             JournalService journalService,
-            JournalMouvementService journalMouvementService) {
+            JournalServiceImpl journalServiceImpl) {
         this.mouvementServiceImpl = mouvementServiceImpl;
         this.securityService = securityService;
         this.clientRepository = clientRepository;
         this.journalRepository = journalRepository;
-        this.mouvementRepository = mouvementRepository; // ✅ AJOUTÉ
+        this.mouvementRepository = mouvementRepository;
         this.mouvementMapper = mouvementMapper;
         this.journalService = journalService;
-        this.journalMouvementService = journalMouvementService;
+        this.journalServiceImpl = journalServiceImpl;
     }
 
     @GetMapping("/{transactionId}")
@@ -323,7 +323,7 @@ public class MouvementController {
             @RequestParam(required = false) String date) {
 
         try {
-            List<MouvementJournalDTO> operations = journalMouvementService.getOperationsDuJour(collecteurId, date);
+            List<MouvementJournalDTO> operations = journalServiceImpl.getOrCreateJournalDuJour(collecteurId, date);
 
             return ResponseEntity.ok(
                     ApiResponse.success(operations, "Opérations du jour récupérées avec succès")
