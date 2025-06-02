@@ -14,6 +14,7 @@ import org.example.collectfocep.mappers.MouvementMapperV2;
 import org.example.collectfocep.repositories.*;
 import org.example.collectfocep.exceptions.MontantMaxRetraitException;
 import org.example.collectfocep.services.interfaces.CompteService;
+import org.example.collectfocep.services.interfaces.DateTimeService;
 import org.example.collectfocep.services.interfaces.JournalService;
 import org.example.collectfocep.services.interfaces.MouvementService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,7 +29,6 @@ import org.example.collectfocep.exceptions.BusinessException;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -36,24 +36,21 @@ import java.util.stream.Collectors;
 @Service
 @Slf4j
 public class MouvementServiceImpl implements MouvementService {
+
+
+    private final DateTimeService dateTimeService;
     private final CompteRepository compteRepository;
     private final CompteClientRepository compteClientRepository;
     private final CompteCollecteurRepository compteCollecteurRepository;
     private final CompteLiaisonRepository compteLiaisonRepository;
     private final ClientRepository clientRepository;
-    private final JournalRepository journalRepository; // AJOUT DU REPOSITORY MANQUANT
+    private final JournalRepository journalRepository;
     private final CompteService compteService;
     private final CommissionService commissionService;
     private final TransactionService transactionService;
     private final ClientAccountInitializationService clientAccountInitializationService;
     private final SystemAccountService systemAccountService;
     private final CollecteurAccountService collecteurAccountService;
-    @Autowired
-    private MouvementRepository mouvementRepository;
-
-    @Autowired
-    private MouvementMapperV2 mouvementMapper;
-
     private final JournalService journalService;
 
     // Métriques injectées via Spring
@@ -61,7 +58,14 @@ public class MouvementServiceImpl implements MouvementService {
     private final Timer mouvementTimer;
 
     @Autowired
+    private MouvementRepository mouvementRepository;
+
+    @Autowired
+    private MouvementMapperV2 mouvementMapper;
+
+    @Autowired
     public MouvementServiceImpl(
+            DateTimeService dateTimeService,
             SystemAccountService systemAccountService,
             CollecteurAccountService collecteurAccountService,
             MouvementRepository mouvementRepository,
@@ -71,7 +75,7 @@ public class MouvementServiceImpl implements MouvementService {
             CompteLiaisonRepository compteLiaisonRepository,
             ClientRepository clientRepository,
             JournalService journalService,
-            JournalRepository journalRepository, // AJOUT DU PARAMÈTRE MANQUANT
+            JournalRepository journalRepository,
             CompteService compteService,
             CommissionService commissionService,
             TransactionService transactionService,
@@ -79,6 +83,7 @@ public class MouvementServiceImpl implements MouvementService {
             Counter epargneCounter,
             Timer mouvementTimer) {
 
+        this.dateTimeService = dateTimeService;
         this.systemAccountService = systemAccountService;
         this.collecteurAccountService = collecteurAccountService;
         this.mouvementRepository = mouvementRepository;
@@ -103,7 +108,6 @@ public class MouvementServiceImpl implements MouvementService {
     private CompteCollecteur getCompteServiceCollecteur(Collecteur collecteur) {
         log.debug("Recherche du compte service pour collecteur ID={}", collecteur.getId());
 
-        // 1. Essayer d'abord la méthode standard via CompteService
         try {
             CompteCollecteur compteServiceCollecteur = compteService.findServiceAccount(collecteur);
             log.debug("Compte service trouvé via CompteService: ID={}, Numéro={}",
@@ -113,10 +117,8 @@ public class MouvementServiceImpl implements MouvementService {
             log.debug("Compte service non trouvé via CompteService, tentative de création...");
         }
 
-        // 2. Si non trouvé, vérifier s'il faut créer les comptes
         ensureCollecteurAccountsExist(collecteur);
 
-        // 3. Réessayer après création
         try {
             CompteCollecteur compteServiceCollecteur = compteService.findServiceAccount(collecteur);
             log.debug("Compte service trouvé après création: ID={}, Numéro={}",
@@ -135,7 +137,6 @@ public class MouvementServiceImpl implements MouvementService {
     private void ensureCollecteurAccountsExist(Collecteur collecteur) {
         log.debug("Vérification de l'existence des comptes pour collecteur ID={}", collecteur.getId());
 
-        // Utiliser CompteService pour créer les comptes seulement s'ils n'existent pas
         try {
             compteService.createCollecteurAccounts(collecteur);
             log.info("Comptes créés/vérifiés pour collecteur ID={}", collecteur.getId());
@@ -193,9 +194,8 @@ public class MouvementServiceImpl implements MouvementService {
                 // Sauvegarde des modifications
                 compteRepository.save(compteSource);
                 compteRepository.save(compteDestination);
-
-
-                mouvement.setDateOperation(LocalDateTime.now());
+                
+                mouvement.setDateOperation(dateTimeService.getCurrentDateTime());
                 Mouvement mouvementSauvegarde = mouvementRepository.save(mouvement);
 
                 log.info("Mouvement réussi: ID={}, Montant={}, Source={} (Solde={}), Destination={} (Solde={})",
@@ -203,20 +203,13 @@ public class MouvementServiceImpl implements MouvementService {
                         compteSource.getNumeroCompte(), compteSource.getSolde(),
                         compteDestination.getNumeroCompte(), compteDestination.getSolde());
 
-                log.info("SOLDES MIS À JOUR: Compte source {} ({}→{}), Compte destination {} ({}→{})",
-                        compteSource.getNumeroCompte(), soldeSourceAvant, compteSource.getSolde(),
-                        compteDestination.getNumeroCompte(), soldeDestinationAvant, compteDestination.getSolde());
-
-                log.info("FIN TRANSACTION: ID={}, Montant={} - Opération réussie",
-                        mouvementSauvegarde.getId(), mouvementSauvegarde.getMontant());
-
                 return mouvementSauvegarde;
 
             } catch (Exception e) {
                 log.error("Erreur lors de l'exécution du mouvement - Cause: {}", e.getMessage(), e);
                 status.setRollbackOnly();
-                throw new BusinessException("Erreur lors de la recherche des mouvements: " + e.getMessage(),
-                        "SEARCH_ERROR", e.getMessage());
+                throw new BusinessException("Erreur lors de l'exécution du mouvement: " + e.getMessage(),
+                        "MOUVEMENT_ERROR", e.getMessage());
             }
         });
     }
@@ -241,15 +234,6 @@ public class MouvementServiceImpl implements MouvementService {
                 throw new BusinessException("Erreur lors du traitement des commissions", "COMMISSION_ERROR", e.getMessage());
             }
         });
-    }
-
-    /**
-     * Vérifie si l'opération nécessite une commission
-     */
-    private boolean estOperationAvecCommission(Mouvement mouvement) {
-        boolean estEligible = "epargne".equals(mouvement.getSens()) || "retrait".equals(mouvement.getSens());
-        log.debug("Vérification éligibilité commission: {} - Sens: {}", estEligible, mouvement.getSens());
-        return estEligible;
     }
 
     /**
@@ -302,7 +286,8 @@ public class MouvementServiceImpl implements MouvementService {
         mouvement.setMontant(montant);
         mouvement.setLibelle(String.format("Epargne client : %s %s", client.getNom(), client.getPrenom()));
         mouvement.setSens("epargne");
-        mouvement.setDateOperation(LocalDateTime.now());
+        // ✅ UTILISATION DU DateTimeService
+        mouvement.setDateOperation(dateTimeService.getCurrentDateTime());
         mouvement.setCompteSource(source);
         mouvement.setCompteDestination(destination);
         mouvement.setJournal(journal);
@@ -326,45 +311,34 @@ public class MouvementServiceImpl implements MouvementService {
             case "debit":
                 compteSource.setSolde(compteSource.getSolde() - montant);
                 compteDestination.setSolde(compteDestination.getSolde() + montant);
-                log.debug("Soldes mis à jour (DEBIT): Source={} (Nouveau solde={}), Destination={} (Nouveau solde={})",
-                        compteSource.getNumeroCompte(), compteSource.getSolde(),
-                        compteDestination.getNumeroCompte(), compteDestination.getSolde());
                 break;
             case "credit":
                 compteSource.setSolde(compteSource.getSolde() + montant);
                 compteDestination.setSolde(compteDestination.getSolde() - montant);
-                log.debug("Soldes mis à jour (CREDIT): Source={} (Nouveau solde={}), Destination={} (Nouveau solde={})",
-                        compteSource.getNumeroCompte(), compteSource.getSolde(),
-                        compteDestination.getNumeroCompte(), compteDestination.getSolde());
                 break;
             case "epargne":
                 // Pour l'épargne, on débite le compte service du collecteur et on crédite le compte client
                 compteSource.setSolde(compteSource.getSolde() - montant);
                 compteDestination.setSolde(compteDestination.getSolde() + montant);
-                log.debug("Soldes mis à jour (EPARGNE): Source={} (Nouveau solde={}), Destination={} (Nouveau solde={})",
-                        compteSource.getNumeroCompte(), compteSource.getSolde(),
-                        compteDestination.getNumeroCompte(), compteDestination.getSolde());
                 break;
             case "retrait":
                 // Pour le retrait, on débite le compte client et on crédite le compte service
                 compteSource.setSolde(compteSource.getSolde() - montant);
                 compteDestination.setSolde(compteDestination.getSolde() + montant);
-                log.debug("Soldes mis à jour (RETRAIT): Source={} (Nouveau solde={}), Destination={} (Nouveau solde={})",
-                        compteSource.getNumeroCompte(), compteSource.getSolde(),
-                        compteDestination.getNumeroCompte(), compteDestination.getSolde());
                 break;
             case "versement":
                 // Pour le versement en agence, on débite le compte liaison et on crédite le compte service
                 compteSource.setSolde(compteSource.getSolde() - montant);
                 compteDestination.setSolde(compteDestination.getSolde() + montant);
-                log.debug("Soldes mis à jour (VERSEMENT): Source={} (Nouveau solde={}), Destination={} (Nouveau solde={})",
-                        compteSource.getNumeroCompte(), compteSource.getSolde(),
-                        compteDestination.getNumeroCompte(), compteDestination.getSolde());
                 break;
             default:
                 log.error("Type d'opération non reconnu: {}", sens);
                 throw new IllegalArgumentException("Sens d'opération non reconnu: " + sens);
         }
+
+        log.debug("Soldes mis à jour - Source: {} (Nouveau solde={}), Destination: {} (Nouveau solde={})",
+                compteSource.getNumeroCompte(), compteSource.getSolde(),
+                compteDestination.getNumeroCompte(), compteDestination.getSolde());
     }
 
     @Override
@@ -384,15 +358,14 @@ public class MouvementServiceImpl implements MouvementService {
                 Client clientWithRelations = clientRepository.findByIdWithAllRelations(client.getId())
                         .orElseThrow(() -> new ResourceNotFoundException("Client non trouvé"));
 
-                // 2. ✅ RÉCUPÉRATION AUTOMATIQUE DU JOURNAL DU JOUR
+                // 2. ✅ RÉCUPÉRATION AUTOMATIQUE DU JOURNAL DU JOUR avec DateTimeService
                 Journal journalDuJour;
                 if (journal != null) {
-                    journalDuJour = journal; // Utiliser le journal fourni si disponible
+                    journalDuJour = journal;
                 } else {
-                    // ✅ CRÉATION/RÉCUPÉRATION AUTOMATIQUE
                     journalDuJour = journalService.getOrCreateJournalDuJour(
                             clientWithRelations.getCollecteur().getId(),
-                            LocalDate.now()
+                            dateTimeService.getCurrentDate() // ✅ UTILISATION DU SERVICE
                     );
                     log.info("📅 Journal automatique: ID={}, Date={}",
                             journalDuJour.getId(), journalDuJour.getDateDebut());
@@ -410,13 +383,13 @@ public class MouvementServiceImpl implements MouvementService {
                         compteClient,
                         montant,
                         clientWithRelations,
-                        journalDuJour // ✅ JOURNAL AUTOMATIQUE
+                        journalDuJour
                 );
 
-                // 5. ✅ DÉFINIR LE TYPE DE MOUVEMENT
+                // 5. Définir le type de mouvement
                 mouvement.setTypeMouvement("EPARGNE");
-                mouvement.setCollecteur(clientWithRelations.getCollecteur()); // ✅ LIEN COLLECTEUR
-                mouvement.setClient(clientWithRelations); // ✅ LIEN CLIENT
+                mouvement.setCollecteur(clientWithRelations.getCollecteur());
+                mouvement.setClient(clientWithRelations);
 
                 // 6. Exécuter le mouvement
                 Mouvement mouvementEnregistre = effectuerMouvement(mouvement);
@@ -436,12 +409,6 @@ public class MouvementServiceImpl implements MouvementService {
         });
     }
 
-    /**
-     * Enregistre une opération de retrait avec gestion des transactions
-     */
-    /**
-     * Enregistre une opération de retrait avec gestion des transactions
-     */
     @Override
     @Transactional(
             propagation = Propagation.REQUIRED,
@@ -458,14 +425,14 @@ public class MouvementServiceImpl implements MouvementService {
             Client clientRecharge = clientRepository.findByIdWithAllRelations(client.getId())
                     .orElseThrow(() -> new ResourceNotFoundException("Client non trouvé"));
 
-            // 2. ✅ RÉCUPÉRATION AUTOMATIQUE DU JOURNAL DU JOUR
+            // 2. ✅ RÉCUPÉRATION AUTOMATIQUE DU JOURNAL DU JOUR avec DateTimeService
             Journal journalDuJour;
             if (journal != null) {
                 journalDuJour = journal;
             } else {
                 journalDuJour = journalService.getOrCreateJournalDuJour(
                         clientRecharge.getCollecteur().getId(),
-                        LocalDate.now()
+                        dateTimeService.getCurrentDate() // ✅ UTILISATION DU SERVICE
                 );
                 log.info("📅 Journal automatique retrait: ID={}, Date={}",
                         journalDuJour.getId(), journalDuJour.getDateDebut());
@@ -485,10 +452,10 @@ public class MouvementServiceImpl implements MouvementService {
                     compteService,
                     montant,
                     clientRecharge,
-                    journalDuJour // ✅ JOURNAL AUTOMATIQUE
+                    journalDuJour
             );
 
-            // 5. ✅ DÉFINIR LE TYPE ET LES RELATIONS
+            // 5. Définir le type et les relations
             mouvement.setTypeMouvement("RETRAIT");
             mouvement.setCollecteur(clientRecharge.getCollecteur());
             mouvement.setClient(clientRecharge);
@@ -507,7 +474,8 @@ public class MouvementServiceImpl implements MouvementService {
             compteRepository.save(compteSource);
             compteRepository.save(compteDestination);
 
-            mouvement.setDateOperation(LocalDateTime.now());
+            // ✅ UTILISATION DU DateTimeService
+            mouvement.setDateOperation(dateTimeService.getCurrentDateTime());
             Mouvement mouvementEnregistre = mouvementRepository.save(mouvement);
 
             log.info("✅ Retrait enregistré: ID={}, Journal={}, Client={}",
@@ -525,9 +493,6 @@ public class MouvementServiceImpl implements MouvementService {
         }
     }
 
-    /**
-     * Enregistre un versement avec gestion des transactions
-     */
     @Override
     @Transactional(
             propagation = Propagation.REQUIRED,
@@ -586,7 +551,6 @@ public class MouvementServiceImpl implements MouvementService {
 
     /**
      * Applique les commissions pour un mouvement selon les règles d'entreprise
-     * @param mouvement Le mouvement concerné
      */
     @Transactional(
             propagation = Propagation.REQUIRES_NEW,
@@ -600,9 +564,7 @@ public class MouvementServiceImpl implements MouvementService {
             try {
                 log.debug("Application des commissions pour le mouvement: {}", mouvement.getId());
 
-                // Utiliser la constante TVA_RATE des imports statiques
-                double tvaRate = 0.1925; // Selon CommissionConstants.TVA_RATE
-
+                double tvaRate = 0.1925;
                 double montantCommission = commissionService.calculerCommission(mouvement);
                 double tva = montantCommission * tvaRate;
                 double netCommission = montantCommission - tva;
@@ -610,41 +572,33 @@ public class MouvementServiceImpl implements MouvementService {
                 log.debug("Calcul commission: Mouvement={}, Montant={}, Commission={}, TVA={}, Net={}",
                         mouvement.getId(), mouvement.getMontant(), montantCommission, tva, netCommission);
 
-                // Récupération ou création des comptes nécessaires avec l'utilitaire
-                // 1. S'assurer que les comptes système existent
+                // Récupération ou création des comptes nécessaires
                 systemAccountService.ensureSystemAccountsExist();
 
-                // 2. Récupérer le compte d'attente
                 Compte compteAttente = compteRepository.findByTypeCompte("ATTENTE")
                         .orElseGet(() -> {
                             log.warn("Compte d'attente système non trouvé, création en cours...");
                             return systemAccountService.ensureSystemCompteExists("ATTENTE", "Compte Attente Système", "ATT-SYS");
                         });
 
-                log.debug("Compte attente trouvé: ID={}, Solde={}", compteAttente.getId(), compteAttente.getSolde());
-
-                // 3. Récupérer ou créer les autres comptes système nécessaires
                 Compte compteTaxe = compteRepository.findByTypeCompte("TAXE")
                         .orElseGet(() -> {
                             log.warn("Compte taxe système non trouvé, création en cours...");
                             return systemAccountService.ensureSystemCompteExists("TAXE", "Compte Taxe Système", "TAXE-SYS");
                         });
-                log.debug("Compte taxe trouvé: ID={}, Solde={}", compteTaxe.getId(), compteTaxe.getSolde());
 
                 Compte compteProduit = compteRepository.findByTypeCompte("PRODUIT")
                         .orElseGet(() -> {
                             log.warn("Compte produit système non trouvé, création en cours...");
                             return systemAccountService.ensureSystemCompteExists("PRODUIT", "Compte Produit FOCEP", "PROD-SYS");
                         });
-                log.debug("Compte produit trouvé: ID={}, Solde={}", compteProduit.getId(), compteProduit.getSolde());
 
-                // 4. Si le mouvement est lié à un collecteur, utiliser son compte d'attente personnel
+                // Si le mouvement est lié à un collecteur, utiliser son compte d'attente personnel
                 CompteCollecteur compteAttenteCollecteur = null;
                 if (mouvement.getCompteDestination() instanceof CompteClient) {
                     Client client = ((CompteClient) mouvement.getCompteDestination()).getClient();
                     if (client != null && client.getCollecteur() != null) {
                         compteAttenteCollecteur = collecteurAccountService.ensureCompteAttenteExists(client.getCollecteur());
-                        // Si on a trouvé un compte d'attente spécifique au collecteur, on l'utilise à la place
                         if (compteAttenteCollecteur != null) {
                             compteAttente = compteAttenteCollecteur;
                             log.debug("Utilisation du compte d'attente du collecteur: ID={}, Solde={}",
@@ -704,7 +658,7 @@ public class MouvementServiceImpl implements MouvementService {
                 log.info("Commissions appliquées avec succès pour mouvement ID={}: Commission={}, TVA={}, Part FOCEP={}",
                         mouvement.getId(), montantCommission, tva, partFOCEP);
 
-                return null; // Nécessaire pour la lambda
+                return null;
             } catch (Exception e) {
                 log.error("Erreur lors de l'application des commissions - Mouvement: {}, Erreur: {}",
                         mouvement.getId(), e.getMessage(), e);
@@ -726,7 +680,8 @@ public class MouvementServiceImpl implements MouvementService {
         mouvement.setMontant(montant);
         mouvement.setLibelle(libelle);
         mouvement.setSens("debit");
-        mouvement.setDateOperation(LocalDateTime.now());
+        // ✅ UTILISATION DU DateTimeService
+        mouvement.setDateOperation(dateTimeService.getCurrentDateTime());
         mouvement.setCompteSource(source);
         mouvement.setCompteDestination(destination);
         mouvement.setJournal(journal);
@@ -764,7 +719,8 @@ public class MouvementServiceImpl implements MouvementService {
                 }
 
                 journal.setEstCloture(true);
-                journal.setDateCloture(LocalDateTime.now());
+                // ✅ UTILISATION DU DateTimeService
+                journal.setDateCloture(dateTimeService.getCurrentDateTime());
 
                 Journal journalCloture = journalService.saveJournal(journal);
                 log.info("Clôture de journée effectuée avec succès pour journal ID={}, collecteur={}",
@@ -846,7 +802,8 @@ public class MouvementServiceImpl implements MouvementService {
         mouvement.setMontant(montant);
         mouvement.setLibelle(String.format("Retrait client : %s %s", client.getNom(), client.getPrenom()));
         mouvement.setSens("retrait");
-        mouvement.setDateOperation(LocalDateTime.now());
+        // ✅ UTILISATION DU DateTimeService
+        mouvement.setDateOperation(dateTimeService.getCurrentDateTime());
         mouvement.setCompteSource(source);
         mouvement.setCompteDestination(destination);
         mouvement.setJournal(journal);
@@ -867,7 +824,8 @@ public class MouvementServiceImpl implements MouvementService {
         mouvement.setMontant(montant);
         mouvement.setLibelle(String.format("Versement en agence pour collecteur : %s", collecteur.getNom()));
         mouvement.setSens("versement");
-        mouvement.setDateOperation(LocalDateTime.now());
+        // ✅ UTILISATION DU DateTimeService
+        mouvement.setDateOperation(dateTimeService.getCurrentDateTime());
         mouvement.setCompteSource(source);
         mouvement.setCompteDestination(destination);
         mouvement.setJournal(journal);
@@ -912,7 +870,6 @@ public class MouvementServiceImpl implements MouvementService {
                 .collect(Collectors.toList());
     }
 
-
     /**
      * Trouver les mouvements par collecteur et date
      */
@@ -922,10 +879,11 @@ public class MouvementServiceImpl implements MouvementService {
 
         try {
             LocalDate localDate = LocalDate.parse(date);
-            LocalDateTime startOfDay = localDate.atStartOfDay();
-            LocalDateTime endOfDay = localDate.atTime(LocalTime.MAX);
+            // ✅ UTILISATION DU DateTimeService
+            LocalDateTime startOfDay = dateTimeService.toStartOfDay(localDate);
+            LocalDateTime endOfDay = dateTimeService.toEndOfDay(localDate);
 
-            return mouvementRepository.findByCollecteurIdAndDateOperationBetween(
+            return mouvementRepository.findByCollecteurAndDate(
                     collecteurId, startOfDay, endOfDay, pageable);
         } catch (Exception e) {
             log.error("Erreur lors de la recherche des mouvements", e);
@@ -972,5 +930,4 @@ public class MouvementServiceImpl implements MouvementService {
             throw new BusinessException("Erreur lors de la vérification du solde: " + e.getMessage());
         }
     }
-
 }

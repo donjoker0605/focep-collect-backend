@@ -57,10 +57,6 @@ public class SecurityService {
         this.clientRepository = clientRepository;
     }
 
-    /**
-     * ✅ NOUVELLE MÉTHODE: Vérifie si l'utilisateur authentifié est le propriétaire du collecteur
-     * Optimisée avec mise en cache pour éviter les requêtes répétées
-     */
     @Cacheable(key = "{'owner-collecteur', #authentication.name, #collecteurId}")
     public boolean isOwnerCollecteur(Authentication authentication, Long collecteurId) {
         if (authentication == null || !authentication.isAuthenticated()) {
@@ -653,5 +649,50 @@ public class SecurityService {
             return ((JwtAuthenticationFilter.JwtUserPrincipal) authentication.getPrincipal()).getAgenceId();
         }
         return null;
+    }
+
+    public boolean canAccessCollecteurData(Authentication auth, Long collecteurId) {
+        if (auth == null || !auth.isAuthenticated()) {
+            return false;
+        }
+
+        // Super Admin peut tout voir
+        if (hasRole(auth.getAuthorities(), RoleConfig.SUPER_ADMIN)) {
+            return true;
+        }
+
+        // Admin peut voir les collecteurs de son agence
+        if (hasRole(auth.getAuthorities(), RoleConfig.ADMIN)) {
+            return verifyAdminCanManageCollecteur(auth.getName(), collecteurId);
+        }
+
+        // Collecteur peut voir ses propres données
+        if (hasRole(auth.getAuthorities(), RoleConfig.COLLECTEUR)) {
+            Long tokenUserId = extractUserIdFromAuthentication(auth);
+            return tokenUserId != null && tokenUserId.equals(collecteurId);
+        }
+
+        return false;
+    }
+
+    /**
+     * MÉTHODE UTILITAIRE POUR EXTRAIRE L'ID UTILISATEUR DE MANIÈRE CENTRALISÉE
+     */
+    private Long extractUserIdFromAuth(Authentication auth) {
+        return extractUserIdFromAuthentication(auth);
+    }
+
+    /**
+     * MÉTHODE UTILITAIRE POUR VÉRIFIER LES RÔLES ADMIN
+     */
+    private boolean hasAdminRole(Authentication auth) {
+        return hasRole(auth.getAuthorities(), RoleConfig.ADMIN);
+    }
+
+    /**
+     * MÉTHODE UTILITAIRE POUR VÉRIFIER LE RÔLE SUPER ADMIN
+     */
+    private boolean isSuperAdmin(Authentication auth) {
+        return hasRole(auth.getAuthorities(), RoleConfig.SUPER_ADMIN);
     }
 }

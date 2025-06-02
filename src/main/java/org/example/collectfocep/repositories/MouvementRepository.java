@@ -151,7 +151,7 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
             @Param("endDate") LocalDateTime endDate);
 
     // =====================================
-    // REQUÊTES PAR DATE (LocalDate) - ✅ CORRECTION CRITIQUE
+    // REQUÊTES PAR DATE (LocalDate)
     // =====================================
 
     /**
@@ -440,14 +440,23 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
             Pageable pageable);
 
     // =====================================
-    // REQUÊTES PAR COLLECTEUR ET DATE AVEC LocalDate - ✅ NOUVELLE MÉTHODE CORRIGÉE
+    // REQUÊTES PAR COLLECTEUR ET DATE AVEC LocalDateTime - ✅ NOUVELLE MÉTHODE CORRIGÉE
     // =====================================
 
-    @Query("SELECT m FROM Mouvement m WHERE m.collecteur.id = :collecteurId " +
-            "AND DATE(m.dateOperation) = :date")
+    /**
+     * ✅ CORRECTION CRITIQUE: Utilise LocalDateTime au lieu de String pour les dates
+     * Cette méthode remplace l'ancienne qui utilisait String date et parsing manuel
+     */
+    @Query("""
+    SELECT m FROM Mouvement m 
+    WHERE m.collecteur.id = :collecteurId 
+    AND m.dateOperation BETWEEN :startOfDay AND :endOfDay
+    ORDER BY m.dateOperation DESC
+    """)
     Page<Mouvement> findByCollecteurAndDate(
             @Param("collecteurId") Long collecteurId,
-            @Param("date") String date,
+            @Param("startOfDay") LocalDateTime startOfDay,
+            @Param("endOfDay") LocalDateTime endOfDay,
             Pageable pageable
     );
 
@@ -476,4 +485,93 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
     ORDER BY m.dateOperation DESC
     """)
     List<Mouvement> findByClientIdWithAllRelations(@Param("clientId") Long clientId);
+
+    // =====================================
+    // ✅ NOUVELLES MÉTHODES AVEC DateTimeService SUPPORT
+    // =====================================
+
+    /**
+     * Méthode optimisée pour rechercher par collecteur et plage de dates (LocalDateTime)
+     * Compatible avec DateTimeService
+     */
+    @Query("""
+    SELECT m FROM Mouvement m
+    LEFT JOIN FETCH m.client c
+    LEFT JOIN FETCH m.collecteur col
+    WHERE m.collecteur.id = :collecteurId
+    AND m.dateOperation BETWEEN :startDateTime AND :endDateTime
+    ORDER BY m.dateOperation DESC
+    """)
+    List<Mouvement> findByCollecteurIdAndDateTimeBetween(
+            @Param("collecteurId") Long collecteurId,
+            @Param("startDateTime") LocalDateTime startDateTime,
+            @Param("endDateTime") LocalDateTime endDateTime);
+
+    /**
+     * Version paginée pour rechercher par collecteur et plage de dates
+     */
+    @Query("""
+    SELECT m FROM Mouvement m
+    LEFT JOIN FETCH m.client c
+    LEFT JOIN FETCH m.collecteur col
+    WHERE m.collecteur.id = :collecteurId
+    AND m.dateOperation BETWEEN :startDateTime AND :endDateTime
+    ORDER BY m.dateOperation DESC
+    """)
+    Page<Mouvement> findByCollecteurIdAndDateTimeBetween(
+            @Param("collecteurId") Long collecteurId,
+            @Param("startDateTime") LocalDateTime startDateTime,
+            @Param("endDateTime") LocalDateTime endDateTime,
+            Pageable pageable);
+
+    /**
+     * Statistiques de mouvements par collecteur et période
+     */
+    @Query("""
+    SELECT 
+        COUNT(m) as totalTransactions,
+        COALESCE(SUM(CASE WHEN m.sens = 'epargne' THEN m.montant ELSE 0 END), 0) as totalEpargne,
+        COALESCE(SUM(CASE WHEN m.sens = 'retrait' THEN m.montant ELSE 0 END), 0) as totalRetraits,
+        COUNT(CASE WHEN m.sens = 'epargne' THEN 1 END) as nombreEpargnes,
+        COUNT(CASE WHEN m.sens = 'retrait' THEN 1 END) as nombreRetraits
+    FROM Mouvement m
+    WHERE m.collecteur.id = :collecteurId
+    AND m.dateOperation BETWEEN :startDateTime AND :endDateTime
+    """)
+    Object[] getStatsByCollecteurAndPeriod(
+            @Param("collecteurId") Long collecteurId,
+            @Param("startDateTime") LocalDateTime startDateTime,
+            @Param("endDateTime") LocalDateTime endDateTime);
+
+    /**
+     * Récupère les mouvements par client et période (pour le solde)
+     */
+    @Query("""
+    SELECT m FROM Mouvement m
+    WHERE m.client.id = :clientId
+    AND m.dateOperation BETWEEN :startDateTime AND :endDateTime
+    ORDER BY m.dateOperation ASC
+    """)
+    List<Mouvement> findByClientIdAndPeriod(
+            @Param("clientId") Long clientId,
+            @Param("startDateTime") LocalDateTime startDateTime,
+            @Param("endDateTime") LocalDateTime endDateTime);
+
+    /**
+     * Recherche de transactions par collecteur pour un jour spécifique
+     * Utilise LocalDateTime pour une meilleure précision
+     */
+    @Query("""
+    SELECT m FROM Mouvement m
+    LEFT JOIN FETCH m.client c
+    LEFT JOIN FETCH m.journal j
+    WHERE m.collecteur.id = :collecteurId
+    AND m.dateOperation >= :dayStart
+    AND m.dateOperation < :dayEnd
+    ORDER BY m.dateOperation DESC
+    """)
+    List<Mouvement> findByCollecteurAndDay(
+            @Param("collecteurId") Long collecteurId,
+            @Param("dayStart") LocalDateTime dayStart,
+            @Param("dayEnd") LocalDateTime dayEnd);
 }

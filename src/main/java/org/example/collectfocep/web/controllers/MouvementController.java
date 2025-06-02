@@ -9,13 +9,15 @@ import org.example.collectfocep.entities.Mouvement;
 import org.example.collectfocep.exceptions.ResourceNotFoundException;
 import org.example.collectfocep.exceptions.UnauthorizedAgencyAccessException;
 import org.example.collectfocep.exceptions.UnauthorizedException;
-import org.example.collectfocep.mappers.MouvementMapper;
+import org.example.collectfocep.mappers.MouvementMapperV2;
 import org.example.collectfocep.repositories.ClientRepository;
 import org.example.collectfocep.repositories.JournalRepository;
 import org.example.collectfocep.repositories.MouvementRepository;
 import org.example.collectfocep.services.impl.JournalServiceImpl;
 import org.example.collectfocep.services.impl.MouvementServiceImpl;
+import org.example.collectfocep.services.impl.TransactionService;
 import org.example.collectfocep.security.service.SecurityService;
+import org.example.collectfocep.services.interfaces.DateTimeService;
 import org.example.collectfocep.services.interfaces.JournalService;
 import org.example.collectfocep.util.ApiResponse;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,7 +34,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -41,11 +42,14 @@ import java.util.stream.Collectors;
 @Slf4j
 public class MouvementController {
 
+    // ✅ INJECTION DU DateTimeService
+    private final DateTimeService dateTimeService;
+    private final TransactionService transactionService;
     private final SecurityService securityService;
     private final ClientRepository clientRepository;
     private final JournalRepository journalRepository;
-    private final MouvementRepository mouvementRepository; // ✅ AJOUTÉ
-    private final MouvementMapper mouvementMapper;
+    private final MouvementRepository mouvementRepository;
+    private final MouvementMapperV2 mouvementMapper;
     private final JournalService journalService;
     private final JournalServiceImpl journalServiceImpl;
 
@@ -57,14 +61,19 @@ public class MouvementController {
 
     @Autowired
     public MouvementController(
+            DateTimeService dateTimeService, // ✅ NOUVEAU PARAMÈTRE
+            TransactionService transactionService, // ✅ NOUVEAU PARAMÈTRE
             MouvementServiceImpl mouvementServiceImpl,
             SecurityService securityService,
             ClientRepository clientRepository,
             JournalRepository journalRepository,
             MouvementRepository mouvementRepository,
-            MouvementMapper mouvementMapper,
+            MouvementMapperV2 mouvementMapper,
             JournalService journalService,
             JournalServiceImpl journalServiceImpl) {
+
+        this.dateTimeService = dateTimeService; // ✅ INITIALISATION
+        this.transactionService = transactionService; // ✅ INITIALISATION
         this.mouvementServiceImpl = mouvementServiceImpl;
         this.securityService = securityService;
         this.clientRepository = clientRepository;
@@ -81,28 +90,14 @@ public class MouvementController {
         log.info("🔍 Récupération des détails de la transaction: {}", transactionId);
 
         try {
-            // ✅ CORRECTION: Charger avec toutes les relations
-            Mouvement mouvement = mouvementRepository.findById(transactionId)
+            // ✅ CORRECTION: Utiliser la requête optimisée avec toutes les relations
+            Mouvement mouvement = mouvementRepository.findByIdWithAllRelations(transactionId)
                     .orElseThrow(() -> new ResourceNotFoundException("Transaction non trouvée avec l'ID: " + transactionId));
 
             // ✅ SÉCURITÉ: Vérifier les droits d'accès
             if (!securityService.canAccessMouvement(SecurityContextHolder.getContext().getAuthentication(), mouvement)) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
                         .body(ApiResponse.error("UNAUTHORIZED", "Accès non autorisé à cette transaction"));
-            }
-
-            // ✅ CORRECTION: Forcer le chargement des relations lazy
-            if (mouvement.getClient() != null) {
-                mouvement.getClient().getNom(); // Force lazy loading
-            }
-            if (mouvement.getCollecteur() != null) {
-                mouvement.getCollecteur().getNom(); // Force lazy loading
-            }
-            if (mouvement.getCompteSource() != null) {
-                mouvement.getCompteSource().getNumeroCompte(); // Force lazy loading
-            }
-            if (mouvement.getCompteDestination() != null) {
-                mouvement.getCompteDestination().getNumeroCompte(); // Force lazy loading
             }
 
             MouvementDTO dto = mouvementMapper.toDTO(mouvement);
@@ -117,27 +112,51 @@ public class MouvementController {
         }
     }
 
-    // ✅ NOUVEAU : ENDPOINT POUR RÉCUPÉRER TOUTES LES TRANSACTIONS D'UN COLLECTEUR
     @GetMapping("/collecteur/{collecteurId}")
     @PreAuthorize("@securityService.canManageCollecteur(authentication, #collecteurId)")
     public ResponseEntity<ApiResponse<List<MouvementDTO>>> getTransactionsByCollecteur(
             @PathVariable Long collecteurId,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size) {
+            @RequestParam(defaultValue = "50") int size,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateDebut,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFin) {
 
-        log.info("🔍 Récupération des transactions pour le collecteur: {}", collecteurId);
+        log.info("🔍 Récupération des transactions pour le collecteur: {} (page: {}, size: {})", collecteurId, page, size);
 
         try {
             PageRequest pageRequest = PageRequest.of(page, size, Sort.by("dateOperation").descending());
-            Page<Mouvement> mouvements = mouvementRepository.findByCollecteurId(collecteurId, pageRequest);
+            Page<Mouvement> mouvements;
+
+            // ✅ UTILISATION DU DateTimeService pour les filtres de date
+            if (dateDebut != null && dateFin != null) {
+                LocalDateTime startDateTime = dateTimeService.toStartOfDay(dateDebut);
+                LocalDateTime endDateTime = dateTimeService.toEndOfDay(dateFin);
+
+                mouvements = mouvementRepository.findByCollecteurIdAndDateTimeBetween(
+                        collecteurId, startDateTime, endDateTime, pageRequest);
+            } else if (dateDebut != null) {
+                // Si seulement date de début, prendre toute la journée
+                LocalDateTime startDateTime = dateTimeService.toStartOfDay(dateDebut);
+                LocalDateTime endDateTime = dateTimeService.toEndOfDay(dateDebut);
+
+                mouvements = mouvementRepository.findByCollecteurIdAndDateTimeBetween(
+                        collecteurId, startDateTime, endDateTime, pageRequest);
+            } else {
+                // Sans filtre de date
+                mouvements = mouvementRepository.findByCollecteurId(collecteurId, pageRequest);
+            }
 
             List<MouvementDTO> dtos = mouvements.getContent().stream()
                     .map(mouvementMapper::toDTO)
                     .toList();
 
-            return ResponseEntity.ok(
-                    ApiResponse.success(dtos, "Transactions du collecteur récupérées avec succès")
-            );
+            ApiResponse<List<MouvementDTO>> response = ApiResponse.success(dtos, "Transactions du collecteur récupérées avec succès");
+            response.addMeta("totalElements", mouvements.getTotalElements());
+            response.addMeta("totalPages", mouvements.getTotalPages());
+            response.addMeta("currentPage", page);
+            response.addMeta("size", size);
+
+            return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("❌ Erreur lors de la récupération des transactions du collecteur {}", collecteurId, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -147,12 +166,26 @@ public class MouvementController {
 
     @GetMapping("/client/{clientId}")
     @PreAuthorize("@securityService.canManageClient(authentication, #clientId)")
-    public ResponseEntity<ApiResponse<List<MouvementDTO>>> getTransactionsByClient(@PathVariable Long clientId) {
+    public ResponseEntity<ApiResponse<List<MouvementDTO>>> getTransactionsByClient(
+            @PathVariable Long clientId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateDebut,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFin) {
+
         log.info("🔍 Récupération des transactions pour le client: {}", clientId);
 
         try {
-            // ✅ CORRECTION: Utiliser une requête avec JOIN FETCH
-            List<Mouvement> mouvements = mouvementRepository.findByClientIdWithAllRelations(clientId);
+            List<Mouvement> mouvements;
+
+            // ✅ UTILISATION DU DateTimeService pour les filtres de date
+            if (dateDebut != null && dateFin != null) {
+                LocalDateTime startDateTime = dateTimeService.toStartOfDay(dateDebut);
+                LocalDateTime endDateTime = dateTimeService.toEndOfDay(dateFin);
+
+                mouvements = mouvementRepository.findByClientIdAndPeriod(clientId, startDateTime, endDateTime);
+            } else {
+                // ✅ CORRECTION: Utiliser une requête avec JOIN FETCH
+                mouvements = mouvementRepository.findByClientIdWithAllRelations(clientId);
+            }
 
             List<MouvementDTO> dtos = mouvements.stream()
                     .map(mouvementMapper::toDTO)
@@ -171,61 +204,79 @@ public class MouvementController {
     @PostMapping("/epargne")
     @PreAuthorize("@securityService.canManageClient(authentication, #request.clientId)")
     public ResponseEntity<ApiResponse<MouvementCommissionDTO>> effectuerEpargne(@Valid @RequestBody EpargneRequest request) {
-        log.info("Traitement d'une opération d'épargne pour le client: {}", request.getClientId());
-        try {
-            if (!securityService.canManageClient(SecurityContextHolder.getContext().getAuthentication(),
-                    request.getClientId())) {
-                throw new UnauthorizedException("Non autorisé à gérer ce client");
+        log.info("💰 Traitement d'une opération d'épargne pour le client: {} - Montant: {}",
+                request.getClientId(), request.getMontant());
+
+        return transactionService.executeInTransaction(status -> {
+            try {
+                if (!securityService.canManageClient(SecurityContextHolder.getContext().getAuthentication(),
+                        request.getClientId())) {
+                    throw new UnauthorizedException("Non autorisé à gérer ce client");
+                }
+
+                Client client = clientRepository.findById(request.getClientId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Client non trouvé"));
+
+                if (!securityService.isClientInCollecteurAgence(request.getClientId(), request.getCollecteurId())) {
+                    throw new UnauthorizedAgencyAccessException("Client n'appartient pas à votre agence");
+                }
+
+                // ✅ Le DateTimeService est déjà utilisé dans MouvementServiceImpl
+                Mouvement mouvement = mouvementServiceImpl.enregistrerEpargne(client, request.getMontant(), null);
+                MouvementCommissionDTO responseDto = mouvementMapper.toCommissionDto(mouvement);
+
+                log.info("✅ Épargne enregistrée avec succès: ID={}, Client={}, Montant={}",
+                        mouvement.getId(), client.getNom(), request.getMontant());
+
+                return ResponseEntity.ok(
+                        ApiResponse.success(responseDto, "Opération d'épargne enregistrée avec succès")
+                );
+            } catch (Exception e) {
+                log.error("❌ Erreur lors de l'enregistrement de l'épargne", e);
+                status.setRollbackOnly();
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body(ApiResponse.error("EPARGNE_ERROR", "Erreur lors de l'enregistrement de l'épargne: " + e.getMessage()));
             }
-
-            Client client = clientRepository.findById(request.getClientId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Client non trouvé"));
-
-            if (!securityService.isClientInCollecteurAgence(request.getClientId(), request.getCollecteurId())) {
-                throw new UnauthorizedAgencyAccessException("Client n'appartient pas à votre agence");
-            }
-
-            Mouvement mouvement = mouvementServiceImpl.enregistrerEpargne(client, request.getMontant(), null);
-            MouvementCommissionDTO responseDto = mouvementMapper.toCommissionDto(mouvement);
-
-            return ResponseEntity.ok(
-                    ApiResponse.success(responseDto, "Opération d'épargne enregistrée avec succès")
-            );
-        } catch (Exception e) {
-            log.error("Erreur lors de l'enregistrement de l'épargne", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error("EPARGNE_ERROR", "Erreur lors de l'enregistrement de l'épargne: " + e.getMessage()));
-        }
+        });
     }
 
     @PostMapping("/retrait")
     @PreAuthorize("@securityService.canManageClient(authentication, #request.clientId)")
     public ResponseEntity<ApiResponse<MouvementCommissionDTO>> effectuerRetrait(@Valid @RequestBody RetraitRequest request) {
-        log.info("Traitement d'une opération de retrait pour le client: {}", request.getClientId());
-        try {
-            if (!securityService.canManageClient(SecurityContextHolder.getContext().getAuthentication(),
-                    request.getClientId())) {
-                throw new UnauthorizedException("Non autorisé à gérer ce client");
+        log.info("💸 Traitement d'une opération de retrait pour le client: {} - Montant: {}",
+                request.getClientId(), request.getMontant());
+
+        return transactionService.executeInTransaction(status -> {
+            try {
+                if (!securityService.canManageClient(SecurityContextHolder.getContext().getAuthentication(),
+                        request.getClientId())) {
+                    throw new UnauthorizedException("Non autorisé à gérer ce client");
+                }
+
+                Client client = clientRepository.findById(request.getClientId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Client non trouvé"));
+
+                if (!securityService.isClientInCollecteurAgence(request.getClientId(), request.getCollecteurId())) {
+                    throw new UnauthorizedAgencyAccessException("Client n'appartient pas à votre agence");
+                }
+
+                // ✅ Le DateTimeService est déjà utilisé dans MouvementServiceImpl
+                Mouvement mouvement = mouvementServiceImpl.enregistrerRetrait(client, request.getMontant(), null);
+                MouvementCommissionDTO responseDto = mouvementMapper.toCommissionDto(mouvement);
+
+                log.info("✅ Retrait effectué avec succès: ID={}, Client={}, Montant={}",
+                        mouvement.getId(), client.getNom(), request.getMontant());
+
+                return ResponseEntity.ok(
+                        ApiResponse.success(responseDto, "Retrait effectué avec succès")
+                );
+            } catch (Exception e) {
+                log.error("❌ Erreur lors de l'enregistrement du retrait", e);
+                status.setRollbackOnly();
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body(ApiResponse.error("RETRAIT_ERROR", "Erreur lors de l'enregistrement du retrait: " + e.getMessage()));
             }
-
-            Client client = clientRepository.findById(request.getClientId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Client non trouvé"));
-
-            if (!securityService.isClientInCollecteurAgence(request.getClientId(), request.getCollecteurId())) {
-                throw new UnauthorizedAgencyAccessException("Client n'appartient pas à votre agence");
-            }
-
-            Mouvement mouvement = mouvementServiceImpl.enregistrerRetrait(client, request.getMontant(), null);
-            MouvementCommissionDTO responseDto = mouvementMapper.toCommissionDto(mouvement);
-
-            return ResponseEntity.ok(
-                    ApiResponse.success(responseDto, "Retrait effectué avec succès")
-            );
-        } catch (Exception e) {
-            log.error("Erreur lors de l'enregistrement du retrait", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error("RETRAIT_ERROR", "Erreur lors de l'enregistrement du retrait: " + e.getMessage()));
-        }
+        });
     }
 
     @GetMapping("/journal/{journalId}")
@@ -262,38 +313,48 @@ public class MouvementController {
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(defaultValue = "dateOperation,desc") String sort) {
 
-        log.info("Récupération des transactions du journal pour collecteur: {} à la date: {}", collecteurId, date);
+        log.info("📋 Récupération des transactions du journal pour collecteur: {} à la date: {}", collecteurId, date);
 
         try {
             String[] sortParts = sort.split(",");
             String sortField = sortParts[0];
             String sortDirection = sortParts.length > 1 ? sortParts[1] : "desc";
 
+            // Validation et correction du champ de tri
             if ("dateHeure".equals(sortField)) {
                 sortField = "dateOperation";
-                log.warn("Paramètre de tri 'dateHeure' détecté et remplacé par 'dateOperation'");
+                log.warn("⚠️ Paramètre de tri 'dateHeure' détecté et remplacé par 'dateOperation'");
             }
 
             if (!"dateOperation".equals(sortField) && !"montant".equals(sortField) && !"id".equals(sortField)) {
-                log.warn("Champ de tri non reconnu: {}. Utilisation de 'dateOperation' par défaut", sortField);
+                log.warn("⚠️ Champ de tri non reconnu: {}. Utilisation de 'dateOperation' par défaut", sortField);
                 sortField = "dateOperation";
             }
 
             PageRequest pageRequest = PageRequest.of(page, size,
                     Sort.by(Sort.Direction.fromString(sortDirection), sortField));
 
-            Page<Mouvement> mouvements = mouvementServiceImpl.findByCollecteurAndDate(collecteurId, date, pageRequest);
+            // ✅ CORRECTION: Utiliser la nouvelle méthode qui accepte LocalDateTime
+            LocalDate localDate = LocalDate.parse(date);
+            LocalDateTime startOfDay = dateTimeService.toStartOfDay(localDate);
+            LocalDateTime endOfDay = dateTimeService.toEndOfDay(localDate);
+
+            Page<Mouvement> mouvements = mouvementRepository.findByCollecteurAndDate(
+                    collecteurId, startOfDay, endOfDay, pageRequest);
+
             Page<MouvementDTO> dtoPage = mouvements.map(mouvementMapper::toDTO);
 
             ApiResponse<Page<MouvementDTO>> response = ApiResponse.success(dtoPage);
             response.addMeta("totalElements", mouvements.getTotalElements());
             response.addMeta("totalPages", mouvements.getTotalPages());
+            response.addMeta("date", date);
+            response.addMeta("collecteurId", collecteurId);
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            log.error("Erreur lors de la récupération des transactions du journal", e);
+            log.error("❌ Erreur lors de la récupération des transactions du journal", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error("Erreur: " + e.getMessage()));
+                    .body(ApiResponse.error("JOURNAL_TRANSACTIONS_ERROR", "Erreur: " + e.getMessage()));
         }
     }
 
@@ -302,7 +363,7 @@ public class MouvementController {
     public ResponseEntity<ApiResponse<BalanceVerificationDTO>> verifyBalance(
             @Valid @RequestBody BalanceVerificationRequest request) {
 
-        log.info("Vérification du solde pour client: {} montant: {}", request.getClientId(), request.getMontant());
+        log.info("🔍 Vérification du solde pour client: {} montant: {}", request.getClientId(), request.getMontant());
 
         try {
             BalanceVerificationDTO result = mouvementServiceImpl.verifyClientBalance(
@@ -314,9 +375,9 @@ public class MouvementController {
                     ApiResponse.success(result, "Solde vérifié avec succès")
             );
         } catch (Exception e) {
-            log.error("Erreur lors de la vérification du solde", e);
+            log.error("❌ Erreur lors de la vérification du solde", e);
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(ApiResponse.error("Erreur: " + e.getMessage()));
+                    .body(ApiResponse.error("BALANCE_VERIFICATION_ERROR", "Erreur: " + e.getMessage()));
         }
     }
 
@@ -329,20 +390,20 @@ public class MouvementController {
         log.info("📅 Récupération des opérations du jour - Collecteur: {}, Date: {}", collecteurId, date);
 
         try {
-            // 1. ✅ Date par défaut si non fournie
-            LocalDate dateRecherche = date != null ? date : LocalDate.now();
+            // 1. ✅ UTILISATION DU DateTimeService pour la date par défaut
+            LocalDate dateRecherche = date != null ? date : dateTimeService.getCurrentDate();
 
             // 2. ✅ Récupération/création du journal
             Journal journal = journalService.getOrCreateJournalDuJour(collecteurId, dateRecherche);
 
-            // 3. ✅ ÉTAPE MANQUANTE : Récupérer les mouvements de la journée
-            LocalDateTime startOfDay = dateRecherche.atStartOfDay();
-            LocalDateTime endOfDay = dateRecherche.atTime(LocalTime.MAX);
+            // 3. ✅ UTILISATION DU DateTimeService pour les plages horaires
+            LocalDateTime startOfDay = dateTimeService.toStartOfDay(dateRecherche);
+            LocalDateTime endOfDay = dateTimeService.toEndOfDay(dateRecherche);
 
-            List<Mouvement> mouvements = mouvementRepository.findByCollecteurIdAndDateOperationBetween(
+            List<Mouvement> mouvements = mouvementRepository.findByCollecteurAndDay(
                     collecteurId, startOfDay, endOfDay);
 
-            // 4. ✅ Conversion en DTOs
+            // 4. ✅ Conversion en DTOs avec gestion sécurisée
             List<MouvementJournalDTO> operationsDTOs = mouvements.stream()
                     .map(this::convertToMouvementJournalDTO)
                     .collect(Collectors.toList());
@@ -356,7 +417,7 @@ public class MouvementController {
                     .estCloture(journal.isEstCloture())
                     .reference(journal.getReference())
                     .nombreOperations(operationsDTOs.size())
-                    .operations(operationsDTOs)  // ✅ MAINTENANT `operations` existe !
+                    .operations(operationsDTOs)
                     .build();
 
             return ResponseEntity.ok(
@@ -366,9 +427,42 @@ public class MouvementController {
         } catch (Exception e) {
             log.error("❌ Erreur récupération opérations du jour pour collecteur {}", collecteurId, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error("Erreur lors de la récupération des opérations"));
+                    .body(ApiResponse.error("OPERATIONS_JOUR_ERROR", "Erreur lors de la récupération des opérations"));
         }
     }
+
+    // ✅ NOUVEAU ENDPOINT: Statistiques de période pour un collecteur
+    @GetMapping("/collecteur/{collecteurId}/stats")
+    @PreAuthorize("@securityService.canManageCollecteur(authentication, #collecteurId)")
+    public ResponseEntity<ApiResponse<Object>> getCollecteurStats(
+            @PathVariable Long collecteurId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateDebut,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFin) {
+
+        log.info("📊 Récupération des statistiques pour collecteur: {} (période: {} - {})",
+                collecteurId, dateDebut, dateFin);
+
+        try {
+            // ✅ UTILISATION DU DateTimeService pour les plages
+            LocalDateTime startDateTime = dateTimeService.toStartOfDay(dateDebut);
+            LocalDateTime endDateTime = dateTimeService.toEndOfDay(dateFin);
+
+            Object[] stats = mouvementRepository.getStatsByCollecteurAndPeriod(
+                    collecteurId, startDateTime, endDateTime);
+
+            return ResponseEntity.ok(
+                    ApiResponse.success(stats, "Statistiques récupérées avec succès")
+            );
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la récupération des statistiques", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("STATS_ERROR", "Erreur: " + e.getMessage()));
+        }
+    }
+
+    // =====================================
+    // MÉTHODES UTILITAIRES
+    // =====================================
 
     private MouvementJournalDTO convertToMouvementJournalDTO(Mouvement mouvement) {
         return MouvementJournalDTO.builder()
@@ -387,9 +481,10 @@ public class MouvementController {
 
     private String safeGetTypeMouvement(Mouvement mouvement) {
         try {
-            return mouvement.getTypeMouvement();
+            String type = mouvement.getTypeMouvement();
+            return type != null ? type : mouvement.getSens().toUpperCase();
         } catch (Exception e) {
-            log.debug("Erreur chargement typeMouvement, utilisation du sens: {}", mouvement.getSens());
+            log.debug("⚠️ Erreur chargement typeMouvement, utilisation du sens: {}", mouvement.getSens());
             return mouvement.getSens() != null ? mouvement.getSens().toUpperCase() : "INCONNU";
         }
     }
@@ -398,7 +493,7 @@ public class MouvementController {
         try {
             return mouvement.getCompteSourceNumero();
         } catch (Exception e) {
-            log.debug("Erreur chargement compteSourceNumero pour mouvement {}", mouvement.getId());
+            log.debug("⚠️ Erreur chargement compteSourceNumero pour mouvement {}", mouvement.getId());
             return "N/A";
         }
     }
@@ -407,7 +502,7 @@ public class MouvementController {
         try {
             return mouvement.getCompteDestinationNumero();
         } catch (Exception e) {
-            log.debug("Erreur chargement compteDestinationNumero pour mouvement {}", mouvement.getId());
+            log.debug("⚠️ Erreur chargement compteDestinationNumero pour mouvement {}", mouvement.getId());
             return "N/A";
         }
     }
@@ -416,7 +511,7 @@ public class MouvementController {
         try {
             return mouvement.getClient() != null ? mouvement.getClient().getNom() : null;
         } catch (Exception e) {
-            log.debug("Erreur chargement client nom pour mouvement {}", mouvement.getId());
+            log.debug("⚠️ Erreur chargement client nom pour mouvement {}", mouvement.getId());
             return "N/A";
         }
     }
@@ -425,7 +520,7 @@ public class MouvementController {
         try {
             return mouvement.getClient() != null ? mouvement.getClient().getPrenom() : null;
         } catch (Exception e) {
-            log.debug("Erreur chargement client prénom pour mouvement {}", mouvement.getId());
+            log.debug("⚠️ Erreur chargement client prénom pour mouvement {}", mouvement.getId());
             return "N/A";
         }
     }

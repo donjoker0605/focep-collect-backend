@@ -38,16 +38,35 @@ public class CommissionParameterService {
     public CommissionParameter createCommissionParameter(CommissionParameterDTO dto) {
         log.info("Création paramètre commission: type={}, clientId={}", dto.getType(), dto.getClientId());
 
-        // Validation des paliers si c'est du type TIER
-        if (dto.getType() == org.example.collectfocep.entities.CommissionType.TIER) {
+        // ✅ CORRECTION : Vérifier que le type existe avant de comparer
+        if (dto.getType() != null && "TIER".equals(dto.getType().toString())) {
             if (!mapper.validateTiers(dto.getPaliersCommission())) {
                 throw new IllegalArgumentException("Paliers de commission invalides");
             }
         }
 
         CommissionParameter entity = mapper.toEntity(dto);
-        CommissionParameter saved = repository.save(entity);
 
+        // ✅ AJOUT : Gérer les relations manuellement car ignorées dans le mapper
+        if (dto.getClientId() != null) {
+            Client client = clientRepository.findById(dto.getClientId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Client", "id", dto.getClientId()));
+            entity.setClient(client);
+        }
+
+        if (dto.getCollecteurId() != null) {
+            Collecteur collecteur = collecteurRepository.findById(dto.getCollecteurId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Collecteur", "id", dto.getCollecteurId()));
+            entity.setCollecteur(collecteur);
+        }
+
+        if (dto.getAgenceId() != null) {
+            Agence agence = agenceRepository.findById(dto.getAgenceId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Agence", "id", dto.getAgenceId()));
+            entity.setAgence(agence);
+        }
+
+        CommissionParameter saved = repository.save(entity);
         log.info("Paramètre commission créé: id={}", saved.getId());
         return saved;
     }
