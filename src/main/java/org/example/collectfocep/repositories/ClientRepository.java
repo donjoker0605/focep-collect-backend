@@ -3,6 +3,7 @@ package org.example.collectfocep.repositories;
 import jakarta.persistence.LockModeType;
 import org.example.collectfocep.entities.Client;
 import org.example.collectfocep.entities.Collecteur;
+import org.example.collectfocep.entities.CommissionParameter;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -199,5 +200,14 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
         ORDER BY c.dateCreation DESC
         """)
     List<Client> findRecentClientsByCollecteur(@Param("collecteurId") Long collecteurId, Pageable pageable);
+
+    @Query("""
+    SELECT cp FROM CommissionParameter cp 
+    WHERE cp.client.id = :clientId 
+    AND cp.active = true 
+    AND (cp.validTo IS NULL OR cp.validTo >= CURRENT_DATE)
+    ORDER BY cp.validFrom DESC
+    """)
+    Optional<CommissionParameter> findActiveCommissionParameter(@Param("clientId") Long clientId);
 
 }

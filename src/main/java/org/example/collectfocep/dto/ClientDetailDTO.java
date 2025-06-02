@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.example.collectfocep.entities.CommissionType;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -36,4 +37,11 @@ public class ClientDetailDTO {
     // Statistiques rapides
     private Double totalEpargne;
     private Double totalRetraits;
+
+    private CommissionType commissionType;
+    private Double montantFixe;
+    private Double pourcentage;
+    private List<PalierCommissionDTO> paliersCommission;
+    private String codeCommission;
+    private CommissionParameterDTO commissionParameter;
 }

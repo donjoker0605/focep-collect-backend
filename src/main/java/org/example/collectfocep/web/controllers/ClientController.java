@@ -4,14 +4,18 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.dto.ClientDTO;
 import org.example.collectfocep.dto.ClientDetailDTO;
+import org.example.collectfocep.dto.CommissionParameterDTO;
 import org.example.collectfocep.dto.CompteDTO;
 import org.example.collectfocep.entities.Client;
+import org.example.collectfocep.entities.CommissionParameter;
 import org.example.collectfocep.entities.Compte;
 import org.example.collectfocep.entities.Mouvement;
 import org.example.collectfocep.exceptions.ResourceNotFoundException;
 import org.example.collectfocep.mappers.ClientMapper;
+import org.example.collectfocep.mappers.CommissionParameterMapper;
 import org.example.collectfocep.mappers.CompteMapper;
 import org.example.collectfocep.mappers.MouvementMapperV2;
+import org.example.collectfocep.repositories.CommissionParameterRepository;
 import org.example.collectfocep.repositories.MouvementRepository;
 import org.example.collectfocep.security.annotations.Audited;
 import org.example.collectfocep.services.interfaces.ClientService;
@@ -27,6 +31,7 @@ import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @RestController
@@ -41,6 +46,8 @@ public class ClientController {
     private final CompteMapper compteMapper;
     private final MouvementRepository mouvementRepository;
     private final MouvementMapperV2 mouvementMapper;
+    private final CommissionParameterRepository commissionParameterRepository;
+    private final CommissionParameterMapper commissionParameterMapper;
 
     // Endpoint pour créer un client
     @PostMapping
@@ -165,7 +172,15 @@ public class ClientController {
             // 2. Récupérer ses transactions
             List<Mouvement> transactions = mouvementRepository.findByClientIdWithAllRelations(id);
 
-            // 3. Créer le DTO complet
+            // 3. Récupérer les paramètres de commission avec hiérarchie
+            CommissionParameterDTO commissionParam = getEffectiveCommissionParameter(client);
+
+            // 4. Calculer le solde total
+            Double soldeTotal = calculateClientBalance(transactions);
+            Double totalEpargne = calculateTotalEpargne(transactions);
+            Double totalRetraits = calculateTotalRetraits(transactions);
+
+            // 5. Créer le DTO complet
             ClientDetailDTO clientDetail = ClientDetailDTO.builder()
                     .id(client.getId())
                     .nom(client.getNom())
@@ -185,6 +200,10 @@ public class ClientController {
                             .map(mouvementMapper::toDTO)
                             .collect(Collectors.toList()))
                     .totalTransactions(transactions.size())
+                    .soldeTotal(soldeTotal)
+                    .totalEpargne(totalEpargne)
+                    .totalRetraits(totalRetraits)
+                    .commissionParameter(commissionParam)
                     .build();
 
             return ResponseEntity.ok(
@@ -195,5 +214,67 @@ public class ClientController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error("CLIENT_DETAIL_ERROR", "Erreur: " + e.getMessage()));
         }
+    }
+
+    // IMPLÉMENTATION DE LA HIÉRARCHIE DE COMMISSION
+    private CommissionParameterDTO getEffectiveCommissionParameter(Client client) {
+        // 1. Chercher au niveau client
+        Optional<CommissionParameter> clientCommission =
+                commissionParameterRepository.findActiveCommissionParameter(client.getId());
+
+        if (clientCommission.isPresent()) {
+            log.debug("Commission trouvée au niveau client: {}", client.getId());
+            return commissionParameterMapper.toDTO(clientCommission.get());
+        }
+
+        // 2. Chercher au niveau collecteur
+        Optional<CommissionParameter> collecteurCommission =
+                commissionParameterRepository.findActiveCommissionParameterByCollecteur(
+                        client.getCollecteur().getId());
+
+        if (collecteurCommission.isPresent()) {
+            log.debug("Commission trouvée au niveau collecteur: {}", client.getCollecteur().getId());
+            return commissionParameterMapper.toDTO(collecteurCommission.get());
+        }
+
+        // 3. Chercher au niveau agence
+        Optional<CommissionParameter> agenceCommission =
+                commissionParameterRepository.findActiveCommissionParameterByAgence(
+                        client.getAgence().getId());
+
+        if (agenceCommission.isPresent()) {
+            log.debug("Commission trouvée au niveau agence: {}", client.getAgence().getId());
+            return commissionParameterMapper.toDTO(agenceCommission.get());
+        }
+
+        log.warn("Aucune commission trouvée pour le client: {}", client.getId());
+        return null;
+    }
+
+    private Double calculateClientBalance(List<Mouvement> transactions) {
+        return transactions.stream()
+                .mapToDouble(t -> {
+                    if ("epargne".equals(t.getSens()) || "EPARGNE".equals(t.getTypeMouvement())) {
+                        return t.getMontant();
+                    } else if ("retrait".equals(t.getSens()) || "RETRAIT".equals(t.getTypeMouvement())) {
+                        return -t.getMontant();
+                    }
+                    return 0.0;
+                })
+                .sum();
+    }
+
+    private Double calculateTotalEpargne(List<Mouvement> transactions) {
+        return transactions.stream()
+                .filter(t -> "epargne".equals(t.getSens()) || "EPARGNE".equals(t.getTypeMouvement()))
+                .mapToDouble(Mouvement::getMontant)
+                .sum();
+    }
+
+    private Double calculateTotalRetraits(List<Mouvement> transactions) {
+        return transactions.stream()
+                .filter(t -> "retrait".equals(t.getSens()) || "RETRAIT".equals(t.getTypeMouvement()))
+                .mapToDouble(Mouvement::getMontant)
+                .sum();
     }
 }

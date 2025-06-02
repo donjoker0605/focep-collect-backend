@@ -22,9 +22,6 @@ public interface CommissionParameterRepository extends JpaRepository<CommissionP
     Optional<CommissionParameter> findByCollecteur(Collecteur collecteur);
     Optional<CommissionParameter> findByAgence(Agence agence);
 
-    // Nouveaux pour CRUD
-    @Query("SELECT cp FROM CommissionParameter cp WHERE cp.client.id = :clientId AND cp.active = true")
-    List<CommissionParameter> findActiveByClientId(@Param("clientId") Long clientId);
 
     @Query("SELECT cp FROM CommissionParameter cp WHERE cp.collecteur.id = :collecteurId AND cp.active = true")
     List<CommissionParameter> findActiveByCollecteurId(@Param("collecteurId") Long collecteurId);
@@ -47,9 +44,41 @@ public interface CommissionParameterRepository extends JpaRepository<CommissionP
     @Query("SELECT cp FROM CommissionParameter cp LEFT JOIN FETCH cp.tiers WHERE cp.id = :id")
     Optional<CommissionParameter> findByIdWithTiers(@Param("id") Long id);
 
-    @Query("SELECT cp FROM CommissionParameter cp LEFT JOIN FETCH cp.tiers")
-    List<CommissionParameter> findAllWithTiers();
 
     @Query("SELECT cp FROM CommissionParameter cp LEFT JOIN FETCH cp.tiers")
     Page<CommissionParameter> findAllWithTiers(Pageable pageable);
+
+    @Query("""
+        SELECT cp FROM CommissionParameter cp 
+        WHERE cp.client.id = :clientId 
+        AND cp.active = true 
+        AND (cp.validTo IS NULL OR cp.validTo >= CURRENT_DATE)
+        ORDER BY cp.validFrom DESC
+        """)
+    Optional<CommissionParameter> findActiveCommissionParameter(@Param("clientId") Long clientId);
+
+    @Query("""
+        SELECT cp FROM CommissionParameter cp 
+        WHERE cp.client.id = :clientId 
+        ORDER BY cp.validFrom DESC
+        """)
+    List<CommissionParameter> findAllByClientId(@Param("clientId") Long clientId);
+
+    @Query("""
+        SELECT cp FROM CommissionParameter cp 
+        WHERE cp.collecteur.id = :collecteurId 
+        AND cp.active = true 
+        AND (cp.validTo IS NULL OR cp.validTo >= CURRENT_DATE)
+        ORDER BY cp.validFrom DESC
+        """)
+    Optional<CommissionParameter> findActiveCommissionParameterByCollecteur(@Param("collecteurId") Long collecteurId);
+
+    @Query("""
+        SELECT cp FROM CommissionParameter cp 
+        WHERE cp.agence.id = :agenceId 
+        AND cp.active = true 
+        AND (cp.validTo IS NULL OR cp.validTo >= CURRENT_DATE)
+        ORDER BY cp.validFrom DESC
+        """)
+    Optional<CommissionParameter> findActiveCommissionParameterByAgence(@Param("agenceId") Long agenceId);
 }
