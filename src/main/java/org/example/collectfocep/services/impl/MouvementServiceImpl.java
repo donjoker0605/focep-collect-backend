@@ -194,7 +194,7 @@ public class MouvementServiceImpl implements MouvementService {
                 // Sauvegarde des modifications
                 compteRepository.save(compteSource);
                 compteRepository.save(compteDestination);
-                
+
                 mouvement.setDateOperation(dateTimeService.getCurrentDateTime());
                 Mouvement mouvementSauvegarde = mouvementRepository.save(mouvement);
 
