@@ -3,7 +3,6 @@ package org.example.collectfocep.repositories;
 import jakarta.persistence.LockModeType;
 import org.example.collectfocep.entities.Client;
 import org.example.collectfocep.entities.Collecteur;
-import org.example.collectfocep.entities.CommissionParameter;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -20,11 +19,38 @@ import java.util.Optional;
 @Repository
 public interface ClientRepository extends JpaRepository<Client, Long> {
 
+    // =====================================
+    // MÉTHODES DE BASE EXISTANTES
+    // =====================================
+
+    Optional<Client> findByNumeroCni(String numeroCni);
+    boolean existsByNumeroCni(String numeroCni);
+
+    // =====================================
+    // MÉTHODES PAR COLLECTEUR
+    // =====================================
+
     @Query("SELECT c FROM Client c WHERE c.collecteur.id = :collecteurId")
     List<Client> findByCollecteurId(@Param("collecteurId") Long collecteurId);
 
-    @Query("SELECT c FROM Client c WHERE c.collecteur.id = :collecteurId")
+    @Query("SELECT c FROM Client c WHERE c.collecteur.id = :collecteurId ORDER BY c.dateCreation DESC")
     Page<Client> findByCollecteurId(@Param("collecteurId") Long collecteurId, Pageable pageable);
+
+    @Query("SELECT c FROM Client c WHERE c.collecteur = :collecteur ORDER BY c.dateCreation DESC")
+    List<Client> findByCollecteur(@Param("collecteur") Collecteur collecteur);
+
+    @Query("SELECT c FROM Client c WHERE c.collecteur = :collecteur ORDER BY c.dateCreation DESC")
+    Page<Client> findByCollecteur(@Param("collecteur") Collecteur collecteur, Pageable pageable);
+
+    @Query("SELECT COUNT(c) FROM Client c WHERE c.collecteur.id = :collecteurId")
+    Long countByCollecteurId(@Param("collecteurId") Long collecteurId);
+
+    @Query("SELECT COUNT(c) FROM Client c WHERE c.collecteur = :collecteur")
+    Long countByCollecteur(@Param("collecteur") Collecteur collecteur);
+
+    // =====================================
+    // MÉTHODES PAR AGENCE
+    // =====================================
 
     @Query("SELECT c FROM Client c WHERE c.agence.id = :agenceId")
     List<Client> findByAgenceId(@Param("agenceId") Long agenceId);
@@ -32,102 +58,146 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
     @Query("SELECT c FROM Client c WHERE c.agence.id = :agenceId")
     Page<Client> findByAgenceId(@Param("agenceId") Long agenceId, Pageable pageable);
 
-    Optional<Client> findByNumeroCni(String numeroCni);
+    @Query("SELECT COUNT(c) FROM Client c WHERE c.agence.id = :agenceId")
+    Long countByAgenceId(@Param("agenceId") Long agenceId);
 
-    @Query("SELECT c FROM Client c WHERE c.collecteur = :collecteur")
-    List<Client> findByCollecteur(@Param("collecteur") Collecteur collecteur);
+    // =====================================
+    // MÉTHODES DE COMPTAGE POUR DASHBOARD
+    // =====================================
 
-    /**
-     * Trouve les clients actifs (valides)
-     */
-    List<Client> findByValideTrue();
+    long countByValideTrue();
+    long countByValideFalse();
 
-    /**
-     * Trouve les clients par collecteur et statut
-     */
-    List<Client> findByCollecteurAndValide(Collecteur collecteur, boolean valide);
+    @Query("SELECT COUNT(c) FROM Client c WHERE c.valide = :valide")
+    Long countByValide(@Param("valide") boolean valide);
 
-    /**
-     * Trouve les clients actifs d'un collecteur (avec activité récente)
-     */
-    @Query("""
-        SELECT c FROM Client c
-        WHERE c.collecteur = :collecteur
-        AND c.valide = true
-        ORDER BY c.dateCreation DESC
-        """)
-    List<Client> findActiveByCollecteur(@Param("collecteur") Collecteur collecteur, Pageable pageable);
+    // =====================================
+    // MÉTHODES DE RECHERCHE OPTIMISÉES
+    // =====================================
 
     /**
-     * Recherche de clients par collecteur et terme de recherche
+     * Recherche clients par collecteur et terme de recherche
      */
-    @Query("""
-        SELECT c FROM Client c 
-        WHERE c.collecteur.id = :collecteurId
-        AND (LOWER(c.nom) LIKE LOWER(CONCAT('%', :searchTerm, '%'))
-        OR LOWER(c.prenom) LIKE LOWER(CONCAT('%', :searchTerm, '%'))
-        OR LOWER(c.numeroCni) LIKE LOWER(CONCAT('%', :searchTerm, '%'))
-        OR LOWER(c.telephone) LIKE LOWER(CONCAT('%', :searchTerm, '%')))
-        """)
-    Page<Client> findByCollecteurIdAndSearchTerm(
-            @Param("collecteurId") Long collecteurId,
-            @Param("searchTerm") String searchTerm,
-            Pageable pageable);
-
-    // ✅ AJOUT DE MÉTHODES DE RECHERCHE UTILES
-    @Query("SELECT c FROM Client c WHERE c.collecteur = :collecteur ORDER BY c.dateCreation DESC")
-    List<Client> findAllByCollecteurOrderByDateCreationDesc(@Param("collecteur") Collecteur collecteur);
-
-    @Query("SELECT c FROM Client c WHERE c.collecteur = :collecteur ORDER BY c.dateCreation DESC")
-    Page<Client> findAllByCollecteurOrderByDateCreationDesc(@Param("collecteur") Collecteur collecteur, Pageable pageable);
-
-    @Query("SELECT c FROM Client c WHERE c.collecteur.id = :collecteurId AND " +
-            "(LOWER(c.nom) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+    @Query("SELECT c FROM Client c " +
+            "WHERE c.collecteur.id = :collecteurId " +
+            "AND (:search IS NULL OR :search = '' OR " +
+            "LOWER(c.nom) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
             "LOWER(c.prenom) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
-            "c.numeroCni LIKE CONCAT('%', :search, '%'))")
+            "LOWER(c.numeroCni) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+            "LOWER(c.telephone) LIKE LOWER(CONCAT('%', :search, '%'))) " +
+            "ORDER BY c.dateCreation DESC")
     Page<Client> findByCollecteurIdAndSearch(@Param("collecteurId") Long collecteurId,
                                              @Param("search") String search,
                                              Pageable pageable);
 
-    @Query("SELECT COUNT(c) FROM Client c WHERE c.collecteur = :collecteur")
-    Long countByCollecteur(@Param("collecteur") Collecteur collecteur);
-
-    @Query("SELECT c FROM Client c JOIN FETCH c.collecteur WHERE c.numeroCni = :numeroCni")
-    Optional<Client> findByNumeroCniWithCollecteur(@Param("numeroCni") String numeroCni);
-
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT c FROM Client c WHERE c.id = :id")
-    Optional<Client> findByIdForUpdate(@Param("id") Long id);
-
-    boolean existsByNumeroCni(String numeroCni);
-
-    @Query("SELECT c FROM Client c WHERE c.id IN (SELECT tc.clientId FROM TransfertCompteClient tc WHERE tc.transfert.id = :transferId)")
-    List<Client> findByTransfertId(@Param("transferId") Long transferId);
+    /**
+     * Recherche clients par collecteur et terme de recherche (alias pour compatibilité)
+     */
+    @Query("SELECT c FROM Client c " +
+            "WHERE c.collecteur.id = :collecteurId " +
+            "AND (:searchTerm IS NULL OR :searchTerm = '' OR " +
+            "LOWER(c.nom) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR " +
+            "LOWER(c.prenom) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR " +
+            "LOWER(c.numeroCni) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR " +
+            "LOWER(c.telephone) LIKE LOWER(CONCAT('%', :searchTerm, '%'))) " +
+            "ORDER BY c.dateCreation DESC")
+    Page<Client> findByCollecteurIdAndSearchTerm(@Param("collecteurId") Long collecteurId,
+                                                 @Param("searchTerm") String searchTerm,
+                                                 Pageable pageable);
 
     /**
-     * Récupère l'ID de l'agence d'un client (optimisé pour la sécurité)
+     * Recherche avancée avec critères multiples
+     */
+    @Query("SELECT c FROM Client c WHERE " +
+            "(:nom IS NULL OR :nom = '' OR LOWER(c.nom) LIKE LOWER(CONCAT('%', :nom, '%'))) AND " +
+            "(:prenom IS NULL OR :prenom = '' OR LOWER(c.prenom) LIKE LOWER(CONCAT('%', :prenom, '%'))) AND " +
+            "(:numeroCni IS NULL OR :numeroCni = '' OR c.numeroCni LIKE CONCAT('%', :numeroCni, '%')) AND " +
+            "(:collecteurId IS NULL OR c.collecteur.id = :collecteurId) AND " +
+            "(:agenceId IS NULL OR c.agence.id = :agenceId) AND " +
+            "(:valide IS NULL OR c.valide = :valide)")
+    Page<Client> findByMultipleCriteria(@Param("nom") String nom,
+                                        @Param("prenom") String prenom,
+                                        @Param("numeroCni") String numeroCni,
+                                        @Param("collecteurId") Long collecteurId,
+                                        @Param("agenceId") Long agenceId,
+                                        @Param("valide") Boolean valide,
+                                        Pageable pageable);
+
+    // =====================================
+    // MÉTHODES AVEC FETCH OPTIMISÉES
+    // =====================================
+
+    /**
+     * Client par CNI avec collecteur (pour sécurité)
+     */
+    @Query("SELECT c FROM Client c " +
+            "LEFT JOIN FETCH c.collecteur " +
+            "WHERE c.numeroCni = :numeroCni")
+    Optional<Client> findByNumeroCniWithCollecteur(@Param("numeroCni") String numeroCni);
+
+    /**
+     * Client par ID avec agence
+     */
+    @Query("SELECT c FROM Client c " +
+            "LEFT JOIN FETCH c.agence " +
+            "WHERE c.id = :id")
+    Optional<Client> findByIdWithAgence(@Param("id") Long id);
+
+    /**
+     * Client avec toutes ses relations
+     */
+    @Query("SELECT c FROM Client c " +
+            "LEFT JOIN FETCH c.collecteur " +
+            "LEFT JOIN FETCH c.agence " +
+            "WHERE c.id = :clientId")
+    Optional<Client> findByIdWithAllRelations(@Param("clientId") Long clientId);
+
+    // =====================================
+    // MÉTHODES DE SÉCURITÉ
+    // =====================================
+
+    /**
+     * Récupère l'ID de l'agence d'un client (pour sécurité)
      */
     @Query("SELECT c.agence.id FROM Client c WHERE c.id = :clientId")
     Long findAgenceIdByClientId(@Param("clientId") Long clientId);
 
-    @Query("SELECT c FROM Client c LEFT JOIN FETCH c.agence WHERE c.id = :id")
-    Optional<Client> findByIdWithAgence(@Param("id") Long id);
-
+    /**
+     * Code agence d'un client
+     */
     @Query("SELECT a.codeAgence FROM Client c JOIN c.agence a WHERE c.id = :clientId")
     String findAgenceCodeByClientId(@Param("clientId") Long clientId);
 
+    // =====================================
+    // MÉTHODES PAR STATUT ET ACTIVITÉ
+    // =====================================
+
     /**
-     * Trouve un client avec toutes ses relations (évite le lazy loading)
+     * Clients actifs (valides)
      */
-    @Query("""
-        SELECT c FROM Client c
-        LEFT JOIN FETCH c.collecteur
-        LEFT JOIN FETCH c.agence
-        WHERE c.id = :clientId
-        """)
-    Optional<Client> findByIdWithAllRelations(@Param("clientId") Long clientId);
+    List<Client> findByValideTrue();
 
+    /**
+     * Clients par collecteur et statut
+     */
+    List<Client> findByCollecteurAndValide(Collecteur collecteur, boolean valide);
 
+    /**
+     * Clients actifs d'un collecteur avec activité récente
+     */
+    @Query("SELECT c FROM Client c " +
+            "WHERE c.collecteur = :collecteur " +
+            "AND c.valide = true " +
+            "ORDER BY c.dateCreation DESC")
+    List<Client> findActiveByCollecteur(@Param("collecteur") Collecteur collecteur, Pageable pageable);
+
+    // =====================================
+    // MÉTHODES STATISTIQUES ET DATES
+    // =====================================
+
+    /**
+     * Nouveaux clients entre deux dates
+     */
     @Query("SELECT COUNT(c) FROM Client c WHERE c.collecteur = :collecteur AND " +
             "c.dateCreation >= :dateDebut AND c.dateCreation < :dateFin")
     Long countByCollecteurAndDateCreationBetween(@Param("collecteur") Collecteur collecteur,
@@ -135,79 +205,126 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
                                                  @Param("dateFin") LocalDateTime dateFin);
 
     /**
-     * Compte les nouveaux clients d'un collecteur pour une date donnée
+     * Nouveaux clients d'un collecteur pour une date
      */
-    @Query("SELECT COUNT(c) FROM Client c WHERE c.collecteur = :collecteur AND DATE(c.dateCreation) = :date")
-    Long countByCollecteurAndDateCreation(@Param("collecteur") Collecteur collecteur, @Param("date") LocalDate date);
-
-    @Query("SELECT c FROM Client c WHERE " +
-            "(:nom IS NULL OR LOWER(c.nom) LIKE LOWER(CONCAT('%', :nom, '%'))) AND " +
-            "(:prenom IS NULL OR LOWER(c.prenom) LIKE LOWER(CONCAT('%', :prenom, '%'))) AND " +
-            "(:numeroCni IS NULL OR c.numeroCni LIKE CONCAT('%', :numeroCni, '%')) AND " +
-            "(:collecteurId IS NULL OR c.collecteur.id = :collecteurId) AND " +
-            "(:agenceId IS NULL OR c.agence.id = :agenceId)")
-    Page<Client> findByMultipleCriteria(@Param("nom") String nom,
-                                        @Param("prenom") String prenom,
-                                        @Param("numeroCni") String numeroCni,
-                                        @Param("collecteurId") Long collecteurId,
-                                        @Param("agenceId") Long agenceId,
-                                        Pageable pageable);
-
-    // ✅ MÉTHODES UTILES POUR LES STATISTIQUES
-    @Query("SELECT COUNT(c) FROM Client c WHERE c.agence.id = :agenceId")
-    Long countByAgenceId(@Param("agenceId") Long agenceId);
-
-    /**
-     * Compte les clients d'un collecteur spécifique
-     */
-    @Query("SELECT COUNT(c) FROM Client c WHERE c.collecteur.id = :collecteurId")
-    Long countByCollecteurId(@Param("collecteurId") Long collecteurId);
-
-    @Query("SELECT COUNT(c) FROM Client c WHERE c.valide = :valide")
-    Long countByValide(@Param("valide") boolean valide);
+    @Query("SELECT COUNT(c) FROM Client c WHERE c.collecteur = :collecteur " +
+            "AND DATE(c.dateCreation) = :date")
+    Long countByCollecteurAndDateCreation(@Param("collecteur") Collecteur collecteur,
+                                          @Param("date") LocalDate date);
 
     /**
      * Statistiques des clients par collecteur
      */
-    @Query("""
-        SELECT c.collecteur.id, COUNT(c) as totalClients,
-               SUM(CASE WHEN c.valide = true THEN 1 ELSE 0 END) as activeClients,
-               SUM(CASE WHEN c.valide = false THEN 1 ELSE 0 END) as inactiveClients
-        FROM Client c
-        WHERE c.collecteur.id = :collecteurId
-        GROUP BY c.collecteur.id
-        """)
+    @Query("SELECT " +
+            "COUNT(c) as totalClients, " +
+            "SUM(CASE WHEN c.valide = true THEN 1 ELSE 0 END) as activeClients, " +
+            "SUM(CASE WHEN c.valide = false THEN 1 ELSE 0 END) as inactiveClients " +
+            "FROM Client c " +
+            "WHERE c.collecteur.id = :collecteurId")
     Object[] getClientStatsByCollecteur(@Param("collecteurId") Long collecteurId);
+
+    // =====================================
+    // MÉTHODES AVEC SOLDES ET FINANCES
+    // =====================================
 
     /**
      * Clients avec solde positif
      */
-    @Query("""
-        SELECT c FROM Client c
-        JOIN CompteClient cc ON cc.client = c
-        WHERE c.collecteur.id = :collecteurId
-        AND cc.solde > 0
-        ORDER BY cc.solde DESC
-        """)
+    @Query("SELECT c FROM Client c " +
+            "JOIN CompteClient cc ON cc.client = c " +
+            "WHERE c.collecteur.id = :collecteurId " +
+            "AND cc.solde > 0 " +
+            "ORDER BY cc.solde DESC")
     List<Client> findClientsWithPositiveBalance(@Param("collecteurId") Long collecteurId, Pageable pageable);
 
+    // =====================================
+    // MÉTHODES RÉCENTES ET TENDANCES
+    // =====================================
+
     /**
-     * Derniers clients créés par un collecteur
+     * Derniers clients créés par collecteur
      */
-    @Query("""
-        SELECT c FROM Client c
-        WHERE c.collecteur.id = :collecteurId
-        ORDER BY c.dateCreation DESC
-        """)
+    @Query("SELECT c FROM Client c " +
+            "WHERE c.collecteur.id = :collecteurId " +
+            "ORDER BY c.dateCreation DESC")
     List<Client> findRecentClientsByCollecteur(@Param("collecteurId") Long collecteurId, Pageable pageable);
 
-    @Query("""
-    SELECT cp FROM CommissionParameter cp 
-    WHERE cp.client.id = :clientId 
-    AND cp.active = true 
-    AND (cp.validTo IS NULL OR cp.validTo >= CURRENT_DATE)
-    ORDER BY cp.validFrom DESC
-    """)
-    Optional<CommissionParameter> findActiveCommissionParameter(@Param("clientId") Long clientId);
+    /**
+     * Tous les clients par collecteur, triés par date de création
+     */
+    @Query("SELECT c FROM Client c WHERE c.collecteur = :collecteur ORDER BY c.dateCreation DESC")
+    List<Client> findAllByCollecteurOrderByDateCreationDesc(@Param("collecteur") Collecteur collecteur);
 
+    @Query("SELECT c FROM Client c WHERE c.collecteur = :collecteur ORDER BY c.dateCreation DESC")
+    Page<Client> findAllByCollecteurOrderByDateCreationDesc(@Param("collecteur") Collecteur collecteur, Pageable pageable);
+
+    /**
+     * Clients récemment modifiés
+     */
+    @Query("SELECT c FROM Client c " +
+            "WHERE c.collecteur.id = :collecteurId " +
+            "AND c.dateModification IS NOT NULL " +
+            "ORDER BY c.dateModification DESC")
+    List<Client> findRecentlyModifiedByCollecteur(@Param("collecteurId") Long collecteurId, Pageable pageable);
+
+    // =====================================
+    // MÉTHODES DE TRANSFERT
+    // =====================================
+
+    /**
+     * Clients par transfert
+     */
+    @Query("SELECT c FROM Client c WHERE c.id IN " +
+            "(SELECT tc.clientId FROM TransfertCompteClient tc WHERE tc.transfert.id = :transferId)")
+    List<Client> findByTransfertId(@Param("transferId") Long transferId);
+
+    // =====================================
+    // MÉTHODES DE VERROUILLAGE ET TRANSACTION
+    // =====================================
+
+    /**
+     * Client avec verrou pessimiste (pour mise à jour sécurisée)
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT c FROM Client c WHERE c.id = :id")
+    Optional<Client> findByIdForUpdate(@Param("id") Long id);
+
+    // =====================================
+    // MÉTHODES DE VALIDATION ET MAINTENANCE
+    // =====================================
+
+    /**
+     * Clients orphelins (sans collecteur)
+     */
+    @Query("SELECT c FROM Client c WHERE c.collecteur IS NULL")
+    List<Client> findOrphanClients();
+
+    /**
+     * Clients avec CNI dupliqués
+     */
+    @Query("SELECT c.numeroCni FROM Client c " +
+            "GROUP BY c.numeroCni " +
+            "HAVING COUNT(c.numeroCni) > 1")
+    List<String> findDuplicateCnis();
+
+    /**
+     * Clients inactifs depuis longtemps
+     */
+    @Query("SELECT c FROM Client c " +
+            "WHERE c.valide = false " +
+            "AND c.dateModification < :cutoffDate")
+    List<Client> findLongInactiveClients(@Param("cutoffDate") LocalDateTime cutoffDate);
+
+    /**
+     * Clients sans transactions récentes
+     */
+    @Query("SELECT c FROM Client c " +
+            "WHERE c.id NOT IN (" +
+            "    SELECT DISTINCT m.client.id FROM Mouvement m " +
+            "    WHERE m.client.id IS NOT NULL " +
+            "    AND m.dateOperation > :sinceDate" +
+            ") " +
+            "AND c.collecteur.id = :collecteurId")
+    List<Client> findClientsWithoutRecentTransactions(@Param("collecteurId") Long collecteurId,
+                                                      @Param("sinceDate") LocalDateTime sinceDate);
 }

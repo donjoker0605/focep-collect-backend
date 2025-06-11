@@ -286,7 +286,7 @@ public class MouvementServiceImpl implements MouvementService {
         mouvement.setMontant(montant);
         mouvement.setLibelle(String.format("Epargne client : %s %s", client.getNom(), client.getPrenom()));
         mouvement.setSens("epargne");
-        // ✅ UTILISATION DU DateTimeService
+        // UTILISATION DU DateTimeService
         mouvement.setDateOperation(dateTimeService.getCurrentDateTime());
         mouvement.setCompteSource(source);
         mouvement.setCompteDestination(destination);

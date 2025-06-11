@@ -10,18 +10,18 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
 @Repository
 public interface CollecteurRepository extends JpaRepository<Collecteur, Long> {
 
-    // ✅ MÉTHODES EXISTANTES (à conserver)
     List<Collecteur> findByAgenceId(Long agenceId);
     Page<Collecteur> findByAgenceId(Long agenceId, Pageable pageable);
     Optional<Collecteur> findByAdresseMail(String adresseMail);
+    long countByAgenceId(Long agenceId);
 
-    // ✅ NOUVELLES MÉTHODES REQUISES POUR LE CONTRÔLEUR
 
     /**
      * Recherche des collecteurs par nom, prénom ou email (insensible à la casse)
@@ -44,6 +44,15 @@ public interface CollecteurRepository extends JpaRepository<Collecteur, Long> {
             "LOWER(c.prenom) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
             "LOWER(c.adresseMail) LIKE LOWER(CONCAT('%', :search, '%'))")
     Page<Collecteur> findBySearchTerm(@Param("search") String searchTerm, Pageable pageable);
+
+    @Query("SELECT c FROM Collecteur c WHERE c.agence.id = :agenceId AND " +
+            "(:search IS NULL OR :search = '' OR " +
+            "LOWER(c.nom) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+            "LOWER(c.prenom) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+            "LOWER(c.adresseMail) LIKE LOWER(CONCAT('%', :search, '%')))")
+    Page<Collecteur> findByAgenceIdAndSearchTerm(@Param("agenceId") Long agenceId,
+                                                 @Param("search") String search,
+                                                 Pageable pageable);
 
     /**
      * Recherche avec jointure pour optimiser les performances
@@ -96,6 +105,9 @@ public interface CollecteurRepository extends JpaRepository<Collecteur, Long> {
     /**
      * Compte le nombre total de collecteurs
      */
+
+    long countByActiveTrue();
+    long countByActiveFalse();
     @Query("SELECT COUNT(c) FROM Collecteur c")
     Long countAllCollecteurs();
 
@@ -115,6 +127,29 @@ public interface CollecteurRepository extends JpaRepository<Collecteur, Long> {
     Page<Collecteur> findTopCollecteursByClientCount(Pageable pageable);
 
     /**
+     * Statistiques par collecteur
+     */
+    @Query("SELECT c.id, " +
+            "COUNT(cl) as totalClients, " +
+            "SUM(CASE WHEN cl.valide = true THEN 1 ELSE 0 END) as activeClients " +
+            "FROM Collecteur c " +
+            "LEFT JOIN c.clients cl " +
+            "WHERE c.id = :collecteurId " +
+            "GROUP BY c.id")
+    Object[] getCollecteurStats(@Param("collecteurId") Long collecteurId);
+
+    /**
+     * Collecteurs par performance (nombre de clients actifs)
+     */
+    @Query("SELECT c FROM Collecteur c " +
+            "LEFT JOIN c.clients cl " +
+            "WHERE c.active = true " +
+            "GROUP BY c.id " +
+            "HAVING COUNT(cl) > :minClients " +
+            "ORDER BY COUNT(cl) DESC")
+    List<Collecteur> findPerformantCollecteurs(@Param("minClients") Long minClients);
+
+    /**
      * Recherche optimisée pour le dashboard admin
      */
     @Query("SELECT c FROM Collecteur c " +
@@ -123,6 +158,42 @@ public interface CollecteurRepository extends JpaRepository<Collecteur, Long> {
             "ORDER BY c.nom, c.prenom")
     List<Collecteur> findAllActiveWithAgence();
 
+    /**
+     * Collecteur par ID avec toutes ses relations
+     */
+    @Query("SELECT c FROM Collecteur c " +
+            "LEFT JOIN FETCH c.agence " +
+            "LEFT JOIN FETCH c.clients " +
+            "WHERE c.id = :id")
+    Optional<Collecteur> findByIdWithDetails(@Param("id") Long id);
+
+
     @Query("SELECT CASE WHEN COUNT(c) > 0 THEN true ELSE false END FROM Collecteur c WHERE c.adresseMail = :email AND c.id IN (SELECT cl.collecteur.id FROM Client cl WHERE cl.id = :clientId)")
     boolean existsByAdresseMailAndClientId(@Param("email") String email, @Param("clientId") Long clientId);
+
+    // =====================================
+    // MÉTHODES POUR VALIDATION ET MAINTENANCE
+    // =====================================
+
+    /**
+     * Collecteurs sans agence (pour maintenance)
+     */
+    @Query("SELECT c FROM Collecteur c WHERE c.agence IS NULL")
+    List<Collecteur> findOrphanCollecteurs();
+
+    /**
+     * Collecteurs avec emails dupliqués
+     */
+    @Query("SELECT c.adresseMail FROM Collecteur c " +
+            "GROUP BY c.adresseMail " +
+            "HAVING COUNT(c.adresseMail) > 1")
+    List<String> findDuplicateEmails();
+
+    /**
+     * Collecteurs inactifs depuis longtemps
+     */
+    @Query("SELECT c FROM Collecteur c " +
+            "WHERE c.active = false " +
+            "AND c.dateModificationMontantMax < :cutoffDate")
+    List<Collecteur> findLongInactiveCollecteurs(@Param("cutoffDate") LocalDateTime cutoffDate);
 }
