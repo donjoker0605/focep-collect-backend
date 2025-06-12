@@ -20,7 +20,6 @@ public interface CollecteurRepository extends JpaRepository<Collecteur, Long> {
     List<Collecteur> findByAgenceId(Long agenceId);
     Page<Collecteur> findByAgenceId(Long agenceId, Pageable pageable);
     Optional<Collecteur> findByAdresseMail(String adresseMail);
-    long countByAgenceId(Long agenceId);
 
 
     /**
@@ -75,6 +74,19 @@ public interface CollecteurRepository extends JpaRepository<Collecteur, Long> {
     List<Collecteur> findActiveByAgenceId(@Param("agenceId") Long agenceId);
 
     /**
+     * Compte les collecteurs actifs par agence
+     */
+    @Query("SELECT COUNT(c) FROM Collecteur c WHERE c.agence.id = :agenceId AND c.active = true")
+    Long countByAgenceIdAndActiveTrue(@Param("agenceId") Long agenceId);
+
+
+    /**
+     * Compte les collecteurs sans activité récente
+     */
+    @Query("SELECT COUNT(c) FROM Collecteur c WHERE c.active = false")
+    Long countInactiveCollecteurs();
+
+    /**
      * Recherche avancée avec critères multiples
      */
     @Query("SELECT c FROM Collecteur c WHERE " +
@@ -103,10 +115,18 @@ public interface CollecteurRepository extends JpaRepository<Collecteur, Long> {
     Long findAgenceIdByCollecteurId(@Param("collecteurId") Long collecteurId);
 
     /**
-     * Compte le nombre total de collecteurs
+     * Compte les collecteurs actifs
      */
+    @Query("SELECT COUNT(c) FROM Collecteur c WHERE c.active = true")
+    Long countByActiveTrue();
 
-    long countByActiveTrue();
+    /**
+     * Compte les collecteurs par agence
+     */
+    @Query("SELECT COUNT(c) FROM Collecteur c WHERE c.agence.id = :agenceId")
+    Long countByAgenceId(@Param("agenceId") Long agenceId);
+
+
     long countByActiveFalse();
     @Query("SELECT COUNT(c) FROM Collecteur c")
     Long countAllCollecteurs();
@@ -196,4 +216,6 @@ public interface CollecteurRepository extends JpaRepository<Collecteur, Long> {
             "WHERE c.active = false " +
             "AND c.dateModificationMontantMax < :cutoffDate")
     List<Collecteur> findLongInactiveCollecteurs(@Param("cutoffDate") LocalDateTime cutoffDate);
+
+    
 }

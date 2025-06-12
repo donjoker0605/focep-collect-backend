@@ -206,4 +206,7 @@ public interface AgenceRepository extends JpaRepository<Agence, Long> {
             "LOWER(a.nomAgence) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
             "LOWER(a.codeAgence) LIKE LOWER(CONCAT('%', :search, '%'))")
     List<Agence> searchByNomOrCode(@Param("search") String search);
+
+    @Query("SELECT COUNT(a) FROM Agence a WHERE a.active = :active")
+    Long countByActive(@Param("active") boolean active);
 }

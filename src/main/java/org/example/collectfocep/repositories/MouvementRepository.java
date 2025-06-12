@@ -51,6 +51,50 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
             "ORDER BY m.dateOperation DESC")
     List<Mouvement> findByJournalIdWithAccounts(@Param("journalId") Long journalId);
 
+    @Query("SELECT " +
+            "COUNT(m) as totalOperations, " +
+            "COALESCE(SUM(m.montant), 0) as montantTotal, " +
+            "COALESCE(SUM(CASE WHEN UPPER(m.sens) = 'EPARGNE' THEN m.montant ELSE 0 END), 0) as totalEpargne, " +
+            "COALESCE(SUM(CASE WHEN UPPER(m.sens) = 'RETRAIT' THEN m.montant ELSE 0 END), 0) as totalRetrait " +
+            "FROM Mouvement m")
+    Object[] getGlobalStats();
+
+
+    /**
+     * Statistiques par agence
+     */
+    @Query("SELECT " +
+            "COUNT(m) as totalOperations, " +
+            "COALESCE(SUM(m.montant), 0) as montantTotal, " +
+            "COALESCE(SUM(CASE WHEN UPPER(m.sens) = 'EPARGNE' THEN m.montant ELSE 0 END), 0) as totalEpargne, " +
+            "COALESCE(SUM(CASE WHEN UPPER(m.sens) = 'RETRAIT' THEN m.montant ELSE 0 END), 0) as totalRetrait " +
+            "FROM Mouvement m " +
+            "WHERE m.client.agence.id = :agenceId")
+    Object[] getStatsByAgence(@Param("agenceId") Long agenceId);
+
+
+    /**
+     * Mouvements récents pour dashboard
+     */
+    @Query("SELECT m FROM Mouvement m " +
+            "LEFT JOIN FETCH m.client " +
+            "LEFT JOIN FETCH m.collecteur " +
+            "ORDER BY m.dateOperation DESC")
+    List<Mouvement> findRecentMovements(Pageable pageable);
+
+
+    /**
+     * Top collecteurs par volume
+     */
+    @Query("SELECT m.collecteur.id, " +
+            "COUNT(m) as nombreOperations, " +
+            "COALESCE(SUM(m.montant), 0) as montantTotal " +
+            "FROM Mouvement m " +
+            "GROUP BY m.collecteur.id " +
+            "ORDER BY montantTotal DESC")
+    List<Object[]> getTopCollecteursByVolume(Pageable pageable);
+
+
     /**
      * Projections optimisées pour l'affichage
      */
@@ -467,6 +511,25 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
     // =====================================
 
     /**
+     * Volume par jour (pour graphiques)
+     */
+    @Query("SELECT DATE(m.dateOperation) as jour, COALESCE(SUM(m.montant), 0) as volume " +
+            "FROM Mouvement m " +
+            "WHERE m.dateOperation BETWEEN :startDate AND :endDate " +
+            "GROUP BY DATE(m.dateOperation) " +
+            "ORDER BY jour")
+    List<Object[]> getVolumeByDay(
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
+
+    /**
+     * Compter les mouvements par période
+     */
+    @Query("SELECT COUNT(m) FROM Mouvement m WHERE m.dateOperation BETWEEN :startDate AND :endDate")
+    Long countByPeriod(@Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate);
+
+
+    /**
      * Mouvements orphelins (sans journal)
      */
     @Query("SELECT m FROM Mouvement m WHERE m.journal IS NULL")
@@ -514,4 +577,17 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
                                                          @Param("startDateTime") LocalDateTime startDateTime,
                                                          @Param("endDateTime") LocalDateTime endDateTime,
                                                          Pageable pageable);
+
+    /**
+     * Somme par sens (EPARGNE/RETRAIT) - MÉTHODE MANQUANTE CRITIQUE
+     */
+    @Query("SELECT COALESCE(SUM(m.montant), 0) FROM Mouvement m WHERE UPPER(m.sens) = UPPER(:sens)")
+    Double sumBySens(@Param("sens") String sens);
+
+    /**
+     * Somme par agence et sens - MÉTHODE MANQUANTE CRITIQUE
+     */
+    @Query("SELECT COALESCE(SUM(m.montant), 0) FROM Mouvement m " +
+            "WHERE m.client.agence.id = :agenceId AND UPPER(m.sens) = UPPER(:sens)")
+    Double sumByAgenceIdAndSens(@Param("agenceId") Long agenceId, @Param("sens") String sens);
 }

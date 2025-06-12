@@ -61,11 +61,24 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
     @Query("SELECT COUNT(c) FROM Client c WHERE c.agence.id = :agenceId")
     Long countByAgenceId(@Param("agenceId") Long agenceId);
 
+    /**
+     * Compte les clients validés par agence
+     */
+    @Query("SELECT COUNT(c) FROM Client c WHERE c.agence.id = :agenceId AND c.valide = true")
+    Long countByAgenceIdAndValideTrue(@Param("agenceId") Long agenceId);
+
+
     // =====================================
     // MÉTHODES DE COMPTAGE POUR DASHBOARD
     // =====================================
 
-    long countByValideTrue();
+    /**
+     * Compte les clients validés (actifs)
+     */
+    @Query("SELECT COUNT(c) FROM Client c WHERE c.valide = true")
+    Long countByValideTrue();
+
+
     long countByValideFalse();
 
     @Query("SELECT COUNT(c) FROM Client c WHERE c.valide = :valide")
@@ -327,4 +340,20 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
             "AND c.collecteur.id = :collecteurId")
     List<Client> findClientsWithoutRecentTransactions(@Param("collecteurId") Long collecteurId,
                                                       @Param("sinceDate") LocalDateTime sinceDate);
+
+    @Query("SELECT COUNT(c) FROM Client c WHERE c.valide = :valide")
+    Long countByValidé(@Param("valide") boolean valide);
+
+
+    @Query("SELECT COUNT(c) FROM Client c WHERE c.agence.id = :agenceId AND c.valide = :valide")
+    Long countByAgenceIdAndValidé(@Param("agenceId") Long agenceId, @Param("valide") boolean valide);
+
+
+    /**
+     * Clients par collecteur (si cette méthode n'existe pas déjà)
+     */
+    @Query("SELECT c FROM Client c WHERE c.collecteur.id = :collecteurId")
+    List<Client> findByCollecteur(@Param("collecteurId") Long collecteurId);
+
+
 }

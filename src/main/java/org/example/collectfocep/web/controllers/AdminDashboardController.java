@@ -1,25 +1,25 @@
-// src/main/java/org/example/collectfocep/web/controllers/AdminDashboardController.java
 package org.example.collectfocep.web.controllers;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.example.collectfocep.dto.DashboardStatsDTO;
 import org.example.collectfocep.repositories.*;
+import org.example.collectfocep.security.service.SecurityService;
 import org.example.collectfocep.util.ApiResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
-import java.util.HashMap;
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/admin")
 @Slf4j
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('ADMIN') or hasRole('SUPER_ADMIN')")
 public class AdminDashboardController {
 
     private final CollecteurRepository collecteurRepository;
@@ -27,186 +27,234 @@ public class AdminDashboardController {
     private final AgenceRepository agenceRepository;
     private final MouvementRepository mouvementRepository;
     private final CommissionRepository commissionRepository;
+    private final SecurityService securityService;
 
     /**
-     * ✅ ENDPOINT PRINCIPAL - Dashboard Admin
+     * ENDPOINT PRINCIPAL DU DASHBOARD ADMIN
      */
     @GetMapping("/dashboard")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> getDashboardStats() {
-        log.info("📊 Récupération des statistiques dashboard admin");
+    @PreAuthorize("hasAuthority('ROLE_ADMIN') or hasAuthority('ROLE_SUPER_ADMIN')")
+    public ResponseEntity<ApiResponse<DashboardStatsDTO>> getDashboardStats() {
+        log.info("📊 Récupération des statistiques du dashboard admin");
 
         try {
-            Map<String, Object> stats = new HashMap<>();
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            log.debug("Utilisateur connecté: {}, Autorités: {}",
+                    auth.getName(), auth.getAuthorities());
 
-            // ✅ STATISTIQUES GÉNÉRALES
-            stats.put("totalCollecteurs", collecteurRepository.count());
-            stats.put("totalClients", clientRepository.count());
-            stats.put("totalAgences", agenceRepository.count());
+            // Déterminer si c'est un admin d'agence ou super admin
+            boolean isSuperAdmin = auth.getAuthorities().stream()
+                    .anyMatch(authority -> authority.getAuthority().equals("ROLE_SUPER_ADMIN"));
 
-            // ✅ COLLECTEURS ACTIFS/INACTIFS
-            long collecteursActifs = collecteurRepository.countByActiveTrue();
-            long collecteursInactifs = collecteurRepository.countByActiveFalse();
-            stats.put("collecteursActifs", collecteursActifs);
-            stats.put("collecteursInactifs", collecteursInactifs);
+            DashboardStatsDTO stats;
 
-            // ✅ CLIENTS ACTIFS/INACTIFS
-            long clientsActifs = clientRepository.countByValideTrue();
-            long clientsInactifs = clientRepository.countByValideFalse();
-            stats.put("clientsActifs", clientsActifs);
-            stats.put("clientsInactifs", clientsInactifs);
-
-            // ✅ STATISTIQUES FINANCIÈRES DU MOIS
-            LocalDate debutMois = LocalDate.now().withDayOfMonth(1);
-            LocalDate finMois = LocalDate.now();
-            LocalDateTime debutMoisTime = debutMois.atStartOfDay();
-            LocalDateTime finMoisTime = finMois.atTime(LocalTime.MAX);
-
-            // Total épargne du mois
-            Double totalEpargne = mouvementRepository.sumMontantBySensAndDateBetween(
-                    "epargne", debutMoisTime, finMoisTime);
-            stats.put("totalEpargne", totalEpargne != null ? totalEpargne : 0.0);
-
-            // Total retraits du mois
-            Double totalRetrait = mouvementRepository.sumMontantBySensAndDateBetween(
-                    "retrait", debutMoisTime, finMoisTime);
-            stats.put("totalRetrait", totalRetrait != null ? totalRetrait : 0.0);
-
-            // ✅ COMMISSIONS EN ATTENTE
-//            long commissionsEnAttente = commissionRepository.countByStatut("EN_ATTENTE");
-//            stats.put("commissionsEnAttente", commissionsEnAttente);
-
-            // ✅ AGENCES ACTIVES
-            long agencesActives = agenceRepository.countByActiveTrue();
-            stats.put("agencesActives", agencesActives);
-
-            // ✅ TRANSACTIONS DU JOUR
-            LocalDateTime debutJour = LocalDate.now().atStartOfDay();
-            LocalDateTime finJour = LocalDate.now().atTime(LocalTime.MAX);
-            long transactionsDuJour = mouvementRepository.countByDateOperationBetween(debutJour, finJour);
-            stats.put("transactionsDuJour", transactionsDuJour);
-
-            // ✅ PERFORMANCE MENSUELLE
-            stats.put("performanceMois", calculateMonthlyPerformance(debutMoisTime, finMoisTime));
-
-            log.info("✅ Statistiques dashboard calculées - {} collecteurs, {} clients",
-                    stats.get("totalCollecteurs"), stats.get("totalClients"));
-
-            return ResponseEntity.ok(
-                    ApiResponse.success(stats, "Statistiques dashboard récupérées avec succès")
-            );
-
-        } catch (Exception e) {
-            log.error("❌ Erreur lors de la récupération des statistiques dashboard", e);
-            return ResponseEntity.internalServerError()
-                    .body(ApiResponse.error("DASHBOARD_ERROR", "Erreur lors de la récupération des statistiques"));
-        }
-    }
-
-    /**
-     * ✅ STATISTIQUES DÉTAILLÉES PAR AGENCE
-     */
-    @GetMapping("/dashboard/agences")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> getDashboardByAgence() {
-        log.info("🏢 Récupération des statistiques par agence");
-
-        try {
-            Map<String, Object> agenceStats = new HashMap<>();
-
-            // Récupérer toutes les agences avec leurs statistiques
-            var agences = agenceRepository.findAll();
-
-            for (var agence : agences) {
-                Map<String, Object> stats = new HashMap<>();
-                stats.put("nom", agence.getNom());
-                stats.put("totalCollecteurs", collecteurRepository.countByAgenceId(agence.getId()));
-                stats.put("totalClients", clientRepository.countByAgenceId(agence.getId()));
-
-                agenceStats.put("agence_" + agence.getId(), stats);
+            if (isSuperAdmin) {
+                stats = buildGlobalStats();
+                log.info("Statistiques globales générées pour super admin");
+            } else {
+                // GESTION SÉCURISÉE POUR ADMIN D'AGENCE
+                try {
+                    Long agenceId = securityService.getCurrentUserAgenceId();
+                    if (agenceId == null) {
+                        log.warn("Admin sans agence associée détecté");
+                        // Retourner des stats vides plutôt qu'une erreur
+                        stats = createEmptyStats("Admin sans agence");
+                    } else {
+                        stats = buildAgenceStats(agenceId);
+                        log.info("Statistiques d'agence {} générées pour admin", agenceId);
+                    }
+                } catch (Exception e) {
+                    log.error("Erreur récupération agence admin, utilisation stats vides", e);
+                    stats = createEmptyStats("Erreur agence");
+                }
             }
 
             return ResponseEntity.ok(
-                    ApiResponse.success(agenceStats, "Statistiques par agence récupérées")
+                    ApiResponse.success(stats, "Statistiques récupérées avec succès")
             );
 
         } catch (Exception e) {
-            log.error("❌ Erreur lors de la récupération des statistiques par agence", e);
-            return ResponseEntity.internalServerError()
-                    .body(ApiResponse.error("AGENCE_STATS_ERROR", "Erreur lors de la récupération"));
+            log.error("Erreur lors de la récupération des statistiques dashboard", e);
+
+            // RETOURNER DES STATS VIDES EN CAS D'ERREUR
+            DashboardStatsDTO emptyStats = createEmptyStats("Erreur système");
+            return ResponseEntity.ok(
+                    ApiResponse.success(emptyStats, "Statistiques par défaut (erreur backend)")
+            );
         }
     }
 
     /**
-     * ✅ MÉTHODE UTILITAIRE - Calculer la performance mensuelle
+     * STATISTIQUES GLOBALES AVEC GESTION D'ERREURS
      */
-    private Map<String, Object> calculateMonthlyPerformance(LocalDateTime debut, LocalDateTime fin) {
-        Map<String, Object> performance = new HashMap<>();
+    private DashboardStatsDTO buildGlobalStats() {
+        log.debug("Construction des statistiques globales");
 
         try {
-            // Calculs de performance
-            Double totalEpargne = mouvementRepository.sumMontantBySensAndDateBetween("epargne", debut, fin);
-            Double totalRetrait = mouvementRepository.sumMontantBySensAndDateBetween("retrait", debut, fin);
-            Long totalTransactions = mouvementRepository.countByDateOperationBetween(debut, fin);
+            // COLLECTEURS - AVEC GESTION D'ERREURS
+            Long totalCollecteurs = safeCount(() -> collecteurRepository.count());
+            Long collecteursActifs = safeCount(() -> collecteurRepository.countByActiveTrue());
+            Long collecteursInactifs = totalCollecteurs - collecteursActifs;
 
-            double soldeNet = (totalEpargne != null ? totalEpargne : 0.0) -
-                    (totalRetrait != null ? totalRetrait : 0.0);
+            // CLIENTS - AVEC GESTION D'ERREURS
+            Long totalClients = safeCount(() -> clientRepository.count());
+            Long clientsActifs = safeCount(() -> clientRepository.countByValideTrue());
+            Long clientsInactifs = totalClients - clientsActifs;
 
-            performance.put("soldeNet", soldeNet);
-            performance.put("totalTransactions", totalTransactions != null ? totalTransactions : 0);
-            performance.put("moyenneParTransaction",
-                    totalTransactions > 0 ? soldeNet / totalTransactions : 0.0);
+            // AGENCES
+            Long agencesActives = safeCount(() -> agenceRepository.count());
+
+            // MOUVEMENTS FINANCIERS - AVEC GESTION D'ERREURS
+            Double totalEpargne = safeSum(() -> mouvementRepository.sumBySens("EPARGNE"));
+            Double totalRetrait = safeSum(() -> mouvementRepository.sumBySens("RETRAIT"));
+
+            // COMMISSIONS - AVEC GESTION D'ERREURS
+            Long commissionsEnAttente = safeCount(() -> commissionRepository.countPendingCommissions());
+            Double totalCommissions = safeSum(() -> commissionRepository.sumAllCommissions());
+
+            // ALERTES SYSTÈME - AVEC GESTION D'ERREURS
+            Long collecteursSansActivite = safeCount(() -> collecteurRepository.countInactiveCollecteurs());
+
+            return DashboardStatsDTO.builder()
+                    .totalCollecteurs(totalCollecteurs)
+                    .totalClients(totalClients)
+                    .agencesActives(agencesActives)
+                    .collecteursActifs(collecteursActifs)
+                    .collecteursInactifs(collecteursInactifs)
+                    .clientsActifs(clientsActifs)
+                    .clientsInactifs(clientsInactifs)
+                    .totalEpargne(totalEpargne)
+                    .totalRetrait(totalRetrait)
+                    .commissionsEnAttente(commissionsEnAttente)
+                    .totalCommissions(totalCommissions)
+                    .collecteursSansActivite(collecteursSansActivite)
+                    .lastUpdate(LocalDateTime.now())
+                    .periode("Global")
+                    .build();
 
         } catch (Exception e) {
-            log.warn("⚠️ Erreur calcul performance mensuelle: {}", e.getMessage());
-            performance.put("soldeNet", 0.0);
-            performance.put("totalTransactions", 0);
-            performance.put("moyenneParTransaction", 0.0);
+            log.error("Erreur construction statistiques globales", e);
+            return createEmptyStats("Erreur statistiques globales");
         }
-
-        return performance;
     }
 
     /**
-     * ✅ ACTIONS D'ADMINISTRATION
+     * STATISTIQUES PAR AGENCE AVEC GESTION D'ERREURS
      */
-    @PostMapping("/actions/reset-cache")
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
-    public ResponseEntity<ApiResponse<String>> resetSystemCache() {
-        log.info("🗑️ Réinitialisation du cache système");
+    private DashboardStatsDTO buildAgenceStats(Long agenceId) {
+        log.debug("Construction des statistiques pour l'agence: {}", agenceId);
 
         try {
-            // Logique de réinitialisation du cache
-            // Implémentation selon votre système de cache
+            // COLLECTEURS DE L'AGENCE - AVEC GESTION D'ERREURS
+            Long totalCollecteurs = safeCount(() -> collecteurRepository.countByAgenceId(agenceId));
+            Long collecteursActifs = safeCount(() -> collecteurRepository.countByAgenceIdAndActiveTrue(agenceId));
+            Long collecteursInactifs = totalCollecteurs - collecteursActifs;
 
-            return ResponseEntity.ok(
-                    ApiResponse.success("Cache réinitialisé", "Cache système vidé avec succès")
-            );
+            // CLIENTS DE L'AGENCE - AVEC GESTION D'ERREURS
+            Long totalClients = safeCount(() -> clientRepository.countByAgenceId(agenceId));
+            Long clientsActifs = safeCount(() -> clientRepository.countByAgenceIdAndValideTrue(agenceId));
+            Long clientsInactifs = totalClients - clientsActifs;
+
+            // MOUVEMENTS FINANCIERS DE L'AGENCE - AVEC GESTION D'ERREURS
+            Double totalEpargne = safeSum(() -> mouvementRepository.sumByAgenceIdAndSens(agenceId, "EPARGNE"));
+            Double totalRetrait = safeSum(() -> mouvementRepository.sumByAgenceIdAndSens(agenceId, "RETRAIT"));
+
+            // COMMISSIONS DE L'AGENCE - AVEC GESTION D'ERREURS
+            Long commissionsEnAttente = safeCount(() -> commissionRepository.countPendingCommissionsByAgence(agenceId));
+            Double totalCommissions = safeSum(() -> commissionRepository.sumCommissionsByAgence(agenceId));
+
+            return DashboardStatsDTO.builder()
+                    .totalCollecteurs(totalCollecteurs)
+                    .totalClients(totalClients)
+                    .agencesActives(1L)
+                    .collecteursActifs(collecteursActifs)
+                    .collecteursInactifs(collecteursInactifs)
+                    .clientsActifs(clientsActifs)
+                    .clientsInactifs(clientsInactifs)
+                    .totalEpargne(totalEpargne)
+                    .totalRetrait(totalRetrait)
+                    .commissionsEnAttente(commissionsEnAttente)
+                    .totalCommissions(totalCommissions)
+                    .lastUpdate(LocalDateTime.now())
+                    .periode("Agence " + agenceId)
+                    .build();
+
         } catch (Exception e) {
-            log.error("❌ Erreur lors de la réinitialisation du cache", e);
-            return ResponseEntity.internalServerError()
-                    .body(ApiResponse.error("CACHE_RESET_ERROR", "Erreur lors de la réinitialisation"));
+            log.error("Erreur construction statistiques agence {}", agenceId, e);
+            return createEmptyStats("Erreur agence " + agenceId);
         }
     }
 
-    @GetMapping("/system/health")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> getSystemHealth() {
-        log.info("🏥 Vérification de l'état du système");
-
+    /**
+     * MÉTHODES UTILITAIRES POUR GESTION D'ERREURS
+     */
+    private Long safeCount(CountSupplier supplier) {
         try {
-            Map<String, Object> health = new HashMap<>();
-
-            // Vérifications système
-            health.put("database", "UP");
-            health.put("totalUsers", collecteurRepository.count() + clientRepository.count());
-            health.put("lastUpdate", LocalDateTime.now().toString());
-            health.put("systemLoad", "NORMAL");
-
-            return ResponseEntity.ok(
-                    ApiResponse.success(health, "État du système récupéré")
-            );
+            Long result = supplier.get();
+            return result != null ? result : 0L;
         } catch (Exception e) {
-            log.error("❌ Erreur lors de la vérification système", e);
-            return ResponseEntity.internalServerError()
-                    .body(ApiResponse.error("HEALTH_CHECK_ERROR", "Erreur lors de la vérification"));
+            log.debug("Erreur lors du comptage: {}", e.getMessage());
+            return 0L;
         }
+    }
+
+    private Double safeSum(SumSupplier supplier) {
+        try {
+            Double result = supplier.get();
+            return result != null ? result : 0.0;
+        } catch (Exception e) {
+            log.debug("Erreur lors de la somme: {}", e.getMessage());
+            return 0.0;
+        }
+    }
+
+    private DashboardStatsDTO createEmptyStats(String periode) {
+        return DashboardStatsDTO.builder()
+                .totalCollecteurs(0L)
+                .totalClients(0L)
+                .agencesActives(0L)
+                .collecteursActifs(0L)
+                .collecteursInactifs(0L)
+                .clientsActifs(0L)
+                .clientsInactifs(0L)
+                .totalEpargne(0.0)
+                .totalRetrait(0.0)
+                .commissionsEnAttente(0L)
+                .totalCommissions(0.0)
+                .collecteursSansActivite(0L)
+                .lastUpdate(LocalDateTime.now())
+                .periode(periode)
+                .build();
+    }
+
+    /**
+     * INTERFACES FONCTIONNELLES POUR GESTION D'ERREURS
+     */
+    @FunctionalInterface
+    private interface CountSupplier {
+        Long get() throws Exception;
+    }
+
+    @FunctionalInterface
+    private interface SumSupplier {
+        Double get() throws Exception;
+    }
+
+    /**
+     * ENDPOINT DE DEBUG
+     */
+    @GetMapping("/dashboard-debug")
+    public ResponseEntity<Object> getDashboardDebug() {
+        log.info("🔧 DEBUG: Vérification de l'accès au dashboard admin");
+
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+
+        return ResponseEntity.ok(java.util.Map.of(
+                "authenticated", auth != null && auth.isAuthenticated(),
+                "principal", auth != null ? auth.getName() : "null",
+                "authorities", auth != null ? auth.getAuthorities().toString() : "null",
+                "details", auth != null ? auth.getDetails() : "null",
+                "timestamp", LocalDateTime.now()
+        ));
     }
 }

@@ -695,4 +695,44 @@ public class SecurityService {
     private boolean isSuperAdmin(Authentication auth) {
         return hasRole(auth.getAuthorities(), RoleConfig.SUPER_ADMIN);
     }
+
+    /**
+     * RÉCUPÈRE L'ID DE L'AGENCE DE L'UTILISATEUR CONNECTÉ
+     */
+    public Long getCurrentUserAgenceId() {
+        try {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+            if (authentication == null || !authentication.isAuthenticated()) {
+                log.warn("Aucune authentification trouvée");
+                return null;
+            }
+
+            String username = authentication.getName();
+            log.debug("Récupération de l'agence pour l'utilisateur: {}", username);
+
+            // Chercher d'abord dans les admins
+            Optional<Admin> admin = adminRepository.findByAdresseMail(username);
+            if (admin.isPresent() && admin.get().getAgence() != null) {
+                Long agenceId = admin.get().getAgence().getId();
+                log.debug("Agence trouvée pour admin {}: {}", username, agenceId);
+                return agenceId;
+            }
+
+            // Chercher dans les collecteurs
+            Optional<Collecteur> collecteur = collecteurRepository.findByAdresseMail(username);
+            if (collecteur.isPresent() && collecteur.get().getAgence() != null) {
+                Long agenceId = collecteur.get().getAgence().getId();
+                log.debug("Agence trouvée pour collecteur {}: {}", username, agenceId);
+                return agenceId;
+            }
+
+            log.warn("Aucune agence trouvée pour l'utilisateur: {}", username);
+            return null;
+
+        } catch (Exception e) {
+            log.error("Erreur lors de la récupération de l'agence utilisateur", e);
+            return null;
+        }
+    }
 }

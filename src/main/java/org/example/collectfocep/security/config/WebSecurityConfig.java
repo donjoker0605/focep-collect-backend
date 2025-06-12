@@ -51,18 +51,30 @@ public class WebSecurityConfig {
                         .requestMatchers("/api/bootstrap/**").permitAll()
                         .requestMatchers("/actuator/**").permitAll()
 
-                        // ✅ DASHBOARD COLLECTEUR - ACCÈS DIRECT POUR LES COLLECTEURS
+                        // DASHBOARD ADMIN - AJOUT ENDPOINT CORRIGÉ
+                        .requestMatchers(HttpMethod.GET, "/api/admin/dashboard")
+                        .hasAnyAuthority("ROLE_ADMIN", "ROLE_SUPER_ADMIN")
+
+                        // ENDPOINTS DEBUG (À SUPPRIMER EN PROD)
+                        .requestMatchers("/api/admin/dashboard-debug").permitAll()
+
+                        // DASHBOARD COLLECTEUR
                         .requestMatchers(HttpMethod.GET, "/api/collecteurs/*/dashboard*")
-                        .hasRole("COLLECTEUR")
+                        .hasAuthority("ROLE_COLLECTEUR")
 
-                        // ✅ ENDPOINTS DEBUG SANS SÉCURITÉ (À SUPPRIMER EN PROD)
-                        .requestMatchers("/api/collecteurs/*/dashboard-debug").permitAll()
-                        .requestMatchers("/api/collecteurs/mappings-check").permitAll()
+                        // Autres endpoints collecteurs
+                        .requestMatchers("/api/collecteurs/**").hasAnyAuthority("ROLE_SUPER_ADMIN", "ROLE_ADMIN", "ROLE_COLLECTEUR")
+                        .requestMatchers("/api/clients/**").hasAnyAuthority("ROLE_SUPER_ADMIN", "ROLE_ADMIN", "ROLE_COLLECTEUR")
 
-                        // Autres endpoints collecteurs avec sécurité normale
-                        .requestMatchers("/api/collecteurs/**").hasAnyRole("SUPER_ADMIN", "ADMIN", "COLLECTEUR")
-                        .requestMatchers("/api/clients/**").hasAnyRole("SUPER_ADMIN", "ADMIN", "COLLECTEUR")
-                        .requestMatchers("/api/admin/**").hasRole("SUPER_ADMIN")
+                        // ENDPOINTS ADMIN
+                        .requestMatchers("/api/admin/**").hasAnyAuthority("ROLE_ADMIN", "ROLE_SUPER_ADMIN")
+                        .requestMatchers("/api/commission-parameters/**").hasAnyAuthority("ROLE_ADMIN", "ROLE_SUPER_ADMIN")
+                        .requestMatchers("/api/transfers/**").hasAnyAuthority("ROLE_ADMIN", "ROLE_SUPER_ADMIN")
+                        .requestMatchers("/api/reports/**").hasAnyAuthority("ROLE_ADMIN", "ROLE_SUPER_ADMIN")
+
+                        // ENDPOINTS SUPER ADMIN UNIQUEMENT
+                        .requestMatchers("/api/agences/**").hasAuthority("ROLE_SUPER_ADMIN")
+                        .requestMatchers("/api/users/**").hasAuthority("ROLE_SUPER_ADMIN")
 
                         // Toutes les autres requêtes nécessitent une authentification
                         .anyRequest().authenticated()
@@ -131,4 +143,5 @@ public class WebSecurityConfig {
         source.registerCorsConfiguration("/**", configuration);
         return source;
     }
+
 }
