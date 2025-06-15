@@ -16,15 +16,22 @@ import java.util.Optional;
 public interface ReportRepository extends JpaRepository<Report, Long> {
 
     /**
-     * ✅ CORRIGER L'ERREUR 404 - RÉCUPÉRER LES RAPPORTS PAR AGENCE
+     * Trouver les rapports par agence, triés par date de création
      */
-    Page<Report> findByAgenceIdOrderByDateCreationDesc(Long agenceId, Pageable pageable);
-
+    @Query("SELECT r FROM Report r WHERE r.agence.id = :agenceId " +
+            "ORDER BY r.dateCreation DESC")
+    Page<Report> findByAgenceIdOrderByDateCreationDesc(
+            @Param("agenceId") Long agenceId,
+            Pageable pageable
+    );
     /**
-     * ✅ RÉCUPÉRER UN RAPPORT SPÉCIFIQUE AVEC SÉCURITÉ
+     * Trouver un rapport par ID et agence
      */
-    Optional<Report> findByIdAndAgenceId(Long reportId, Long agenceId);
-
+    @Query("SELECT r FROM Report r WHERE r.id = :reportId AND r.agence.id = :agenceId")
+    Optional<Report> findByIdAndAgenceId(
+            @Param("reportId") Long reportId,
+            @Param("agenceId") Long agenceId
+    );
     /**
      * ✅ RÉCUPÉRER LES RAPPORTS RÉCENTS
      */

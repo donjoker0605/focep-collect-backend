@@ -69,7 +69,7 @@ public class JournalServiceImpl implements JournalService {
 
         if (journalExistant.isPresent()) {
             Journal journal = journalExistant.get();
-            log.info(" Journal existant trouvé: ID={}, Status={}", journal.getId(), journal.getStatut());
+            log.info("✅ Journal existant trouvé: ID={}, Status={}", journal.getId(), journal.getStatut());
             return journal;
         }
 
@@ -137,8 +137,55 @@ public class JournalServiceImpl implements JournalService {
     @Override
     @Cacheable(value = "journal-actuel", key = "#collecteurId")
     public Journal getJournalActif(Long collecteurId) {
+        log.info("📋 Récupération journal actif pour collecteur: {}", collecteurId);
         LocalDate aujourdhui = LocalDate.now();
         return getOrCreateJournalDuJour(collecteurId, aujourdhui);
+    }
+
+    /**
+     * ✅ MÉTHODE POUR AsyncReportService
+     * Récupère les entrées mensuelles d'un journal pour un collecteur
+     */
+    @Override
+    @Cacheable(value = "monthly-entries", key = "#collecteurId + '-' + #month")
+    public List<Journal> getMonthlyEntries(Long collecteurId, YearMonth month) {
+        log.info("📋 Récupération des entrées mensuelles pour collecteur: {} - mois: {}", collecteurId, month);
+
+        try {
+            LocalDate startDate = month.atDay(1);
+            LocalDate endDate = month.atEndOfMonth();
+
+            // ✅ UTILISER LA MÉTHODE EXISTANTE
+            List<Journal> journals = journalRepository.findByCollecteurAndDateRange(collecteurId, startDate, endDate);
+
+            log.info("✅ {} entrées de journal trouvées pour {}/{}",
+                    journals.size(), month.getMonthValue(), month.getYear());
+
+            return journals;
+
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la récupération des entrées mensuelles: {}", e.getMessage(), e);
+            throw new RuntimeException("Erreur récupération entrées mensuelles: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * ✅ NOUVELLE MÉTHODE POUR ReportService
+     * Créer un nouveau journal pour un collecteur (aujourd'hui par défaut)
+     */
+    @Override
+    @Transactional
+    public Journal createJournal(Long collecteurId) {
+        log.info("📋 Création d'un nouveau journal pour collecteur: {}", collecteurId);
+
+        try {
+            LocalDate aujourdhui = LocalDate.now();
+            return getOrCreateJournalDuJour(collecteurId, aujourdhui);
+
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la création du journal pour collecteur {}: {}", collecteurId, e.getMessage(), e);
+            throw new RuntimeException("Erreur création journal: " + e.getMessage(), e);
+        }
     }
 
     /**
@@ -149,7 +196,7 @@ public class JournalServiceImpl implements JournalService {
             propagation = Propagation.REQUIRES_NEW,
             rollbackFor = Exception.class
     )
-    @CacheEvict(value = "journal-actuel", key = "#collecteurId")
+    @CacheEvict(value = {"journal-actuel", "monthly-entries"}, key = "#collecteurId")
     public Journal cloturerJournalDuJour(Long collecteurId, LocalDate date) {
         log.info("🔒 Clôture journal collecteur {} pour date {}", collecteurId, date);
 
@@ -171,75 +218,156 @@ public class JournalServiceImpl implements JournalService {
         return journalCloture;
     }
 
+    // =====================================
     // MÉTHODES EXISTANTES CONSERVÉES POUR COMPATIBILITÉ
+    // =====================================
+
     @Override
     public List<Journal> getAllJournaux() {
+        log.debug("📋 Récupération de tous les journaux");
         return journalRepository.findAll();
     }
 
     @Override
     public Page<Journal> getAllJournaux(Pageable pageable) {
+        log.debug("📋 Récupération paginée de tous les journaux");
         return journalRepository.findAll(pageable);
     }
 
     @Override
     @Cacheable(value = "journaux", key = "#id")
     public Optional<Journal> getJournalById(Long id) {
+        log.debug("📋 Récupération journal par ID: {}", id);
         return journalRepository.findById(id);
     }
 
     @Override
     @Transactional
+    @CacheEvict(value = {"journaux", "journal-actuel", "monthly-entries"}, allEntries = true)
     public Journal saveJournal(Journal journal) {
+        log.info("💾 Sauvegarde journal: {}", journal.getId());
         return journalRepository.save(journal);
     }
 
     @Override
     @Transactional
-    @CacheEvict(value = "journaux", key = "#journalId")
+    @CacheEvict(value = {"journaux", "journal-actuel", "monthly-entries"}, key = "#journalId")
     public Journal cloturerJournal(Long journalId) {
+        log.info("🔒 Clôture journal par ID: {}", journalId);
+
         Journal journal = journalRepository.findById(journalId)
                 .orElseThrow(() -> new ResourceNotFoundException("Journal non trouvé"));
 
-        journal.cloturerJournal();
-        return journalRepository.save(journal);
+        if (!journal.isEstCloture()) {
+            journal.cloturerJournal();
+            journal = journalRepository.save(journal);
+            log.info("✅ Journal {} clôturé avec succès", journalId);
+        } else {
+            log.warn("⚠️ Journal {} déjà clôturé", journalId);
+        }
+
+        return journal;
     }
 
     @Override
+    @Cacheable(value = "journal-range", key = "#collecteurId + '-' + #dateDebut + '-' + #dateFin")
     public List<Journal> getJournauxByCollecteurAndDateRange(
             Long collecteurId, LocalDate dateDebut, LocalDate dateFin) {
+        log.debug("📋 Récupération journaux collecteur {} entre {} et {}", collecteurId, dateDebut, dateFin);
         return journalRepository.findByCollecteurAndDateRange(collecteurId, dateDebut, dateFin);
     }
 
     @Override
     public Page<Journal> getJournauxByCollecteurAndDateRange(
             Long collecteurId, LocalDate dateDebut, LocalDate dateFin, Pageable pageable) {
+        log.debug("📋 Récupération paginée journaux collecteur {} entre {} et {}", collecteurId, dateDebut, dateFin);
         return journalRepository.findByCollecteurAndDateRange(collecteurId, dateDebut, dateFin, pageable);
     }
 
     @Override
-    public List<Journal> getMonthlyEntries(Long collecteurId, YearMonth month) {
-        LocalDate startDate = month.atDay(1);
-        LocalDate endDate = month.atEndOfMonth();
-        return journalRepository.findByCollecteurAndDateRange(collecteurId, startDate, endDate);
-    }
-
-    @Override
     @Transactional
+    @CacheEvict(value = {"journaux", "journal-actuel", "monthly-entries"}, allEntries = true)
     public void deleteJournal(Long id) {
-        journalRepository.deleteById(id);
+        log.info("🗑️ Suppression journal: {}", id);
+
+        Optional<Journal> journal = journalRepository.findById(id);
+        if (journal.isPresent()) {
+            if (journal.get().isEstCloture()) {
+                throw new IllegalStateException("Impossible de supprimer un journal clôturé");
+            }
+            journalRepository.deleteById(id);
+            log.info("✅ Journal {} supprimé avec succès", id);
+        } else {
+            log.warn("⚠️ Journal {} non trouvé pour suppression", id);
+        }
     }
 
     @Override
     @Transactional
     public Mouvement saveMouvement(Mouvement mouvement, Journal journal) {
+        log.debug("💾 Sauvegarde mouvement dans journal: {}", journal.getId());
+
+        if (journal.isEstCloture()) {
+            throw new IllegalStateException("Impossible d'ajouter un mouvement à un journal clôturé");
+        }
+
         mouvement.setJournal(journal);
         return mouvementRepository.save(mouvement);
     }
 
     @Override
+    @Cacheable(value = "journal-collecteur-range", key = "#collecteur.id + '-' + #dateDebut + '-' + #dateFin")
     public List<Journal> getJournauxByCollecteurAndDateRange(
             Collecteur collecteur, LocalDate dateDebut, LocalDate dateFin) {
+        log.debug("📋 Récupération journaux collecteur {} entre {} et {}", collecteur.getId(), dateDebut, dateFin);
         return journalRepository.findByCollecteurAndDateDebutBetween(collecteur, dateDebut, dateFin);
+    }
+
+    /**
+     * ✅ MÉTHODES UTILITAIRES POUR LE MONITORING
+     */
+
+    /**
+     * Compte le nombre de journaux ouverts pour un collecteur
+     */
+    public long countJournauxOuverts(Long collecteurId) {
+        return journalRepository.countByCollecteurIdAndEstClotureIsFalse(collecteurId);
+    }
+
+    /**
+     * Récupère les journaux non clôturés depuis plus de X jours
+     */
+    public List<Journal> getJournauxNonCloturesAnciens(int nombreJours) {
+        LocalDate seuilDate = LocalDate.now().minusDays(nombreJours);
+        return journalRepository.findByEstClotureIsFalseAndDateDebutBefore(seuilDate);
+    }
+
+    /**
+     * Clôture automatique des journaux anciens
+     */
+    @Transactional
+    @CacheEvict(value = {"journal-actuel", "monthly-entries", "journaux"}, allEntries = true)
+    public int cloturerJournauxAnciens(int nombreJours) {
+        log.info("🔒 Clôture automatique des journaux anciens (plus de {} jours)", nombreJours);
+
+        List<Journal> journauxAnciens = getJournauxNonCloturesAnciens(nombreJours);
+        int nombreClotures = 0;
+
+        for (Journal journal : journauxAnciens) {
+            try {
+                if (!journal.isEstCloture()) {
+                    journal.cloturerJournal();
+                    journalRepository.save(journal);
+                    nombreClotures++;
+                    log.info("✅ Journal {} clôturé automatiquement", journal.getId());
+                }
+            } catch (Exception e) {
+                log.error("❌ Erreur lors de la clôture automatique du journal {}: {}",
+                        journal.getId(), e.getMessage());
+            }
+        }
+
+        log.info("✅ Clôture automatique terminée: {} journaux clôturés", nombreClotures);
+        return nombreClotures;
     }
 }

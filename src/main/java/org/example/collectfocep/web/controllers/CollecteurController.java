@@ -109,24 +109,22 @@ public class CollecteurController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
     public ResponseEntity<ApiResponse<CollecteurDTO>> updateCollecteur(
             @PathVariable Long id,
-            @Valid @RequestBody CollecteurCreateDTO dto) {
+            @Valid @RequestBody CollecteurUpdateDTO dto) { // ✅ CHANGÉ DE CollecteurCreateDTO vers CollecteurUpdateDTO
 
         log.info("📝 Mise à jour du collecteur: {}", id);
 
         try {
             // ✅ SÉCURITÉ: VÉRIFIER QUE LE COLLECTEUR APPARTIENT À L'AGENCE DE L'ADMIN
             if (!securityService.isAdminOfCollecteur(
-                    org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication(),
-                    id)) {
+                    SecurityContextHolder.getContext().getAuthentication(), id)) {
 
                 log.warn("❌ Tentative de modification d'un collecteur non autorisé: {}", id);
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
                         .body(ApiResponse.error("Accès non autorisé à ce collecteur"));
             }
 
-            // ✅ FORCER L'AGENCE DE L'ADMIN - EMPÊCHER LE CHANGEMENT D'AGENCE
-            Long agenceId = securityService.getCurrentUserAgenceId();
-            dto.setAgenceId(agenceId);
+            // ✅ NOTE: Plus besoin de forcer l'agence pour les mises à jour
+            // L'agence est gérée dans le service pour empêcher les modifications
 
             Collecteur collecteur = collecteurService.updateCollecteur(id, dto);
 

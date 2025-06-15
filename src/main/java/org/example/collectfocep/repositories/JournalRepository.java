@@ -37,11 +37,17 @@ public interface JournalRepository extends JpaRepository<Journal, Long> {
     Long countByCollecteurAndDate(@Param("collecteur") Collecteur collecteur, @Param("date") LocalDate date);
 
     // MÉTHODES EXISTANTES CONSERVÉES POUR COMPATIBILITÉ
-    @Query("SELECT j FROM Journal j WHERE j.collecteur = :collecteur AND j.dateDebut >= :dateDebut AND j.dateFin <= :dateFin")
+    /**
+     * Trouver les journaux par collecteur entre deux dates de début
+     */
+    @Query("SELECT j FROM Journal j WHERE j.collecteur = :collecteur " +
+            "AND j.dateDebut BETWEEN :dateDebut AND :dateFin " +
+            "ORDER BY j.dateDebut DESC")
     List<Journal> findByCollecteurAndDateDebutBetween(
             @Param("collecteur") Collecteur collecteur,
             @Param("dateDebut") LocalDate dateDebut,
-            @Param("dateFin") LocalDate dateFin);
+            @Param("dateFin") LocalDate dateFin
+    );
 
     @Query("SELECT j FROM Journal j WHERE j.collecteur = :collecteur AND j.dateDebut >= :dateDebut AND j.dateFin <= :dateFin")
     Page<Journal> findByCollecteurAndDateDebutBetween(
@@ -50,11 +56,31 @@ public interface JournalRepository extends JpaRepository<Journal, Long> {
             @Param("dateFin") LocalDate dateFin,
             Pageable pageable);
 
-    @Query("SELECT j FROM Journal j WHERE j.collecteur.id = :collecteurId AND j.dateDebut >= :dateDebut AND j.dateFin <= :dateFin")
+    /**
+     * Compter les journaux ouverts pour un collecteur
+     */
+    @Query("SELECT COUNT(j) FROM Journal j WHERE j.collecteur.id = :collecteurId AND j.estCloture = false")
+    long countByCollecteurIdAndEstClotureIsFalse(@Param("collecteurId") Long collecteurId);
+
+    /**
+     * Trouver les journaux non clôturés antérieurs à une date donnée
+     */
+    @Query("SELECT j FROM Journal j WHERE j.estCloture = false AND j.dateDebut < :seuilDate")
+    List<Journal> findByEstClotureIsFalseAndDateDebutBefore(@Param("seuilDate") LocalDate seuilDate);
+
+
+
+    /**
+     * Trouver les journaux par collecteur et plage de dates
+     */
+    @Query("SELECT j FROM Journal j WHERE j.collecteur.id = :collecteurId " +
+            "AND j.dateDebut >= :dateDebut AND j.dateFin <= :dateFin " +
+            "ORDER BY j.dateDebut DESC")
     List<Journal> findByCollecteurAndDateRange(
             @Param("collecteurId") Long collecteurId,
             @Param("dateDebut") LocalDate dateDebut,
-            @Param("dateFin") LocalDate dateFin);
+            @Param("dateFin") LocalDate dateFin
+    );
 
     @Query("SELECT j FROM Journal j WHERE j.collecteur.id = :collecteurId AND j.dateDebut >= :dateDebut AND j.dateFin <= :dateFin")
     Page<Journal> findByCollecteurAndDateRange(
@@ -92,4 +118,43 @@ public interface JournalRepository extends JpaRepository<Journal, Long> {
      */
     @Query("SELECT CASE WHEN COUNT(j) > 0 THEN true ELSE false END FROM Journal j WHERE j.collecteur.id = :collecteurId AND j.estCloture = false")
     boolean hasOpenJournal(@Param("collecteurId") Long collecteurId);
+
+    /**
+     * Trouver les journaux par collecteur et période
+     */
+    @Query("SELECT j FROM Journal j WHERE j.collecteur.id = :collecteurId " +
+            "AND j.dateDebut >= :startDate AND j.dateFin <= :endDate " +
+            "ORDER BY j.dateDebut DESC")
+    List<Journal> findByCollecteurIdAndPeriod(
+            @Param("collecteurId") Long collecteurId,
+            @Param("startDate") LocalDate startDate,
+            @Param("endDate") LocalDate endDate
+    );
+
+    /**
+     * Trouver les entrées mensuelles pour AsyncReportService
+     */
+    @Query("SELECT j FROM Journal j WHERE j.collecteur.id = :collecteurId " +
+            "AND YEAR(j.dateDebut) = :year AND MONTH(j.dateDebut) = :month " +
+            "ORDER BY j.dateDebut DESC")
+    List<Journal> findMonthlyEntries(
+            @Param("collecteurId") Long collecteurId,
+            @Param("year") int year,
+            @Param("month") int month
+    );
+
+    /**
+     * Trouver le journal le plus récent d'un collecteur
+     */
+    @Query("SELECT j FROM Journal j WHERE j.collecteur.id = :collecteurId " +
+            "ORDER BY j.dateDebut DESC, j.id DESC")
+    Optional<Journal> findTopByCollecteurIdOrderByDateDebutDescIdDesc(@Param("collecteurId") Long collecteurId);
+
+    /**
+     * Vérifier si un journal existe pour un collecteur à une date donnée
+     */
+    @Query("SELECT CASE WHEN COUNT(j) > 0 THEN true ELSE false END FROM Journal j " +
+            "WHERE j.collecteur.id = :collecteurId AND j.dateDebut = :date")
+    boolean existsByCollecteurIdAndDate(@Param("collecteurId") Long collecteurId, @Param("date") LocalDate date);
+
 }

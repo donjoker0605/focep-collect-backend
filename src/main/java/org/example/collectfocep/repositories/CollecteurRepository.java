@@ -187,6 +187,13 @@ public interface CollecteurRepository extends JpaRepository<Collecteur, Long> {
             "WHERE c.id = :id")
     Optional<Collecteur> findByIdWithDetails(@Param("id") Long id);
 
+    /**
+     * Collecteur par ID avec son agence
+     */
+    @Query("SELECT c FROM Collecteur c " +
+            "LEFT JOIN FETCH c.agence " +
+            "WHERE c.id = :id")
+    Optional<Collecteur> findByIdWithAgence(@Param("id") Long id);
 
     @Query("SELECT CASE WHEN COUNT(c) > 0 THEN true ELSE false END FROM Collecteur c WHERE c.adresseMail = :email AND c.id IN (SELECT cl.collecteur.id FROM Client cl WHERE cl.id = :clientId)")
     boolean existsByAdresseMailAndClientId(@Param("email") String email, @Param("clientId") Long clientId);
