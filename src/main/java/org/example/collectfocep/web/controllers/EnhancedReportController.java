@@ -3,7 +3,7 @@ package org.example.collectfocep.web.controllers;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.security.service.SecurityService;
-import org.example.collectfocep.services.ReportService;
+import org.example.collectfocep.services.ReportsService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class EnhancedReportController {
 
-    private final ReportService reportService;
+    private final ReportsService reportService;
     private final SecurityService securityService;
 
     /**

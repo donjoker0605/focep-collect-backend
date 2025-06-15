@@ -1,13 +1,12 @@
 package org.example.collectfocep.dto;
 
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.LocalDate;
 
 @Data
 @Builder
@@ -15,29 +14,22 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class ReportRequestDTO {
 
-    @NotBlank(message = "Le type de rapport est requis")
-    private String type; // collecteur, commission, agence, global
+    @NotNull(message = "Le type de rapport est obligatoire")
+    private String type; // collecteur, commission, agence
 
-    @NotNull(message = "La date de début est requise")
-    private LocalDateTime dateDebut;
+    private Long collecteurId;
 
-    @NotNull(message = "La date de fin est requise")
-    private LocalDateTime dateFin;
+    @NotNull(message = "La date de début est obligatoire")
+    private LocalDate dateDebut;
 
-    private Long collecteurId; // Requis pour les rapports de collecteur
-    private Long clientId; // Optionnel pour filtrer par client
-    private String format; // PDF, EXCEL, CSV
-    private String titre; // Titre personnalisé du rapport
-    private String description; // Description du rapport
-    private Boolean includeDetails; // Inclure les détails des transactions
-    private Boolean includeGraphiques; // Inclure les graphiques
+    @NotNull(message = "La date de fin est obligatoire")
+    private LocalDate dateFin;
 
-    // ✅ VALIDATIONS MÉTIER
-    public boolean isCollecteurReportType() {
-        return "collecteur".equals(this.type) || "commission".equals(this.type);
-    }
+    private String format; // json, pdf, excel
 
-    public boolean requiresCollecteurId() {
-        return isCollecteurReportType() && this.collecteurId == null;
-    }
+    // Sera assignée automatiquement
+    private Long agenceId;
+
+    private boolean includeDetails;
+    private boolean includeGraphics;
 }

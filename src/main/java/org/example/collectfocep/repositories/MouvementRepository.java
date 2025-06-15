@@ -168,6 +168,8 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
     /**
      * Mouvements par client (méthode principale)
      */
+    Page<Mouvement> findByClientIdOrderByDateOperationDesc(Long clientId, Pageable pageable);
+
     @Query("SELECT m FROM Mouvement m WHERE m.client.id = :clientId ORDER BY m.dateOperation DESC")
     List<Mouvement> findByClientId(@Param("clientId") Long clientId);
 
@@ -187,6 +189,19 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
     // =====================================
     // MÉTHODES PAR DATES ET PÉRIODES
     // =====================================
+
+    /**
+     * Mouvements par période
+     */
+    @Query("SELECT m FROM Mouvement m " +
+            "WHERE m.client.id = :clientId " +
+            "AND m.dateOperation BETWEEN :dateDebut AND :dateFin " +
+            "ORDER BY m.dateOperation DESC")
+    List<Mouvement> findByClientIdAndDateOperationBetween(
+            @Param("clientId") Long clientId,
+            @Param("dateDebut") LocalDateTime dateDebut,
+            @Param("dateFin") LocalDateTime dateFin
+    );
 
     /**
      * Mouvements entre deux dates
@@ -225,15 +240,19 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
             @Param("startDate") LocalDateTime startDate,
             @Param("endDate") LocalDateTime endDate);
 
+    /**
+     * Mouvements d'un collecteur par période
+     */
     @Query("SELECT m FROM Mouvement m " +
-            "WHERE m.collecteur.id = :collecteurId " +
-            "AND m.dateOperation BETWEEN :startDate AND :endDate " +
+            "WHERE m.client.collecteur.id = :collecteurId " +
+            "AND m.dateOperation BETWEEN :dateDebut AND :dateFin " +
             "ORDER BY m.dateOperation DESC")
     Page<Mouvement> findByCollecteurIdAndDateOperationBetween(
             @Param("collecteurId") Long collecteurId,
-            @Param("startDate") LocalDateTime startDate,
-            @Param("endDate") LocalDateTime endDate,
-            Pageable pageable);
+            @Param("dateDebut") LocalDateTime dateDebut,
+            @Param("dateFin") LocalDateTime dateFin,
+            Pageable pageable
+    );
 
     /**
      * Mouvements par collecteur pour un jour spécifique
@@ -306,29 +325,115 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
     // =====================================
 
     /**
-     * Somme des épargnes par collecteur et période
+     * Somme épargne par collecteur et période
      */
-    @Query("SELECT COALESCE(SUM(m.montant), 0.0) FROM Mouvement m " +
-            "WHERE m.collecteur.id = :collecteurId " +
-            "AND m.sens = 'epargne' " +
-            "AND m.dateOperation BETWEEN :startDate AND :endDate")
+    @Query("SELECT COALESCE(SUM(m.montant), 0) FROM Mouvement m " +
+            "WHERE m.client.collecteur.id = :collecteurId " +
+            "AND UPPER(m.sens) = 'EPARGNE' " +
+            "AND m.dateOperation BETWEEN :dateDebut AND :dateFin")
     Double sumEpargneByCollecteurIdAndDateOperationBetween(
             @Param("collecteurId") Long collecteurId,
-            @Param("startDate") LocalDateTime startDate,
-            @Param("endDate") LocalDateTime endDate);
+            @Param("dateDebut") LocalDateTime dateDebut,
+            @Param("dateFin") LocalDateTime dateFin
+    );
 
     /**
-     * Somme des retraits par collecteur et période
+     * Total épargne par collecteur
      */
-    @Query("SELECT COALESCE(SUM(m.montant), 0.0) FROM Mouvement m " +
-            "WHERE m.collecteur.id = :collecteurId " +
-            "AND m.sens = 'retrait' " +
-            "AND m.dateOperation BETWEEN :startDate AND :endDate")
+    @Query("SELECT COALESCE(SUM(m.montant), 0) FROM Mouvement m " +
+            "WHERE m.client.collecteur.id = :collecteurId " +
+            "AND UPPER(m.sens) = 'EPARGNE'")
+    Double sumEpargneByCollecteurId(@Param("collecteurId") Long collecteurId);
+
+    /**
+     * Somme retraits par collecteur et période
+     */
+    @Query("SELECT COALESCE(SUM(m.montant), 0) FROM Mouvement m " +
+            "WHERE m.client.collecteur.id = :collecteurId " +
+            "AND UPPER(m.sens) = 'RETRAIT' " +
+            "AND m.dateOperation BETWEEN :dateDebut AND :dateFin")
     Double sumRetraitByCollecteurIdAndDateOperationBetween(
             @Param("collecteurId") Long collecteurId,
-            @Param("startDate") LocalDateTime startDate,
-            @Param("endDate") LocalDateTime endDate);
+            @Param("dateDebut") LocalDateTime dateDebut,
+            @Param("dateFin") LocalDateTime dateFin
+    );
 
+    /**
+     * Mouvements d'une agence
+     */
+    @Query("SELECT m FROM Mouvement m " +
+            "WHERE m.client.agence.id = :agenceId " +
+            "ORDER BY m.dateOperation DESC")
+    Page<Mouvement> findByAgenceId(@Param("agenceId") Long agenceId, Pageable pageable);
+
+    /**
+     * Dernière opération d'un client
+     */
+    @Query("SELECT m FROM Mouvement m " +
+            "WHERE m.client.id = :clientId " +
+            "ORDER BY m.dateOperation DESC")
+    List<Mouvement> findLastOperationByClientId(@Param("clientId") Long clientId, Pageable pageable);
+
+    /**
+     * Total retraits par collecteur
+     */
+    @Query("SELECT COALESCE(SUM(m.montant), 0) FROM Mouvement m " +
+            "WHERE m.client.collecteur.id = :collecteurId " +
+            "AND UPPER(m.sens) = 'RETRAIT'")
+    Double sumRetraitByCollecteurId(@Param("collecteurId") Long collecteurId);
+
+    /**
+     * Solde d'un client (épargne - retrait)
+     */
+    @Query("SELECT COALESCE(SUM(CASE WHEN UPPER(m.sens) = 'EPARGNE' THEN m.montant " +
+            "WHEN UPPER(m.sens) = 'RETRAIT' THEN -m.montant ELSE 0 END), 0) " +
+            "FROM Mouvement m WHERE m.client.id = :clientId")
+    Double calculateSoldeClient(@Param("clientId") Long clientId);
+
+    /**
+     * Somme par collecteur et sens
+     */
+    @Query("SELECT COALESCE(SUM(m.montant), 0) FROM Mouvement m " +
+            "WHERE m.client.collecteur.id = :collecteurId " +
+            "AND UPPER(m.sens) = UPPER(:sens)")
+    Double sumByCollecteurIdAndSens(@Param("collecteurId") Long collecteurId, @Param("sens") String sens);
+
+    /**
+     * Statistiques par jour pour un collecteur
+     */
+    @Query("SELECT DATE(m.dateOperation) as date, " +
+            "SUM(CASE WHEN UPPER(m.sens) = 'EPARGNE' THEN m.montant ELSE 0 END) as epargne, " +
+            "SUM(CASE WHEN UPPER(m.sens) = 'RETRAIT' THEN m.montant ELSE 0 END) as retrait, " +
+            "COUNT(m) as operations " +
+            "FROM Mouvement m " +
+            "WHERE m.client.collecteur.id = :collecteurId " +
+            "AND m.dateOperation BETWEEN :dateDebut AND :dateFin " +
+            "GROUP BY DATE(m.dateOperation) " +
+            "ORDER BY DATE(m.dateOperation)")
+    List<Object[]> getStatistiquesByJour(
+            @Param("collecteurId") Long collecteurId,
+            @Param("dateDebut") LocalDateTime dateDebut,
+            @Param("dateFin") LocalDateTime dateFin
+    );
+
+    /**
+     * Nombre d'opérations par agence
+     */
+    @Query("SELECT COUNT(m) FROM Mouvement m " +
+            "WHERE m.client.agence.id = :agenceId")
+    Long countByAgenceId(@Param("agenceId") Long agenceId);
+
+    /**
+     * Clients avec activité récente
+     */
+    @Query("SELECT DISTINCT m.client FROM Mouvement m " +
+            "WHERE m.client.collecteur.id = :collecteurId " +
+            "AND m.dateOperation >= :dateLimit " +
+            "ORDER BY m.client.nom, m.client.prenom")
+    List<Object> findClientsWithRecentActivity(
+            @Param("collecteurId") Long collecteurId,
+            @Param("dateLimit") LocalDateTime dateLimit
+    );
     // =====================================
     // STATISTIQUES PAR COLLECTEUR ET PÉRIODE
     // =====================================
@@ -588,6 +693,7 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
      * Somme par agence et sens - MÉTHODE MANQUANTE CRITIQUE
      */
     @Query("SELECT COALESCE(SUM(m.montant), 0) FROM Mouvement m " +
-            "WHERE m.client.agence.id = :agenceId AND UPPER(m.sens) = UPPER(:sens)")
+            "WHERE m.client.agence.id = :agenceId " +
+            "AND UPPER(m.sens) = UPPER(:sens)")
     Double sumByAgenceIdAndSens(@Param("agenceId") Long agenceId, @Param("sens") String sens);
 }

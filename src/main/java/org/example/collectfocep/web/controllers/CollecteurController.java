@@ -20,6 +20,7 @@ import org.example.collectfocep.services.interfaces.CollecteurService;
 import org.example.collectfocep.util.ApiResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -46,9 +47,9 @@ public class CollecteurController {
         log.info("📍 Mappings disponibles:");
         log.info("   - GET /api/collecteurs/{id}/dashboard");
         log.info("   - GET /api/collecteurs/{id}/dashboard-debug");
-        log.info("   - GET /api/collecteurs - Liste filtrée par agence"); // ✅ AJOUTÉ
-        log.info("   - POST /api/collecteurs - Création sécurisée"); // ✅ AJOUTÉ
-        log.info("   - PATCH /api/collecteurs/{id}/toggle-status"); // ✅ AJOUTÉ
+        log.info("   - GET /api/collecteurs - Liste filtrée par agence");
+        log.info("   - POST /api/collecteurs - Création sécurisée");
+        log.info("   - PATCH /api/collecteurs/{id}/toggle-status");
     }
 
     private final CollecteurService collecteurService;
@@ -61,84 +62,76 @@ public class CollecteurController {
     @PostMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
     public ResponseEntity<ApiResponse<CollecteurDTO>> createCollecteur(@Valid @RequestBody CollecteurCreateDTO dto) {
+        log.info("🆕 Création d'un nouveau collecteur: {}", dto.getAdresseMail());
 
         try {
-            // ✅ SÉCURITÉ CRITIQUE: AUTO-ASSIGNER L'AGENCE DE L'ADMIN CONNECTÉ
+            // SÉCURITÉ CRITIQUE: Récupérer l'agence de l'admin connecté
             Long agenceIdFromAuth = securityService.getCurrentUserAgenceId();
 
             if (agenceIdFromAuth == null) {
-                log.error("❌ Impossible de déterminer l'agence de l'utilisateur connecté");
+                log.error("❌ Tentative de création sans agence identifiée");
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
                         .body(ApiResponse.error("Accès non autorisé - agence non déterminée"));
             }
 
-            // ✅ FORCER L'AGENCE DE L'ADMIN - IGNORER CELLE ENVOYÉE PAR LE CLIENT
+            // FORCER L'AGENCE DE L'ADMIN - Ignorer toute agence envoyée par le client
             dto.setAgenceId(agenceIdFromAuth);
+            log.info("✅ Agence {} assignée automatiquement au collecteur", agenceIdFromAuth);
 
-            log.info("✅ Création d'un collecteur pour l'agence auto-assignée: {} par l'admin: {}",
-                    agenceIdFromAuth, securityService.getCurrentUserEmail());
-
-            // ✅ VALIDATION SUPPLÉMENTAIRE - VÉRIFIER QUE L'ADMIN APPARTIENT BIEN À CETTE AGENCE
-            if (!securityService.isUserFromAgence(agenceIdFromAuth)) {
-                log.error("❌ Tentative de création de collecteur pour une agence non autorisée");
-                return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                        .body(ApiResponse.error("Accès non autorisé à cette agence"));
-            }
-
+            // Créer le collecteur
             Collecteur collecteur = collecteurService.saveCollecteur(dto);
+            CollecteurDTO collecteurDTO = collecteurService.convertToDTO(collecteur);
 
-            log.info("✅ Collecteur créé avec succès: {} pour l'agence: {}",
-                    collecteur.getId(), agenceIdFromAuth);
+            log.info("✅ Collecteur créé avec succès: ID={}, Email={}, Agence={}",
+                    collecteur.getId(), collecteur.getAdresseMail(), collecteur.getAgence().getId());
 
-            return ResponseEntity.ok(
-                    ApiResponse.success(
-                            collecteurService.convertToDTO(collecteur),
-                            "Collecteur créé avec succès"
-                    )
-            );
+            return ResponseEntity.ok(ApiResponse.success(
+                    collecteurDTO,
+                    "Collecteur créé avec succès"
+            ));
 
         } catch (Exception e) {
             log.error("❌ Erreur lors de la création du collecteur", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error("Erreur lors de la création du collecteur: " + e.getMessage()));
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(ApiResponse.error("Erreur: " + e.getMessage()));
         }
     }
 
-    // ✅ TON CODE EXISTANT - CONSERVÉ INTÉGRALEMENT
+    /**
+     * MISE À JOUR D'UN COLLECTEUR - Sans possibilité de changer l'agence
+     */
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
     public ResponseEntity<ApiResponse<CollecteurDTO>> updateCollecteur(
             @PathVariable Long id,
-            @Valid @RequestBody CollecteurUpdateDTO dto) { // ✅ CHANGÉ DE CollecteurCreateDTO vers CollecteurUpdateDTO
+            @Valid @RequestBody CollecteurUpdateDTO dto) {
 
         log.info("📝 Mise à jour du collecteur: {}", id);
 
         try {
-            // ✅ SÉCURITÉ: VÉRIFIER QUE LE COLLECTEUR APPARTIENT À L'AGENCE DE L'ADMIN
-            if (!securityService.isAdminOfCollecteur(
-                    SecurityContextHolder.getContext().getAuthentication(), id)) {
-
-                log.warn("❌ Tentative de modification d'un collecteur non autorisé: {}", id);
+            // Vérifier l'accès
+            if (!securityService.hasPermissionForCollecteur(id)) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                        .body(ApiResponse.error("Accès non autorisé à ce collecteur"));
+                        .body(ApiResponse.error("Accès non autorisé"));
             }
 
-            // ✅ NOTE: Plus besoin de forcer l'agence pour les mises à jour
-            // L'agence est gérée dans le service pour empêcher les modifications
+            // NE JAMAIS permettre la modification de l'agence
+            dto.setAgenceId(null);
 
-            Collecteur collecteur = collecteurService.updateCollecteur(id, dto);
+            Collecteur updated = collecteurService.updateCollecteur(id, dto);
+            CollecteurDTO collecteurDTO = collecteurService.convertToDTO(updated);
 
-            return ResponseEntity.ok(
-                    ApiResponse.success(
-                            collecteurService.convertToDTO(collecteur),
-                            "Collecteur mis à jour avec succès"
-                    )
-            );
+            log.info("✅ Collecteur {} mis à jour avec succès", id);
+
+            return ResponseEntity.ok(ApiResponse.success(
+                    collecteurDTO,
+                    "Collecteur mis à jour avec succès"
+            ));
 
         } catch (Exception e) {
-            log.error("❌ Erreur lors de la mise à jour du collecteur {}", id, e);
+            log.error("❌ Erreur lors de la mise à jour", e);
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(ApiResponse.error("Erreur lors de la mise à jour: " + e.getMessage()));
+                    .body(ApiResponse.error("Erreur: " + e.getMessage()));
         }
     }
 
@@ -277,217 +270,209 @@ public class CollecteurController {
         }
     }
 
-    // ✅ TON CODE EXISTANT - LÉGÈREMENT AMÉLIORÉ POUR L'APP MOBILE
-    @GetMapping
+    /**
+     * DÉSACTIVER UN COLLECTEUR (soft delete)
+     */
+    @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
+    public ResponseEntity<ApiResponse<Void>> deactivateCollecteur(@PathVariable Long id) {
+        log.info("🗑️ Désactivation du collecteur: {}", id);
+
+        try {
+            // Vérifier l'accès
+            if (!securityService.hasPermissionForCollecteur(id)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(ApiResponse.error("Accès non autorisé"));
+            }
+
+            collecteurService.deactivateCollecteur(id);
+            log.info("✅ Collecteur {} désactivé avec succès", id);
+
+            return ResponseEntity.ok(ApiResponse.success(
+                    null,
+                    "Collecteur désactivé avec succès"
+            ));
+
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la désactivation", e);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(ApiResponse.error("Erreur: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * LISTE DES COLLECTEURS - Filtrée par agence
+     */
+    @GetMapping
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'COLLECTEUR')")
     public ResponseEntity<ApiResponse<List<CollecteurDTO>>> getAllCollecteurs(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) String search) {
 
-        log.info("👥 Récupération des collecteurs - page: {}, size: {}, search: '{}'", page, size, search);
+        log.info("📋 Récupération des collecteurs - page: {}, size: {}, search: '{}'", page, size, search);
 
         try {
-            // ✅ SÉCURITÉ: FILTRER PAR AGENCE DE L'ADMIN CONNECTÉ (TON CODE)
+            // SÉCURITÉ: Filtrer par agence de l'utilisateur connecté
             Long agenceId = securityService.getCurrentUserAgenceId();
-
             if (agenceId == null) {
-                log.error("❌ Impossible de déterminer l'agence de l'utilisateur connecté");
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
                         .body(ApiResponse.error("Accès non autorisé"));
             }
 
-            PageRequest pageRequest = PageRequest.of(page, size, Sort.by("nom", "prenom"));
+            Pageable pageable = PageRequest.of(page, size, Sort.by("nom", "prenom"));
             Page<Collecteur> collecteursPage;
 
-            // ✅ FILTRAGE SÉCURISÉ PAR AGENCE (TON CODE - LÉGÈREMENT AMÉLIORÉ)
             if (search != null && !search.trim().isEmpty()) {
-                // ✅ UTILISER LES NOUVELLES MÉTHODES DU SERVICE INTÉGRÉ
-                try {
-                    collecteursPage = collecteurService.searchCollecteursByAgence(
-                            agenceId, search.trim(), pageRequest);
-                } catch (Exception e) {
-                    // ✅ FALLBACK vers la méthode existante si la nouvelle n'est pas disponible
-                    log.warn("Méthode searchCollecteursByAgence non disponible, utilisation du fallback");
-                    collecteursPage = collecteurRepository.findByAgenceIdAndSearchTerm(agenceId, search.trim(), pageRequest);
-                }
+                collecteursPage = collecteurService.searchCollecteursByAgence(agenceId, search, pageable);
             } else {
-                // ✅ UTILISER LES NOUVELLES MÉTHODES DU SERVICE INTÉGRÉ
-                try {
-                    collecteursPage = collecteurService.getCollecteursByAgence(agenceId, pageRequest);
-                } catch (Exception e) {
-                    // ✅ FALLBACK vers la méthode existante si la nouvelle n'est pas disponible
-                    log.warn("Méthode getCollecteursByAgence non disponible, utilisation du fallback");
-                    collecteursPage = collecteurService.findByAgenceId(agenceId, pageRequest);
-                }
+                collecteursPage = collecteurService.getCollecteursByAgence(agenceId, pageable);
             }
 
             List<CollecteurDTO> collecteurDTOs = collecteursPage.getContent().stream()
                     .map(collecteurService::convertToDTO)
                     .collect(Collectors.toList());
 
-            ApiResponse<List<CollecteurDTO>> response = ApiResponse.success(collecteurDTOs);
-            response.addMeta("totalElements", collecteursPage.getTotalElements());
-            response.addMeta("totalPages", collecteursPage.getTotalPages());
-            response.addMeta("currentPage", page);
-            response.addMeta("size", size);
-            response.addMeta("hasNext", collecteursPage.hasNext());
-            response.addMeta("hasPrevious", collecteursPage.hasPrevious());
+            log.info("✅ {} collecteurs récupérés pour l'agence: {}", collecteurDTOs.size(), agenceId);
 
-            log.info("✅ {} collecteurs récupérés pour l'agence: {}",
-                    collecteurDTOs.size(), agenceId);
-
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(ApiResponse.success(
+                    collecteurDTOs,
+                    "Opération réussie",
+                    collecteursPage
+            ));
 
         } catch (Exception e) {
             log.error("❌ Erreur lors de la récupération des collecteurs", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error("Erreur lors de la récupération des collecteurs: " + e.getMessage()));
+                    .body(ApiResponse.error("Erreur serveur"));
         }
     }
 
-    // ✅ TON CODE EXISTANT - CONSERVÉ INTÉGRALEMENT
-    @GetMapping("/{id}/dashboard")
-    public ResponseEntity<ApiResponse<CollecteurDashboardDTO>> getCollecteurDashboard(@PathVariable Long id) {
-        log.info("🎯 REQUÊTE DASHBOARD REÇUE pour collecteur: {}", id);
+    /**
+     * DÉTAILS D'UN COLLECTEUR - Avec vérification d'accès
+     */
+    @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'COLLECTEUR')")
+    public ResponseEntity<ApiResponse<CollecteurDTO>> getCollecteurById(@PathVariable Long id) {
+        log.info("🔍 Récupération du collecteur: {}", id);
 
         try {
-            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-            log.info("🔐 Auth: name={}, authorities={}",
-                    auth != null ? auth.getName() : "null",
-                    auth != null ? auth.getAuthorities() : "null");
+            // Vérifier l'accès au collecteur
+            if (!securityService.hasPermissionForCollecteur(id)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(ApiResponse.error("Accès non autorisé à ce collecteur"));
+            }
 
-            // ✅ VÉRIFICATION SIMPLE : Le collecteur connecté accède à ses propres données
-            if (auth != null && auth.getPrincipal() instanceof JwtAuthenticationFilter.JwtUserPrincipal) {
-                JwtAuthenticationFilter.JwtUserPrincipal principal =
-                        (JwtAuthenticationFilter.JwtUserPrincipal) auth.getPrincipal();
-                Long connectedUserId = principal.getUserId();
+            Collecteur collecteur = collecteurService.getCollecteurById(id)
+                    .orElse(null);
 
-                log.info("🔍 Vérification accès: connectedUserId={}, requestedId={}", connectedUserId, id);
+            if (collecteur == null) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(ApiResponse.error("Collecteur non trouvé"));
+            }
 
-                if (!id.equals(connectedUserId)) {
-                    log.warn("❌ Accès refusé: collecteur {} tente d'accéder aux données de {}", connectedUserId, id);
+            CollecteurDTO dto = collecteurService.convertToDTO(collecteur);
+            return ResponseEntity.ok(ApiResponse.success(dto));
+
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la récupération du collecteur", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Erreur serveur"));
+        }
+    }
+
+    /**
+     * DASHBOARD D'UN COLLECTEUR
+     */
+    @GetMapping("/{id}/dashboard")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'COLLECTEUR')")
+    public ResponseEntity<ApiResponse<CollecteurDashboardDTO>> getCollecteurDashboard(@PathVariable Long id) {
+        log.info("📊 Récupération du dashboard du collecteur: {}", id);
+
+        try {
+            // Pour un collecteur, vérifier qu'il accède à son propre dashboard
+            if (securityService.hasRole("ROLE_COLLECTEUR")) {
+                Long currentCollecteurId = securityService.getCurrentUserId();
+                if (!id.equals(currentCollecteurId)) {
+                    return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                            .body(ApiResponse.error("Accès non autorisé"));
+                }
+            } else {
+                // Pour admin, vérifier l'accès au collecteur
+                if (!securityService.hasPermissionForCollecteur(id)) {
                     return ResponseEntity.status(HttpStatus.FORBIDDEN)
                             .body(ApiResponse.error("Accès non autorisé"));
                 }
             }
 
-            // ✅ OPTION 1: UTILISER TA MÉTHODE EXISTANTE
-            CollecteurDashboardDTO dashboard;
-            try {
-                // ✅ ESSAYER D'UTILISER LA MÉTHODE ENRICHIE DU SERVICE
-                dashboard = collecteurService.getDashboardStats(id);
-                log.info("✅ Dashboard récupéré via CollecteurService.getDashboardStats()");
-            } catch (Exception e) {
-                log.warn("Méthode getDashboardStats non disponible, utilisation du fallback: {}", e.getMessage());
-                // ✅ FALLBACK vers ta méthode existante
-                Collecteur collecteur = collecteurService.getCollecteurById(id)
-                        .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
-                dashboard = buildDashboard(collecteur);
-            }
-
-            log.info("✅ Dashboard construit avec succès pour collecteur: {}", id);
-
-            return ResponseEntity.ok(ApiResponse.success(dashboard, "Dashboard récupéré avec succès"));
+            CollecteurDashboardDTO dashboard = collecteurService.getDashboardStats(id);
+            return ResponseEntity.ok(ApiResponse.success(dashboard));
 
         } catch (Exception e) {
-            log.error("❌ Erreur lors de la récupération du dashboard pour collecteur {}: {}", id, e.getMessage(), e);
+            log.error("❌ Erreur lors de la récupération du dashboard", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Erreur serveur"));
+        }
+    }
+
+    /**
+     * BASCULER LE STATUT ACTIF/INACTIF
+     */
+    @PatchMapping("/{id}/toggle-status")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
+    public ResponseEntity<ApiResponse<CollecteurDTO>> toggleCollecteurStatus(
+            @PathVariable Long id,
+            @RequestBody StatusToggleDTO statusDto) {
+
+        log.info("🔄 Basculement du statut du collecteur: {} vers {}", id, statusDto.isActive());
+
+        try {
+            // Vérifier l'accès
+            if (!securityService.hasPermissionForCollecteur(id)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(ApiResponse.error("Accès non autorisé"));
+            }
+
+            Collecteur collecteur = collecteurService.toggleCollecteurStatus(id);
+            CollecteurDTO dto = collecteurService.convertToDTO(collecteur);
+
+            String action = collecteur.getActive() ? "activé" : "désactivé";
+            log.info("✅ Collecteur {} {} avec succès", id, action);
+
+            return ResponseEntity.ok(ApiResponse.success(
+                    dto,
+                    "Collecteur " + action + " avec succès"
+            ));
+
+        } catch (Exception e) {
+            log.error("❌ Erreur lors du changement de statut", e);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(ApiResponse.error("Erreur: " + e.getMessage()));
         }
     }
 
-    // ✅ TON CODE EXISTANT - CONSERVÉ INTÉGRALEMENT
-    @PatchMapping("/{id}/toggle-status")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
-    public ResponseEntity<ApiResponse<CollecteurDTO>> toggleCollecteurStatus(@PathVariable Long id) {
-
-        log.info("🔄 Basculement du statut du collecteur: {}", id);
-
-        try {
-            // ✅ SÉCURITÉ: VÉRIFIER L'APPARTENANCE À L'AGENCE
-            if (!securityService.isAdminOfCollecteur(
-                    org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication(),
-                    id)) {
-
-                log.warn("❌ Tentative de modification de statut non autorisée: {}", id);
-                return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                        .body(ApiResponse.error("Accès non autorisé à ce collecteur"));
-            }
-
-            // ✅ UTILISER LA NOUVELLE MÉTHODE OU FALLBACK
-            Collecteur collecteur;
-            try {
-                collecteur = collecteurService.toggleCollecteurStatus(id);
-                log.info("✅ Statut basculé via CollecteurService.toggleCollecteurStatus()");
-            } catch (Exception e) {
-                log.warn("Méthode toggleCollecteurStatus non disponible, utilisation du fallback: {}", e.getMessage());
-                // ✅ FALLBACK: Récupérer le collecteur et basculer manuellement
-                collecteur = collecteurService.getCollecteurById(id)
-                        .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
-                collecteur.setActive(!collecteur.getActive());
-                collecteur = collecteurRepository.save(collecteur);
-            }
-
-            String action = collecteur.getActive() ? "activé" : "désactivé";
-            log.info("✅ Collecteur {} {}", id, action);
-
-            return ResponseEntity.ok(
-                    ApiResponse.success(
-                            collecteurService.convertToDTO(collecteur),
-                            String.format("Collecteur %s avec succès", action)
-                    )
-            );
-
-        } catch (Exception e) {
-            log.error("❌ Erreur lors du basculement de statut du collecteur {}", id, e);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(ApiResponse.error("Erreur lors du changement de statut: " + e.getMessage()));
-        }
-    }
-
-    // ✅ NOUVELLE MÉTHODE POUR L'APP MOBILE - RÉCUPÉRER LES STATISTIQUES D'UN COLLECTEUR
+    /**
+     * STATISTIQUES D'UN COLLECTEUR
+     */
     @GetMapping("/{id}/statistics")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'COLLECTEUR')")
     public ResponseEntity<ApiResponse<CollecteurStatisticsDTO>> getCollecteurStatistics(@PathVariable Long id) {
-
-        log.info("📈 Récupération des statistiques pour le collecteur: {}", id);
+        log.info("📊 Récupération des statistiques du collecteur: {}", id);
 
         try {
-            // ✅ VÉRIFICATION DE SÉCURITÉ
-            if (!securityService.isAdminOfCollecteur(
-                    SecurityContextHolder.getContext().getAuthentication(), id)) {
-
-                log.warn("❌ Accès non autorisé aux statistiques du collecteur: {}", id);
+            // Vérifier l'accès
+            if (!securityService.hasPermissionForCollecteur(id)) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                        .body(ApiResponse.error("Accès non autorisé à ce collecteur"));
+                        .body(ApiResponse.error("Accès non autorisé"));
             }
 
-            // ✅ RÉCUPÉRER LES STATISTIQUES
-            CollecteurStatisticsDTO statistics;
-            try {
-                statistics = collecteurService.getCollecteurStatistics(id);
-            } catch (Exception e) {
-                log.warn("Méthode getCollecteurStatistics non disponible, création de statistiques basiques: {}", e.getMessage());
-                // ✅ FALLBACK: Créer des statistiques basiques
-                Long totalClients = clientRepository.countByCollecteurId(id);
-                statistics = CollecteurStatisticsDTO.builder()
-                        .totalClients(totalClients != null ? totalClients.intValue() : 0)
-                        .transactionsCeMois(0L)
-                        .volumeEpargne(0.0)
-                        .volumeRetraits(0.0)
-                        .commissionsGenerees(0.0)
-                        .build();
-            }
-
-            return ResponseEntity.ok(
-                    ApiResponse.success(statistics, "Statistiques récupérées avec succès")
-            );
+            CollecteurStatisticsDTO stats = collecteurService.getCollecteurStatistics(id);
+            return ResponseEntity.ok(ApiResponse.success(stats));
 
         } catch (Exception e) {
-            log.error("❌ Erreur lors de la récupération des statistiques du collecteur {}", id, e);
+            log.error("❌ Erreur lors de la récupération des statistiques", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error("Erreur lors de la récupération des statistiques: " + e.getMessage()));
+                    .body(ApiResponse.error("Erreur serveur"));
         }
     }
 

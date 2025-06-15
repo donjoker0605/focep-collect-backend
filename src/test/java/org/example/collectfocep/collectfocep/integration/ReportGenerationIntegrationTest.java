@@ -4,7 +4,7 @@ import org.example.collectfocep.CollectFocepApplication;
 import org.example.collectfocep.entities.*;
 import org.example.collectfocep.repositories.*;
 import org.example.collectfocep.services.ReportGenerationService;
-import org.example.collectfocep.services.ReportService;
+import org.example.collectfocep.services.ReportsService;
 import org.example.collectfocep.services.impl.MouvementServiceImpl;
 import org.example.collectfocep.services.interfaces.ClientService;
 import org.example.collectfocep.services.interfaces.CollecteurService;
@@ -34,7 +34,7 @@ import static org.junit.jupiter.api.Assertions.*;
 public class ReportGenerationIntegrationTest {
 
     @Autowired
-    private ReportService reportService;
+    private ReportsService reportService;
 
     @Autowired
     private ReportGenerationService reportGenerationService;

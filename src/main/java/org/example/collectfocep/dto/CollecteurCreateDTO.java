@@ -2,38 +2,47 @@ package org.example.collectfocep.dto;
 
 import jakarta.validation.constraints.*;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 @Data
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class CollecteurCreateDTO {
 
-    @NotBlank(message = "Le nom est requis")
-    @Size(max = 100, message = "Le nom ne peut pas dépasser 100 caractères")
+    @NotBlank(message = "Le nom est obligatoire")
+    @Size(min = 2, max = 50, message = "Le nom doit contenir entre 2 et 50 caractères")
     private String nom;
 
-    @NotBlank(message = "Le prénom est requis")
-    @Size(max = 100, message = "Le prénom ne peut pas dépasser 100 caractères")
+    @NotBlank(message = "Le prénom est obligatoire")
+    @Size(min = 2, max = 50, message = "Le prénom doit contenir entre 2 et 50 caractères")
     private String prenom;
 
-    @NotBlank(message = "Le numéro CNI est requis")
-    @Size(max = 20, message = "Le numéro CNI ne peut pas dépasser 20 caractères")
-    private String numeroCni;
-
-    @NotBlank(message = "L'adresse email est requise")
-    @Email(message = "L'adresse email doit être valide")
-    @Size(max = 150, message = "L'email ne peut pas dépasser 150 caractères")
+    @NotBlank(message = "L'email est obligatoire")
+    @Email(message = "Format d'email invalide")
     private String adresseMail;
 
-    @Pattern(regexp = "^[+]?[0-9]{8,15}$", message = "Le numéro de téléphone doit être valide")
+    @NotBlank(message = "Le téléphone est obligatoire")
+    @Pattern(regexp = "^6[0-9]{8}$", message = "Format de téléphone invalide")
     private String telephone;
 
-    @NotNull(message = "L'ID de l'agence est requis")
-    @Positive(message = "L'ID de l'agence doit être positif")
-    private Long agenceId;
+    @NotBlank(message = "Le numéro CNI est obligatoire")
+    @Size(min = 10, message = "Le numéro CNI doit avoir au moins 10 caractères")
+    private String numeroCni;
 
-    @DecimalMin(value = "0.0", inclusive = false, message = "Le montant maximum doit être positif")
-    private Double montantMaxRetrait = 100000.0; // Valeur par défaut
+    @NotBlank(message = "Le mot de passe est obligatoire")
+    @Size(min = 6, message = "Le mot de passe doit avoir au moins 6 caractères")
+    private String password;
+
+    @NotNull(message = "Le montant maximum de retrait est obligatoire")
+    @Positive(message = "Le montant doit être positif")
+    private Double montantMaxRetrait;
+
+    @Builder.Default
+    private Boolean active = true;
+
+    // L'agenceId sera assignée automatiquement côté backend
+    private Long agenceId;
 }

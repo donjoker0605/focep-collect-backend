@@ -4,7 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.entities.Journal;
 import org.example.collectfocep.services.interfaces.JournalService;
-import org.example.collectfocep.services.ReportService;
+import org.example.collectfocep.services.ReportsService;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -17,7 +17,7 @@ import java.util.concurrent.CompletableFuture;
 @RequiredArgsConstructor
 public class AsyncReportService {
 
-    private final ReportService reportService;
+    private final ReportsService reportService;
     private final JournalService journalService;
 
     /**
