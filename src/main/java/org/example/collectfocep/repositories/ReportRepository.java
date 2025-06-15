@@ -2,6 +2,7 @@ package org.example.collectfocep.repositories;
 
 import org.example.collectfocep.entities.Report;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;

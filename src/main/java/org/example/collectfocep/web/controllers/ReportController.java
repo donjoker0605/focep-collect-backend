@@ -1,9 +1,10 @@
-// src/main/java/org/example/collectfocep/web/controllers/ReportsController.java
 package org.example.collectfocep.web.controllers;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.example.collectfocep.dto.ReportDTO;
+import org.example.collectfocep.dto.ReportRequestDTO;
 import org.example.collectfocep.security.service.SecurityService;
 import org.example.collectfocep.services.ReportService;
 import org.example.collectfocep.util.ApiResponse;
@@ -25,7 +26,7 @@ import java.util.List;
 @RequestMapping("/api/reports")
 @Slf4j
 @RequiredArgsConstructor
-public class ReportsController {
+public class ReportController {
 
     private final ReportService reportService;
     private final SecurityService securityService;

@@ -1,25 +1,37 @@
 package org.example.collectfocep.dto;
 
 import jakarta.validation.constraints.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 @Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class CollecteurUpdateDTO {
 
-    @Size(max = 100, message = "Le nom ne peut pas dépasser 100 caractères")
+    @Size(min = 2, max = 50, message = "Le nom doit contenir entre 2 et 50 caractères")
     private String nom;
 
-    @Size(max = 100, message = "Le prénom ne peut pas dépasser 100 caractères")
+    @Size(min = 2, max = 50, message = "Le prénom doit contenir entre 2 et 50 caractères")
     private String prenom;
 
-    @Pattern(regexp = "^[+]?[0-9]{8,15}$", message = "Le numéro de téléphone doit être valide")
+    @Email(message = "Format d'email invalide")
+    private String adresseMail;
+
+    @Size(min = 8, max = 15, message = "Le téléphone doit contenir entre 8 et 15 caractères")
     private String telephone;
 
-    @DecimalMin(value = "0.0", inclusive = false, message = "Le montant maximum doit être positif")
+    @Size(min = 8, max = 20, message = "Le numéro CNI doit contenir entre 8 et 20 caractères")
+    private String numeroCni;
+
     private Double montantMaxRetrait;
 
     private Boolean active;
 
-    @Size(max = 500, message = "Les notes ne peuvent pas dépasser 500 caractères")
-    private String notes;
+    // Nouveau mot de passe (optionnel)
+    @Size(min = 8, message = "Le mot de passe doit contenir au moins 8 caractères")
+    private String nouveauMotDePasse;
 }
