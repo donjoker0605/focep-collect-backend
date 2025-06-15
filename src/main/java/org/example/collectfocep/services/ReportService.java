@@ -2,210 +2,235 @@ package org.example.collectfocep.services;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.poi.ss.usermodel.*;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-import org.example.collectfocep.dto.CommissionResult;
-import org.example.collectfocep.entities.*;
-import org.example.collectfocep.exceptions.ResourceNotFoundException;
-import org.example.collectfocep.repositories.ClientRepository;
+import org.example.collectfocep.dto.ReportDTO;
+import org.example.collectfocep.dto.ReportRequestDTO;
+import org.example.collectfocep.entities.Agence;
+import org.example.collectfocep.entities.Collecteur;
+import org.example.collectfocep.entities.Report;
+import org.example.collectfocep.repositories.AgenceRepository;
 import org.example.collectfocep.repositories.CollecteurRepository;
-import org.example.collectfocep.repositories.MouvementRepository;
+import org.example.collectfocep.repositories.ReportRepository;
+import org.example.collectfocep.security.service.SecurityService;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.io.ByteArrayOutputStream;
-import java.time.LocalDate;
-import java.time.YearMonth;
-import java.time.format.DateTimeFormatter;
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Optional;
 
 @Service
 @Slf4j
 @RequiredArgsConstructor
+@Transactional
 public class ReportService {
 
-    private final ClientRepository clientRepository;
-    private final MouvementRepository mouvementRepository;
+    private final ReportRepository reportRepository;
+    private final AgenceRepository agenceRepository;
     private final CollecteurRepository collecteurRepository;
-    private final ReportGenerationService reportGenerationService;
+    private final SecurityService securityService;
 
     /**
-     * Génère un rapport de commission pour un résultat de calcul des commissions
+     * ✅ RÉCUPÉRER LES RAPPORTS RÉCENTS PAR AGENCE
      */
-    public byte[] generateCommissionReport(CommissionResult result) {
-        log.info("Génération du rapport de commission pour le collecteur: {}", result.getCollecteurId());
+    public Page<ReportDTO> getRecentReportsByAgence(Long agenceId, PageRequest pageRequest) {
+        log.info("📋 Récupération des rapports récents pour l'agence: {}", agenceId);
 
-        // Cette méthode pourrait par exemple générer un rapport Excel ou PDF
-        // résumant les commissions calculées
-        // Pour cet exemple, on délègue au service de génération
+        Page<Report> reportsPage = reportRepository.findByAgenceIdOrderByDateCreationDesc(agenceId, pageRequest);
 
-        LocalDate now = LocalDate.now();
-        return reportGenerationService.generateMonthlyReport(
-                result.getCollecteurId(),
-                now.getYear(),
-                now.getMonthValue());
-    }
-
-    @Transactional(readOnly = true)
-    public byte[] generateCollecteurReport(Long collecteurId, LocalDate dateDebut, LocalDate dateFin) {
-        log.info("Génération du rapport pour le collecteur: {} du {} au {}",
-                collecteurId, dateDebut, dateFin);
-
-        try {
-            return reportGenerationService.generateMonthlyReport(
-                    collecteurId,
-                    dateDebut.getMonthValue(),
-                    dateDebut.getYear());
-        } catch (Exception e) {
-            log.error("Erreur lors de la génération du rapport", e);
-            throw new RuntimeException("Erreur lors de la génération du rapport", e);
-        }
-    }
-
-    @Transactional(readOnly = true)
-    public byte[] generateAgenceReport(Long agenceId, LocalDate dateDebut, LocalDate dateFin) {
-        log.info("Génération du rapport pour l'agence: {} du {} au {}",
-                agenceId, dateDebut, dateFin);
-
-        try {
-            // Pour l'exemple, nous utilisons la même méthode que pour le rapport collecteur
-            // Dans une implémentation réelle, cette méthode agrégerait les données de tous les collecteurs de l'agence
-            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-            Workbook workbook = new XSSFWorkbook();
-
-            // Création d'une feuille récapitulative pour l'agence
-            Sheet agenceSheet = workbook.createSheet("Récapitulatif Agence");
-
-            // Ajout d'en-têtes et autres éléments
-            // ...
-
-            workbook.write(outputStream);
-            return outputStream.toByteArray();
-
-        } catch (Exception e) {
-            log.error("Erreur lors de la génération du rapport pour l'agence", e);
-            throw new RuntimeException("Erreur lors de la génération du rapport", e);
-        }
-    }
-
-    @Transactional(readOnly = true)
-    public byte[] generateGlobalReport(LocalDate dateDebut, LocalDate dateFin) {
-        log.info("Génération du rapport global du {} au {}", dateDebut, dateFin);
-
-        try {
-            // Pour l'exemple, nous créons un workbook simple
-            // Dans une implémentation réelle, cette méthode agrégerait les données de toutes les agences
-            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-            Workbook workbook = new XSSFWorkbook();
-
-            // Création d'une feuille récapitulative globale
-            Sheet globalSheet = workbook.createSheet("Récapitulatif Global");
-
-            // En-tête avec les dates
-            Row headerRow = globalSheet.createRow(0);
-            Cell titleCell = headerRow.createCell(0);
-            titleCell.setCellValue("RAPPORT GLOBAL");
-
-            Row dateRow = globalSheet.createRow(1);
-            dateRow.createCell(0).setCellValue("Période:");
-            dateRow.createCell(1).setCellValue(
-                    dateDebut.format(DateTimeFormatter.ofPattern("dd/MM/yyyy")) + " au " +
-                            dateFin.format(DateTimeFormatter.ofPattern("dd/MM/yyyy")));
-
-            workbook.write(outputStream);
-            return outputStream.toByteArray();
-
-        } catch (Exception e) {
-            log.error("Erreur lors de la génération du rapport global", e);
-            throw new RuntimeException("Erreur lors de la génération du rapport global", e);
-        }
+        return reportsPage.map(this::convertToDTO);
     }
 
     /**
-     * Génère un rapport mensuel pour un collecteur
-     * Utilisé par AsyncReportService
+     * ✅ GÉNÉRER UN NOUVEAU RAPPORT
      */
-    public String generateMonthlyReport(Long collecteurId, List<Journal> journalEntries, YearMonth month) {
-        log.info("Génération du rapport mensuel pour le collecteur {} - {}", collecteurId, month);
+    public ReportDTO generateReport(ReportRequestDTO request, Long agenceId) {
+        log.info("📊 Génération d'un rapport de type: {} pour l'agence: {}", request.getType(), agenceId);
 
-        try {
-            // Génération du rapport
-            byte[] reportBytes = reportGenerationService.generateMonthlyReport(
-                    collecteurId,
-                    month.getMonthValue(),
-                    month.getYear());
+        // ✅ VALIDATION DE L'AGENCE
+        Agence agence = agenceRepository.findById(agenceId)
+                .orElseThrow(() -> new RuntimeException("Agence non trouvée"));
 
-            // Dans une implémentation réelle, nous sauvegarderions le fichier
-            // et retournerions le chemin d'accès
-            String filePath = "reports/" + collecteurId + "_" + month + ".xlsx";
+        // ✅ VALIDATION DU COLLECTEUR SI NÉCESSAIRE
+        Collecteur collecteur = null;
+        if (request.getCollecteurId() != null) {
+            collecteur = collecteurRepository.findById(request.getCollecteurId())
+                    .orElseThrow(() -> new RuntimeException("Collecteur non trouvé"));
 
-            // Simuler la sauvegarde du fichier
-            log.info("Rapport sauvegardé avec succès: {}", filePath);
-
-            return filePath;
-
-        } catch (Exception e) {
-            log.error("Erreur lors de la génération du rapport mensuel", e);
-            throw new RuntimeException("Erreur lors de la génération du rapport mensuel", e);
+            // ✅ VÉRIFIER QUE LE COLLECTEUR APPARTIENT À L'AGENCE
+            if (!collecteur.getAgence().getId().equals(agenceId)) {
+                throw new SecurityException("Collecteur n'appartient pas à cette agence");
+            }
         }
+
+        // ✅ CRÉER L'ENTITÉ RAPPORT
+        Report report = Report.builder()
+                .type(request.getType())
+                .title(generateReportTitle(request, collecteur))
+                .description(request.getDescription())
+                .status(Report.ReportStatus.PENDING)
+                .dateDebut(request.getDateDebut())
+                .dateFin(request.getDateFin())
+                .agence(agence)
+                .collecteur(collecteur)
+                .fileFormat(request.getFormat() != null ? request.getFormat() : "PDF")
+                .createdBy(securityService.getCurrentUserEmail())
+                .parametres(buildParametresJson(request))
+                .build();
+
+        // ✅ SAUVEGARDER LE RAPPORT
+        Report savedReport = reportRepository.save(report);
+
+        // ✅ DÉMARRER LA GÉNÉRATION ASYNCHRONE
+        processReportGeneration(savedReport);
+
+        log.info("✅ Rapport créé avec succès: {}", savedReport.getId());
+        return convertToDTO(savedReport);
     }
 
-    // Méthodes utilitaires pour la création des rapports Excel
-    private CellStyle createHeaderStyle(Workbook workbook) {
-        CellStyle style = workbook.createCellStyle();
-        Font font = workbook.createFont();
-        font.setBold(true);
-        style.setFont(font);
-        style.setFillForegroundColor(IndexedColors.GREY_25_PERCENT.getIndex());
-        style.setFillPattern(FillPatternType.SOLID_FOREGROUND);
-        style.setAlignment(HorizontalAlignment.CENTER);
-        style.setBorderBottom(BorderStyle.THIN);
-        style.setBorderLeft(BorderStyle.THIN);
-        style.setBorderRight(BorderStyle.THIN);
-        style.setBorderTop(BorderStyle.THIN);
-        return style;
+    /**
+     * ✅ RÉCUPÉRER UN RAPPORT PAR ID
+     */
+    public ReportDTO getReportById(Long reportId, Long agenceId) {
+        log.info("📋 Récupération du rapport: {} pour l'agence: {}", reportId, agenceId);
+
+        Optional<Report> reportOpt = reportRepository.findByIdAndAgenceId(reportId, agenceId);
+
+        return reportOpt.map(this::convertToDTO).orElse(null);
     }
 
-    private CellStyle createDateStyle(Workbook workbook) {
-        CellStyle style = workbook.createCellStyle();
-        CreationHelper createHelper = workbook.getCreationHelper();
-        style.setDataFormat(createHelper.createDataFormat().getFormat("dd/mm/yyyy"));
-        return style;
-    }
+    /**
+     * ✅ SUPPRIMER UN RAPPORT
+     */
+    public boolean deleteReport(Long reportId, Long agenceId) {
+        log.info("🗑️ Suppression du rapport: {} pour l'agence: {}", reportId, agenceId);
 
-    private CellStyle createNumberStyle(Workbook workbook) {
-        CellStyle style = workbook.createCellStyle();
-        style.setDataFormat(workbook.createDataFormat().getFormat("#,##0.00"));
-        return style;
-    }
+        Optional<Report> reportOpt = reportRepository.findByIdAndAgenceId(reportId, agenceId);
 
-    private CellStyle createTotalStyle(Workbook workbook) {
-        CellStyle style = workbook.createCellStyle();
-        Font font = workbook.createFont();
-        font.setBold(true);
-        style.setFont(font);
-        style.setFillForegroundColor(IndexedColors.LIGHT_YELLOW.getIndex());
-        style.setFillPattern(FillPatternType.SOLID_FOREGROUND);
-        style.setDataFormat(workbook.createDataFormat().getFormat("#,##0.00"));
-        style.setBorderBottom(BorderStyle.MEDIUM);
-        style.setBorderTop(BorderStyle.MEDIUM);
-        return style;
-    }
+        if (reportOpt.isPresent()) {
+            reportRepository.delete(reportOpt.get());
 
-    @Transactional(readOnly = true)
-    public byte[] generateCollecteurMonthlyReport(Long collecteurId, int month, int year) {
-        log.info("Génération du rapport mensuel pour le collecteur: {} - {}/{}", collecteurId, month, year);
+            // TODO: Supprimer aussi le fichier physique si nécessaire
+            // deletePhysicalFile(reportOpt.get().getFilePath());
 
-        try {
-            Collecteur collecteur = collecteurRepository.findById(collecteurId)
-                    .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
-
-            // Utilisez le service de génération de rapport existant
-            return reportGenerationService.generateMonthlyReport(collecteurId, month, year);
-        } catch (Exception e) {
-            log.error("Erreur lors de la génération du rapport mensuel", e);
-            throw new RuntimeException("Erreur lors de la génération du rapport mensuel", e);
+            return true;
         }
+
+        return false;
+    }
+
+    /**
+     * ✅ OBTENIR LES TYPES DE RAPPORTS DISPONIBLES
+     */
+    public List<String> getAvailableReportTypes() {
+        return Arrays.asList("collecteur", "commission", "agence", "global");
+    }
+
+    /**
+     * ✅ TRAITEMENT ASYNCHRONE DE LA GÉNÉRATION
+     */
+    private void processReportGeneration(Report report) {
+        // TODO: Implémenter la génération asynchrone réelle
+        // Pour l'instant, marquer comme terminé après 2 secondes
+
+        new Thread(() -> {
+            try {
+                Thread.sleep(2000); // Simuler le traitement
+
+                // ✅ MARQUER COMME TERMINÉ
+                report.setStatus(Report.ReportStatus.COMPLETED);
+                report.setNombreEnregistrements(generateMockRecordCount(report));
+                report.setFileSize(generateMockFileSize());
+
+                reportRepository.save(report);
+
+                log.info("✅ Rapport {} généré avec succès", report.getId());
+
+            } catch (InterruptedException e) {
+                log.error("❌ Erreur lors de la génération du rapport {}", report.getId(), e);
+
+                report.setStatus(Report.ReportStatus.FAILED);
+                reportRepository.save(report);
+            }
+        }).start();
+    }
+
+    /**
+     * ✅ GÉNÉRER UN TITRE DE RAPPORT
+     */
+    private String generateReportTitle(ReportRequestDTO request, Collecteur collecteur) {
+        String baseTitle = switch (request.getType()) {
+            case "collecteur" -> "Rapport Collecteur";
+            case "commission" -> "Rapport Commissions";
+            case "agence" -> "Rapport Agence";
+            case "global" -> "Rapport Global";
+            default -> "Rapport";
+        };
+
+        if (collecteur != null) {
+            baseTitle += " - " + collecteur.getPrenom() + " " + collecteur.getNom();
+        }
+
+        return baseTitle;
+    }
+
+    /**
+     * ✅ CONSTRUIRE LES PARAMÈTRES JSON
+     */
+    private String buildParametresJson(ReportRequestDTO request) {
+        // TODO: Utiliser Jackson pour sérialiser les paramètres
+        return String.format(
+                "{\"type\":\"%s\",\"collecteurId\":%s,\"format\":\"%s\"}",
+                request.getType(),
+                request.getCollecteurId(),
+                request.getFormat() != null ? request.getFormat() : "PDF"
+        );
+    }
+
+    /**
+     * ✅ GÉNÉRER UN NOMBRE D'ENREGISTREMENTS FICTIF
+     */
+    private Integer generateMockRecordCount(Report report) {
+        return switch (report.getType()) {
+            case "collecteur" -> (int) (Math.random() * 100) + 50;
+            case "commission" -> (int) (Math.random() * 50) + 10;
+            case "agence" -> (int) (Math.random() * 500) + 100;
+            default -> (int) (Math.random() * 200) + 25;
+        };
+    }
+
+    /**
+     * ✅ GÉNÉRER UNE TAILLE DE FICHIER FICTIVE
+     */
+    private Long generateMockFileSize() {
+        return (long) (Math.random() * 1000000) + 50000; // Entre 50KB et 1MB
+    }
+
+    /**
+     * ✅ CONVERTIR ENTITÉ VERS DTO
+     */
+    private ReportDTO convertToDTO(Report report) {
+        return ReportDTO.builder()
+                .id(report.getId())
+                .type(report.getType())
+                .title(report.getTitle())
+                .description(report.getDescription())
+                .status(report.getStatus().name().toLowerCase())
+                .dateCreation(report.getDateCreation())
+                .dateDebut(report.getDateDebut())
+                .dateFin(report.getDateFin())
+                .agenceId(report.getAgence().getId())
+                .nomAgence(report.getAgence().getNomAgence())
+                .collecteurId(report.getCollecteur() != null ? report.getCollecteur().getId() : null)
+                .nomCollecteur(report.getCollecteur() != null ?
+                        report.getCollecteur().getPrenom() + " " + report.getCollecteur().getNom() : null)
+                .downloadUrl(report.getFilePath())
+                .tailleFichier(report.getFileSize())
+                .formatFichier(report.getFileFormat())
+                .createdBy(report.getCreatedBy())
+                .nombreEnregistrements(report.getNombreEnregistrements())
+                .parametres(report.getParametres())
+                .build();
     }
 }

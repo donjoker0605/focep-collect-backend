@@ -177,7 +177,7 @@ public class SecurityService {
      * Vérifie si un admin a accès à une agence spécifique
      * Mise en cache pour éviter des requêtes répétées
      */
-    @Cacheable(key = "{'admin-agence', #email, #agenceId}")
+//    @Cacheable(key = "{'admin-agence', #email, #agenceId}")
     private boolean verifyAdminAgenceAccess(String email, Long agenceId) {
         return adminRepository.findByAdresseMailWithAgence(email)
                 .map(admin -> {
@@ -194,8 +194,8 @@ public class SecurityService {
      * Vérifie si un collecteur a accès à une agence spécifique
      * Mise en cache pour éviter des requêtes répétées
      */
-    @Cacheable(key = "{'collecteur-agence', #email, #agenceId}")
-    private boolean verifyCollecteurAgenceAccess(String email, Long agenceId) {
+//    @Cacheable(key = "{'collecteur-agence', #email, #agenceId}")
+    protected boolean verifyCollecteurAgenceAccess(String email, Long agenceId) {
         return collecteurRepository.findByAdresseMailWithAgence(email)
                 .map(collecteur -> collecteur.getAgence().getId().equals(agenceId))
                 .orElse(false);
@@ -470,26 +470,49 @@ public class SecurityService {
      */
     @Cacheable(key = "{'admin-collecteur', #authentication.name, #collecteurId}")
     public boolean isAdminOfCollecteur(Authentication authentication, Long collecteurId) {
-        if (authentication == null) return false;
+        try {
+            if (authentication == null) {
+                return false;
+            }
 
-        if (hasRole(authentication.getAuthorities(), RoleConfig.SUPER_ADMIN)) {
-            return true;
+            // ✅ SUPER_ADMIN peut tout gérer
+            if (authentication.getAuthorities().stream()
+                    .anyMatch(authority -> authority.getAuthority().equals("ROLE_SUPER_ADMIN"))) {
+                return true;
+            }
+
+            // ✅ ADMIN peut gérer les collecteurs de son agence
+            String currentUserEmail = getCurrentUserEmail();
+            if (currentUserEmail == null) {
+                return false;
+            }
+
+            // ✅ RÉCUPÉRER L'AGENCE DE L'ADMIN
+            Optional<Admin> adminOpt = adminRepository.findByAdresseMailWithAgence(currentUserEmail);
+            if (adminOpt.isEmpty()) {
+                return false;
+            }
+
+            // ✅ RÉCUPÉRER LE COLLECTEUR ET VÉRIFIER L'AGENCE
+            Optional<Collecteur> collecteurOpt = collecteurRepository.findByIdWithAgence(collecteurId);
+            if (collecteurOpt.isEmpty()) {
+                return false;
+            }
+
+            Long adminAgenceId = adminOpt.get().getAgence().getId();
+            Long collecteurAgenceId = collecteurOpt.get().getAgence().getId();
+
+            boolean hasAccess = adminAgenceId.equals(collecteurAgenceId);
+
+            log.debug("🔍 Vérification accès admin {} au collecteur {}: {} (agence admin: {}, agence collecteur: {})",
+                    currentUserEmail, collecteurId, hasAccess, adminAgenceId, collecteurAgenceId);
+
+            return hasAccess;
+
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la vérification des droits admin sur collecteur {}", collecteurId, e);
+            return false;
         }
-
-        String userEmail = authentication.getName();
-
-        if (hasRole(authentication.getAuthorities(), RoleConfig.ADMIN)) {
-            return adminRepository.findByAdresseMail(userEmail)
-                    .map(admin -> {
-                        Optional<Collecteur> collecteurOpt = collecteurRepository.findById(collecteurId);
-                        if (collecteurOpt.isEmpty()) return false;
-
-                        return collecteurOpt.get().getAgence().getId().equals(admin.getAgence().getId());
-                    })
-                    .orElse(false);
-        }
-
-        return false;
     }
 
     /**
@@ -701,38 +724,82 @@ public class SecurityService {
      */
     public Long getCurrentUserAgenceId() {
         try {
-            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-
-            if (authentication == null || !authentication.isAuthenticated()) {
-                log.warn("Aucune authentification trouvée");
+            String currentUserEmail = getCurrentUserEmail();
+            if (currentUserEmail == null) {
+                log.warn("❌ Aucun utilisateur connecté détecté");
                 return null;
             }
 
-            String username = authentication.getName();
-            log.debug("Récupération de l'agence pour l'utilisateur: {}", username);
-
-            // Chercher d'abord dans les admins
-            Optional<Admin> admin = adminRepository.findByAdresseMail(username);
-            if (admin.isPresent() && admin.get().getAgence() != null) {
-                Long agenceId = admin.get().getAgence().getId();
-                log.debug("Agence trouvée pour admin {}: {}", username, agenceId);
+            // ✅ VÉRIFIER SI C'EST UN ADMIN
+            Optional<Admin> adminOpt = adminRepository.findByAdresseMailWithAgence(currentUserEmail);
+            if (adminOpt.isPresent()) {
+                Long agenceId = adminOpt.get().getAgence().getId();
+                log.debug("✅ Agence trouvée pour admin {}: {}", currentUserEmail, agenceId);
                 return agenceId;
             }
 
-            // Chercher dans les collecteurs
-            Optional<Collecteur> collecteur = collecteurRepository.findByAdresseMail(username);
-            if (collecteur.isPresent() && collecteur.get().getAgence() != null) {
-                Long agenceId = collecteur.get().getAgence().getId();
-                log.debug("Agence trouvée pour collecteur {}: {}", username, agenceId);
+            // ✅ VÉRIFIER SI C'EST UN COLLECTEUR
+            Optional<Collecteur> collecteurOpt = collecteurRepository.findByAdresseMailWithAgence(currentUserEmail);
+            if (collecteurOpt.isPresent()) {
+                Long agenceId = collecteurOpt.get().getAgence().getId();
+                log.debug("✅ Agence trouvée pour collecteur {}: {}", currentUserEmail, agenceId);
                 return agenceId;
             }
 
-            log.warn("Aucune agence trouvée pour l'utilisateur: {}", username);
+            log.warn("❌ Utilisateur {} non trouvé dans les admins ni collecteurs", currentUserEmail);
             return null;
 
         } catch (Exception e) {
-            log.error("Erreur lors de la récupération de l'agence utilisateur", e);
+            log.error("❌ Erreur lors de la récupération de l'agence utilisateur", e);
             return null;
         }
     }
+
+    public boolean isUserFromAgence(Long agenceId) {
+        Long userAgenceId = getCurrentUserAgenceId();
+        return userAgenceId != null && userAgenceId.equals(agenceId);
+    }
+
+    public String getCurrentUserEmail() {
+        try {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication != null && authentication.isAuthenticated()) {
+                return authentication.getName();
+            }
+            return null;
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la récupération de l'email utilisateur", e);
+            return null;
+        }
+    }
+
+    public Long getAgenceForUser(String userEmail) {
+        log.debug("🔍 Récupération de l'agence pour l'utilisateur: {}", userEmail);
+
+        try {
+            // ✅ CHERCHER DANS LES ADMINS
+            Optional<Admin> adminOpt = adminRepository.findByAdresseMailWithAgence(userEmail);
+            if (adminOpt.isPresent()) {
+                Long agenceId = adminOpt.get().getAgence().getId();
+                log.debug("✅ Agence trouvée pour admin {}: {}", userEmail, agenceId);
+                return agenceId;
+            }
+
+            // ✅ CHERCHER DANS LES COLLECTEURS
+            Optional<Collecteur> collecteurOpt = collecteurRepository.findByAdresseMailWithAgence(userEmail);
+            if (collecteurOpt.isPresent()) {
+                Long agenceId = collecteurOpt.get().getAgence().getId();
+                log.debug("✅ Agence trouvée pour collecteur {}: {}", userEmail, agenceId);
+                return agenceId;
+            }
+
+            log.warn("❌ Aucune agence trouvée pour l'utilisateur: {}", userEmail);
+            return null;
+
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la récupération de l'agence pour {}", userEmail, e);
+            return null;
+        }
+    }
+
 }
