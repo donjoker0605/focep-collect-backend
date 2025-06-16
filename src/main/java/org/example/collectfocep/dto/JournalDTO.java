@@ -7,28 +7,39 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 @Builder
-@AllArgsConstructor
 @NoArgsConstructor
+@AllArgsConstructor
 public class JournalDTO {
+
     private Long id;
     private String reference;
-    private LocalDateTime dateOuverture;
-    private LocalDateTime dateCloture;
-    private Boolean estCloture;
+    private LocalDate dateJournal;
+
+    // Collecteur
     private Long collecteurId;
     private String collecteurNom;
 
-    private LocalDate dateDebut;
-    private LocalDate dateFin;
+    // Statistiques
+    private Double totalEpargne;
+    private Double totalRetrait;
+    private Double soldeDebut;
+    private Double soldeFin;
+    private Long nombreOperations;
 
-    public boolean isActif() {
-        return !Boolean.TRUE.equals(estCloture);
-    }
+    // Opérations
+    private List<MouvementDTO> operations;
 
-    public String getStatutText() {
-        return Boolean.TRUE.equals(estCloture) ? "CLOTURÉ" : "OUVERT";
-    }
+    // Clôture
+    private Boolean estCloture;
+    private LocalDateTime dateCloture;
+    private String cloturePar;
+    private Double montantVerse;
+
+    // Validation
+    private String statut;
+    private String observations;
 }
