@@ -54,9 +54,9 @@ public class AdminDashboardService {
         Double soldeNet = (totalEpargne != null ? totalEpargne : 0.0) -
                 (totalRetrait != null ? totalRetrait : 0.0);
 
-        // Commissions en attente (non rapportées)
-        Long commissionsEnAttente = commissionRepository.countByAgenceIdAndRapportIsNull(agenceId);
-        Double totalCommissions = commissionRepository.sumByAgenceId(agenceId);
+        // Commissions en attente (non rapportées) - CORRECTION DES NOMS DE MÉTHODES
+        Long commissionsEnAttente = commissionRepository.countPendingCommissionsByAgence(agenceId);
+        Double totalCommissions = commissionRepository.sumCommissionsByAgence(agenceId);
 
         // Calculer les taux
         Double tauxCollecteursActifs = totalCollecteurs > 0 ?
@@ -108,14 +108,16 @@ public class AdminDashboardService {
     public AdminDashboardDTO getDetailedCollecteurStats(Long agenceId, Long collecteurId) {
         log.info("📊 Calcul des statistiques détaillées pour le collecteur: {}", collecteurId);
 
-        // Vérifier l'accès au collecteur
+        // CORRECTION: Utiliser l'ID directement au lieu de convertir en Collecteur
         if (!securityService.hasPermissionForCollecteur(collecteurId)) {
             throw new RuntimeException("Accès non autorisé au collecteur");
         }
 
         // Statistiques spécifiques au collecteur
         Long totalClients = clientRepository.countByCollecteurId(collecteurId);
-        Long clientsActifs = clientRepository.countByCollecteurIdAndValideTrue(collecteurId);
+
+        // AJOUT: Méthode pour compter les clients valides d'un collecteur
+        Long clientsActifs = clientRepository.countByCollecteurIdAndValide(collecteurId, true);
 
         // Montants pour ce collecteur spécifique
         Double epargneCollecteur = mouvementRepository.sumByCollecteurIdAndSens(collecteurId, "EPARGNE");
@@ -124,9 +126,9 @@ public class AdminDashboardService {
         Double soldeNet = (epargneCollecteur != null ? epargneCollecteur : 0.0) -
                 (retraitCollecteur != null ? retraitCollecteur : 0.0);
 
-        // Commissions du collecteur
-        Long commissionsEnAttente = commissionRepository.countByCollecteurIdAndRapportIsNull(collecteurId);
-        Double totalCommissions = commissionRepository.sumByCollecteurId(collecteurId);
+        // Commissions du collecteur - CORRECTION DES NOMS DE MÉTHODES
+        Long commissionsEnAttente = commissionRepository.countPendingCommissionsByCollecteur(collecteurId);
+        Double totalCommissions = commissionRepository.sumCommissionsByCollecteur(collecteurId);
 
         return AdminDashboardDTO.builder()
                 .periode("Collecteur " + collecteurId)

@@ -13,29 +13,22 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ReportDTO {
-
     private Long id;
     private String type;
     private String title;
-    private String status; // pending, completed, error
-
-    private LocalDate dateDebut;
-    private LocalDate dateFin;
-
+    private String description;
+    private String status;
+    private LocalDateTime dateCreation;
+    private LocalDateTime dateDebut;
+    private LocalDateTime dateFin;
     private Long agenceId;
-    private String agenceNom;
-
+    private String nomAgence;
     private Long collecteurId;
-    private String collecteurNom;
-
-    private LocalDateTime dateGeneration;
-    private String generePar;
-
+    private String nomCollecteur;
     private String downloadUrl;
-    private Long fileSize;
-    private String format;
-
-    // Résumé des données
-    private Object summary;
-    private Object details;
+    private Long tailleFichier;
+    private String formatFichier;
+    private String createdBy;
+    private Integer nombreEnregistrements;
+    private String parametres;
 }

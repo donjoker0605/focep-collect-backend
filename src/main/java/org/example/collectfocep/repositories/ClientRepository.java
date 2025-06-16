@@ -355,5 +355,17 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
     @Query("SELECT c FROM Client c WHERE c.collecteur.id = :collecteurId")
     List<Client> findByCollecteur(@Param("collecteurId") Long collecteurId);
 
+    /**
+     * Compte les clients validés d'un collecteur spécifique
+     * Méthode manquante nécessaire pour AdminDashboardService
+     */
+    @Query("SELECT COUNT(c) FROM Client c WHERE c.collecteur.id = :collecteurId AND c.valide = true")
+    Long countByCollecteurIdAndValideTrue(@Param("collecteurId") Long collecteurId);
+
+    /**
+     * Alternative avec paramètre valide flexible
+     */
+    @Query("SELECT COUNT(c) FROM Client c WHERE c.collecteur.id = :collecteurId AND c.valide = :valide")
+    Long countByCollecteurIdAndValide(@Param("collecteurId") Long collecteurId, @Param("valide") boolean valide);
 
 }

@@ -5,13 +5,17 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDateTime;
+
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class TransactionSummaryDTO {
+public class CommissionDetailDTO {
+    private Long commissionId;
+    private LocalDateTime dateCalcul;
     private String type;
-    private Integer nombre;
-    private Double montantTotal;
-    private Double montantMoyen;
+    private Double montant;
+    private Double tva;
+    private String beneficiaire;
 }

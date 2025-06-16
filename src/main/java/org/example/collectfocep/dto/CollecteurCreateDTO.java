@@ -45,4 +45,19 @@ public class CollecteurCreateDTO {
 
     // L'agenceId sera assignée automatiquement côté backend
     private Long agenceId;
+
+    /**
+     * Constructeur pour compatibilité avec CollecteurServiceImpl
+     */
+    public CollecteurCreateDTO(String nom, String prenom, String numeroCni,
+                               String adresseMail, String telephone,
+                               Long agenceId, Double montantMaxRetrait) {
+        this.nom = nom;
+        this.prenom = prenom;
+        this.numeroCni = numeroCni;
+        this.adresseMail = adresseMail;
+        this.telephone = telephone;
+        this.agenceId = agenceId;
+        this.montantMaxRetrait = montantMaxRetrait;
+    }
 }

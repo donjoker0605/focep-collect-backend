@@ -215,7 +215,7 @@ public class CollecteurServiceImpl implements CollecteurService {
                     collecteurId, startOfMonth, now);
 
             return CollecteurStatisticsDTO.builder()
-                    .totalClients(totalClients != null ? totalClients.intValue() : 0)
+                    .totalClients(totalClientsCount != null ? totalClientsCount : 0L)
                     .transactionsCeMois(0L) // À calculer selon votre logique
                     .volumeEpargne(volumeEpargne != null ? volumeEpargne : 0.0)
                     .volumeRetraits(volumeRetraits != null ? volumeRetraits : 0.0)
@@ -252,7 +252,6 @@ public class CollecteurServiceImpl implements CollecteurService {
                     collecteurRepository.existsByAdresseMail(dto.getAdresseMail())) {
                 throw new BusinessException("Un collecteur avec cet email existe déjà");
             }
-
             // Mise à jour via mapper
             collecteurMapper.updateEntityFromDTO(dto, collecteur);
 
@@ -525,15 +524,15 @@ public class CollecteurServiceImpl implements CollecteurService {
     @Override
     @Deprecated
     public Collecteur convertToEntity(CollecteurDTO dto) {
-        return collecteurMapper.toEntity(new CollecteurCreateDTO(
-                dto.getNom(),
-                dto.getPrenom(),
-                dto.getNumeroCni(),
-                dto.getAdresseMail(),
-                dto.getTelephone(),
-                dto.getAgenceId(),
-                dto.getMontantMaxRetrait()
-        ));
+        CollecteurCreateDTO createDTO = new CollecteurCreateDTO();
+        createDTO.setNom(dto.getNom());
+        createDTO.setPrenom(dto.getPrenom());
+        createDTO.setNumeroCni(dto.getNumeroCni());
+        createDTO.setAdresseMail(dto.getAdresseMail());
+        createDTO.setTelephone(dto.getTelephone());
+        createDTO.setAgenceId(dto.getAgenceId());
+        createDTO.setMontantMaxRetrait(dto.getMontantMaxRetrait());
+        return collecteurMapper.toEntity(createDTO);
     }
 
     @Override

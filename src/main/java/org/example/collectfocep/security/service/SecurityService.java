@@ -2,6 +2,7 @@ package org.example.collectfocep.security.service;
 
 import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.entities.*;
+import org.example.collectfocep.exceptions.ResourceNotFoundException;
 import org.example.collectfocep.repositories.*;
 import org.example.collectfocep.security.config.RoleConfig;
 import org.example.collectfocep.security.filters.JwtAuthenticationFilter;
@@ -147,31 +148,18 @@ public class SecurityService {
     /**
      * Méthode à ajouter à la classe SecurityService
      */
-    @Cacheable(key = "{'collecteur-permission', #collecteur.id}")
-    public boolean hasPermissionForCollecteur(Collecteur collecteur) {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null) return false;
-
-        // Super Admin a tous les droits
-        if (hasRole(auth.getAuthorities(), RoleConfig.SUPER_ADMIN)) {
-            log.debug("Accès autorisé pour Super Admin: {}", auth.getName());
-            return true;
+    @Cacheable(key = "{'collecteur-permission-id', #collecteurId}")
+    public boolean hasPermissionForCollecteur(Long collecteurId) {
+        try {
+            Collecteur collecteur = collecteurRepository.findById(collecteurId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
+            return hasPermissionForCollecteur(collecteur);
+        } catch (Exception e) {
+            log.error("Erreur lors de la vérification des permissions pour le collecteur {}", collecteurId, e);
+            return false;
         }
-
-        // Admin de l'agence du collecteur
-        if (hasRole(auth.getAuthorities(), RoleConfig.ADMIN)) {
-            return adminRepository.findByAdresseMail(auth.getName())
-                    .map(admin -> admin.getAgence().getId().equals(collecteur.getAgence().getId()))
-                    .orElse(false);
-        }
-
-        // Le collecteur lui-même
-        if (hasRole(auth.getAuthorities(), RoleConfig.COLLECTEUR)) {
-            return auth.getName().equals(collecteur.getAdresseMail());
-        }
-
-        return false;
     }
+
 
     /**
      * Vérifie si un admin a accès à une agence spécifique
@@ -201,12 +189,14 @@ public class SecurityService {
                 .orElse(false);
     }
 
-    private boolean hasRole(Collection<? extends GrantedAuthority> authorities, String role) {
-        if (authorities == null) return false;
-
-        String roleToCheck = "ROLE_" + role;
-        return authorities.stream()
-                .anyMatch(a -> roleToCheck.equals(a.getAuthority()));
+    /**
+     * Méthode publique pour vérifier un rôle spécifique
+     * Utilisée dans CollecteurController
+     */
+    public boolean hasRole(String role) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) return false;
+        return hasRole(auth.getAuthorities(), role);
     }
 
     /**
@@ -651,11 +641,13 @@ public class SecurityService {
         }
     }
 
-    private Long getCurrentUserId(Authentication authentication) {
-        if (authentication.getPrincipal() instanceof JwtAuthenticationFilter.JwtUserPrincipal) {
-            return ((JwtAuthenticationFilter.JwtUserPrincipal) authentication.getPrincipal()).getUserId();
-        }
-        return null;
+    /**
+     * Méthode publique pour obtenir l'ID utilisateur courant
+     * Sans paramètre - utilise le contexte de sécurité
+     */
+    public Long getCurrentUserId() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return getCurrentUserId(auth);
     }
 
     private String getCurrentUserRole(Authentication authentication) {

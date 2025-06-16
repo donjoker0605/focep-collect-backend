@@ -5,28 +5,25 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class AgenceReportDTO {
-
     private Long agenceId;
-    private String agenceNom;
-    private String agenceCode;
+    private String nomAgence;
+    private String codeAgence;
+    private String periode;
+    private LocalDateTime dateGeneration;
 
-    private LocalDate dateDebut;
-    private LocalDate dateFin;
-
-    // Vue d'ensemble
-    private Long totalCollecteurs;
-    private Long collecteursActifs;
-    private Long totalClients;
-    private Long clientsActifs;
+    // Statistiques globales
+    private Integer totalCollecteurs;
+    private Integer collecteursActifs;
+    private Integer totalClients;
+    private Integer clientsActifs;
 
     // Finances
     private Double totalEpargne;
@@ -34,13 +31,9 @@ public class AgenceReportDTO {
     private Double soldeNet;
     private Double totalCommissions;
 
-    // Performance
-    private List<CollecteurPerformanceDTO> performanceCollecteurs;
-    private Map<String, Double> evolutionMensuelle;
-    private List<TopClientDTO> topClientsAgence;
-
-    // Comparaisons
-    private Double croissanceEpargne;
-    private Double croissanceClients;
-    private Double tauxActivite;
+    // Performances
+    private List<CollecteurPerformanceDTO> topCollecteurs;
+    private List<ClientActivityDTO> clientsLesPlusActifs;
+    private List<DailyActivityDTO> activiteParJour;
+    private List<MonthlyTrendDTO> tendancesMensuelles;
 }

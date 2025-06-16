@@ -44,9 +44,15 @@ public class ApiResponse<T> {
         return response;
     }
 
-    public ApiResponse<T> addMeta(String key, Object value) {
+
+    /**
+     * Méthode pour ajouter des métadonnées
+     */
+    public void addMeta(String key, Object value) {
+        if (this.meta == null) {
+            this.meta = new HashMap<>();
+        }
         this.meta.put(key, value);
-        return this;
     }
 
     public static <T> ApiResponse<T> error(String code, String message) {
@@ -56,5 +62,19 @@ public class ApiResponse<T> {
         response.addMeta("errorCode", code);
         response.setTimestamp(LocalDateTime.now());
         return response;
+    }
+
+    /**
+     * Getter pour les métadonnées
+     */
+    public Map<String, Object> getMeta() {
+        return meta;
+    }
+
+    /**
+     * Setter pour les métadonnées
+     */
+    public void setMeta(Map<String, Object> meta) {
+        this.meta = meta;
     }
 }

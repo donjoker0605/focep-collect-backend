@@ -205,4 +205,13 @@ public interface CommissionRepository extends JpaRepository<Commission, Long> {
      */
     @Query("SELECT COUNT(c) FROM Commission c WHERE c.rapport IS NULL AND c.dateCalcul >= :cutoffDate")
     Long countPendingCommissionsAfterDate(@Param("cutoffDate") LocalDateTime cutoffDate);
+
+    /**
+     * Méthodes pour le collecteur spécifique
+     */
+    @Query("SELECT COUNT(c) FROM Commission c WHERE c.collecteur.id = :collecteurId AND c.rapport IS NULL")
+    Long countPendingCommissionsByCollecteur(@Param("collecteurId") Long collecteurId);
+
+    @Query("SELECT COALESCE(SUM(c.montant), 0) FROM Commission c WHERE c.collecteur.id = :collecteurId")
+    Double sumCommissionsByCollecteur(@Param("collecteurId") Long collecteurId);
 }

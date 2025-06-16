@@ -57,4 +57,14 @@ public interface ReportRepository extends JpaRepository<Report, Long> {
      * ✅ COMPTER LES RAPPORTS EN COURS
      */
     long countByAgenceIdAndStatus(Long agenceId, Report.ReportStatus status);
+
+    /**
+     * Trouver les rapports par agence et type
+     */
+    @Query("SELECT r FROM Report r WHERE r.agence.id = :agenceId AND r.type = :type ORDER BY r.dateCreation DESC")
+    Page<Report> findByAgenceIdAndType(@Param("agenceId") Long agenceId,
+                                       @Param("type") String type,
+                                       Pageable pageable);
+
+
 }

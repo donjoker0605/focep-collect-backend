@@ -4,18 +4,20 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-import org.example.collectfocep.dto.ReportDTO;
-import org.example.collectfocep.dto.ReportRequestDTO;
+import org.example.collectfocep.dto.*;
 import org.example.collectfocep.entities.*;
+import org.example.collectfocep.exceptions.ResourceNotFoundException;
 import org.example.collectfocep.repositories.*;
 import org.example.collectfocep.security.service.SecurityService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
@@ -48,50 +50,11 @@ public class ReportsService {
     }
 
     /**
-     * ✅ GÉNÉRER UN NOUVEAU RAPPORT
+     * Surcharge de generateReport pour accepter request sans agenceId séparé
      */
-    public ReportDTO generateReport(ReportRequestDTO request, Long agenceId) {
-        log.info("📊 Génération d'un rapport de type: {} pour l'agence: {}", request.getType(), agenceId);
-
-        // ✅ VALIDATION DE L'AGENCE
-        Agence agence = agenceRepository.findById(agenceId)
-                .orElseThrow(() -> new RuntimeException("Agence non trouvée"));
-
-        // ✅ VALIDATION DU COLLECTEUR SI NÉCESSAIRE
-        Collecteur collecteur = null;
-        if (request.getCollecteurId() != null) {
-            collecteur = collecteurRepository.findById(request.getCollecteurId())
-                    .orElseThrow(() -> new RuntimeException("Collecteur non trouvé"));
-
-            // ✅ VÉRIFIER QUE LE COLLECTEUR APPARTIENT À L'AGENCE
-            if (!collecteur.getAgence().getId().equals(agenceId)) {
-                throw new SecurityException("Collecteur n'appartient pas à cette agence");
-            }
-        }
-
-        // ✅ CRÉER L'ENTITÉ RAPPORT
-        Report report = Report.builder()
-                .type(request.getType())
-                .title(generateReportTitle(request, collecteur))
-                .description(request.getDescription())
-                .status(Report.ReportStatus.PENDING)
-                .dateDebut(request.getDateDebut())
-                .dateFin(request.getDateFin())
-                .agence(agence)
-                .collecteur(collecteur)
-                .fileFormat(request.getFormat() != null ? request.getFormat() : "PDF")
-                .createdBy(securityService.getCurrentUserEmail())
-                .parametres(buildParametresJson(request))
-                .build();
-
-        // ✅ SAUVEGARDER LE RAPPORT
-        Report savedReport = reportRepository.save(report);
-
-        // ✅ DÉMARRER LA GÉNÉRATION ASYNCHRONE
-        processReportGeneration(savedReport);
-
-        log.info("✅ Rapport créé avec succès: {}", savedReport.getId());
-        return convertToDTO(savedReport);
+    public ReportDTO generateReport(ReportRequestDTO request) {
+        Long agenceId = securityService.getCurrentUserAgenceId();
+        return generateReport(request, agenceId);
     }
 
     /**
@@ -134,6 +97,173 @@ public class ReportsService {
             log.error("❌ Erreur lors de la génération du rapport mensuel", e);
             throw new RuntimeException("Erreur génération rapport mensuel: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Récupérer les rapports par agence avec filtres
+     */
+    public List<ReportDTO> getReportsByAgence(Long agenceId, String type,
+                                              LocalDate dateDebut, LocalDate dateFin,
+                                              int page, int size) {
+        log.info("📋 Récupération des rapports filtrés pour l'agence: {}", agenceId);
+
+        PageRequest pageRequest = PageRequest.of(page, size, Sort.by("dateCreation").descending());
+        Page<Report> reportsPage;
+
+        if (type != null && !type.isEmpty()) {
+            reportsPage = reportRepository.findByAgenceIdAndType(agenceId, type, pageRequest);
+        } else {
+            reportsPage = reportRepository.findByAgenceIdOrderByDateCreationDesc(agenceId, pageRequest);
+        }
+
+        return reportsPage.getContent().stream()
+                .map(this::convertToDTO)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Vérifier l'accès à un rapport
+     */
+    public boolean hasAccessToReport(Long reportId) {
+        try {
+            Report report = reportRepository.findById(reportId)
+                    .orElse(null);
+
+            if (report == null) return false;
+
+            Long userAgenceId = securityService.getCurrentUserAgenceId();
+            return report.getAgence().getId().equals(userAgenceId);
+
+        } catch (Exception e) {
+            log.error("Erreur lors de la vérification d'accès au rapport {}", reportId, e);
+            return false;
+        }
+    }
+
+    /**
+     * Obtenir les données d'un rapport pour téléchargement
+     */
+    public byte[] getReportData(Long reportId) {
+        log.info("📥 Récupération des données du rapport: {}", reportId);
+
+        // Pour l'instant, retourner des données fictives
+        // TODO: Implémenter la génération réelle du fichier
+        String mockData = "Rapport ID: " + reportId + "\nGénéré le: " + LocalDateTime.now();
+        return mockData.getBytes();
+    }
+
+    /**
+     * Obtenir le nom du fichier rapport
+     */
+    public String getReportFilename(Long reportId) {
+        Report report = reportRepository.findById(reportId)
+                .orElseThrow(() -> new ResourceNotFoundException("Rapport non trouvé"));
+
+        return String.format("rapport_%s_%d_%s.%s",
+                report.getType(),
+                report.getId(),
+                LocalDate.now().format(DateTimeFormatter.ISO_DATE),
+                report.getFileFormat().toLowerCase());
+    }
+
+    /**
+     * Générer un rapport collecteur au format DTO
+     */
+    public CollecteurReportDTO generateCollecteurReport(Long collecteurId,
+                                                        LocalDate dateDebut,
+                                                        LocalDate dateFin) {
+        log.info("📊 Génération rapport DTO pour collecteur: {}", collecteurId);
+
+        Collecteur collecteur = collecteurRepository.findById(collecteurId)
+                .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
+
+        // TODO: Implémenter la logique complète
+        return CollecteurReportDTO.builder()
+                .collecteurId(collecteurId)
+                .nomCollecteur(collecteur.getNom() + " " + collecteur.getPrenom())
+                .periode(dateDebut + " à " + dateFin)
+                .dateGeneration(LocalDateTime.now())
+                .build();
+    }
+
+    /**
+     * Générer un rapport de commissions pour un collecteur
+     */
+    public CommissionReportDTO generateCommissionReportForCollecteur(Long collecteurId,
+                                                                     LocalDate dateDebut,
+                                                                     LocalDate dateFin) {
+        log.info("💰 Génération rapport commissions pour collecteur: {}", collecteurId);
+
+        // TODO: Implémenter la logique complète
+        return CommissionReportDTO.builder()
+                .type("COLLECTEUR")
+                .entityId(collecteurId)
+                .dateDebut(dateDebut.atStartOfDay())
+                .dateFin(dateFin.atTime(23, 59, 59))
+                .build();
+    }
+
+    /**
+     * Générer un rapport de commissions pour une agence
+     */
+    public CommissionReportDTO generateCommissionReportForAgence(Long agenceId,
+                                                                 LocalDate dateDebut,
+                                                                 LocalDate dateFin) {
+        log.info("💰 Génération rapport commissions pour agence: {}", agenceId);
+
+        // TODO: Implémenter la logique complète
+        return CommissionReportDTO.builder()
+                .type("AGENCE")
+                .entityId(agenceId)
+                .dateDebut(dateDebut.atStartOfDay())
+                .dateFin(dateFin.atTime(23, 59, 59))
+                .build();
+    }
+
+    /**
+     * Générer un rapport d'agence
+     */
+    public AgenceReportDTO generateAgenceReport(Long agenceId,
+                                                LocalDate dateDebut,
+                                                LocalDate dateFin) {
+        log.info("🏢 Génération rapport pour agence: {}", agenceId);
+
+        Agence agence = agenceRepository.findById(agenceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Agence non trouvée"));
+
+        // TODO: Implémenter la logique complète
+        return AgenceReportDTO.builder()
+                .agenceId(agenceId)
+                .nomAgence(agence.getNomAgence())
+                .periode(dateDebut + " à " + dateFin)
+                .dateGeneration(LocalDateTime.now())
+                .build();
+    }
+
+    /**
+     * Supprimer un rapport (surcharge)
+     */
+    public void deleteReport(Long reportId) {
+        Long agenceId = securityService.getCurrentUserAgenceId();
+        deleteReport(reportId, agenceId);
+    }
+
+    /**
+     * Générer un fichier de rapport collecteur
+     */
+    public byte[] generateCollecteurReportFile(Long collecteurId, LocalDate dateDebut,
+                                               LocalDate dateFin, String format) {
+        log.info("📊 Génération fichier rapport collecteur {} au format {}", collecteurId, format);
+
+        if ("excel".equalsIgnoreCase(format)) {
+            return generateCollecteurMonthlyReport(collecteurId,
+                    dateDebut.getMonthValue(), dateDebut.getYear());
+        }
+
+        // Pour PDF ou autres formats, retourner des données fictives pour l'instant
+        String mockData = String.format("Rapport Collecteur %d\nPériode: %s à %s",
+                collecteurId, dateDebut, dateFin);
+        return mockData.getBytes();
     }
 
     /**

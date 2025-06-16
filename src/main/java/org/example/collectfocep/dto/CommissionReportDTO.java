@@ -5,7 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Data
@@ -13,28 +13,21 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class CommissionReportDTO {
+    private String type; // COLLECTEUR, AGENCE, GLOBAL
+    private Long entityId;
+    private String entityName;
+    private LocalDateTime dateDebut;
+    private LocalDateTime dateFin;
+    private LocalDateTime dateGeneration;
 
-    private LocalDate dateDebut;
-    private LocalDate dateFin;
-
+    // Totaux
     private Double totalCommissions;
-    private Long nombreCollecteurs;
-    private Long nombreClientsTotal;
-    private Double totalEpargneTraite;
+    private Double totalTVA;
+    private Double totalNet;
+    private Integer nombreCommissions;
 
-    private List<CommissionDetailDTO> details;
-
-    @Data
-    @Builder
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class CommissionDetailDTO {
-        private Long collecteurId;
-        private String collecteurNom;
-        private Long nombreClients;
-        private Double montantEpargne;
-        private Double tauxCommission;
-        private Double montantCommission;
-        private String typeCalcul;
-    }
+    // Détails
+    private List<CommissionCalculationResultDTO.CommissionDetailDTO> details;
+    private List<CommissionByTypeDTO> parType;
+    private List<CommissionByPeriodDTO> parPeriode;
 }

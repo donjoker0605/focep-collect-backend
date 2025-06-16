@@ -27,6 +27,9 @@ public class ReportRequestDTO {
 
     private String format; // json, pdf, excel
 
+    // AJOUT du champ description manquant
+    private String description;
+
     // Sera assignée automatiquement
     private Long agenceId;
 

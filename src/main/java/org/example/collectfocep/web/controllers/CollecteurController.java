@@ -335,11 +335,16 @@ public class CollecteurController {
 
             log.info("✅ {} collecteurs récupérés pour l'agence: {}", collecteurDTOs.size(), agenceId);
 
-            return ResponseEntity.ok(ApiResponse.success(
+            ApiResponse<List<CollecteurDTO>> response = ApiResponse.success(
                     collecteurDTOs,
-                    "Opération réussie",
-                    collecteursPage
-            ));
+                    "Opération réussie"
+            );
+            response.addMeta("totalElements", collecteursPage.getTotalElements());
+            response.addMeta("totalPages", collecteursPage.getTotalPages());
+            response.addMeta("currentPage", collecteursPage.getNumber());
+            response.addMeta("pageSize", collecteursPage.getSize());
+
+            return ResponseEntity.ok(response);
 
         } catch (Exception e) {
             log.error("❌ Erreur lors de la récupération des collecteurs", e);
@@ -391,7 +396,7 @@ public class CollecteurController {
 
         try {
             // Pour un collecteur, vérifier qu'il accède à son propre dashboard
-            if (securityService.hasRole("ROLE_COLLECTEUR")) {
+            if (securityService.hasRole("COLLECTEUR")) {
                 Long currentCollecteurId = securityService.getCurrentUserId();
                 if (!id.equals(currentCollecteurId)) {
                     return ResponseEntity.status(HttpStatus.FORBIDDEN)

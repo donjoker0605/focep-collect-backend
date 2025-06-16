@@ -23,6 +23,10 @@ public class CollecteurUpdateDTO {
     @Size(min = 10, message = "Le numéro CNI doit avoir au moins 10 caractères")
     private String numeroCni;
 
+    // AJOUT du champ adresseMail qui était manquant
+    @Email(message = "Format d'email invalide")
+    private String adresseMail;
+
     @Positive(message = "Le montant doit être positif")
     private Double montantMaxRetrait;
 

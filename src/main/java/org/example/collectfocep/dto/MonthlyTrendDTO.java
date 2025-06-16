@@ -9,9 +9,10 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class TransactionSummaryDTO {
-    private String type;
-    private Integer nombre;
-    private Double montantTotal;
-    private Double montantMoyen;
+public class MonthlyTrendDTO {
+    private String mois;
+    private Double epargne;
+    private Double retrait;
+    private Double commissions;
+    private Integer transactions;
 }
