@@ -98,7 +98,7 @@ public class CollecteurServiceImpl implements CollecteurService {
 
             // ✅ DÉFINIR LES VALEURS PAR DÉFAUT SÉCURISÉES
             collecteur.setActive(true);
-            collecteur.setRole("ROLE_COLLECTEUR");
+            collecteur.setRole("COLLECTEUR");
             collecteur.setAncienneteEnMois(0);
             if (collecteur.getMontantMaxRetrait() == null) {
                 collecteur.setMontantMaxRetrait(100000.0); // Valeur par défaut
@@ -167,7 +167,7 @@ public class CollecteurServiceImpl implements CollecteurService {
                     .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
 
             // ✅ VÉRIFICATION DE SÉCURITÉ
-            if (!securityService.hasPermissionForCollecteur(collecteur)) {
+            if (!securityService.hasPermissionForCollecteur(collecteur.getId())) {
                 throw new UnauthorizedException("Accès non autorisé à ce collecteur");
             }
 
@@ -199,7 +199,7 @@ public class CollecteurServiceImpl implements CollecteurService {
                     .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
 
             // ✅ VÉRIFICATION DE SÉCURITÉ
-            if (!securityService.hasPermissionForCollecteur(collecteur)) {
+            if (!securityService.hasPermissionForCollecteur(collecteur.getId())) {
                 throw new UnauthorizedException("Accès non autorisé à ce collecteur");
             }
 
@@ -215,11 +215,16 @@ public class CollecteurServiceImpl implements CollecteurService {
                     collecteurId, startOfMonth, now);
 
             return CollecteurStatisticsDTO.builder()
-                    .totalClients(totalClientsCount != null ? totalClientsCount : 0L)
-                    .transactionsCeMois(0L) // À calculer selon votre logique
-                    .volumeEpargne(volumeEpargne != null ? volumeEpargne : 0.0)
-                    .volumeRetraits(volumeRetraits != null ? volumeRetraits : 0.0)
-                    .commissionsGenerees(0.0) // À calculer selon votre logique
+                    .collecteurId(collecteurId)
+                    .collecteurNom(collecteur.getNom())
+                    .collecteurPrenom(collecteur.getPrenom())
+                    .totalClients(totalClients != null ? totalClients : 0L)
+                    .totalEpargne(volumeEpargne != null ? volumeEpargne : 0.0)
+                    .totalRetraits(volumeRetraits != null ? volumeRetraits : 0.0)
+                    .soldeNet((volumeEpargne != null ? volumeEpargne : 0.0) -
+                            (volumeRetraits != null ? volumeRetraits : 0.0))
+                    //.nombreOperationsMois(operationsCeMois != null ? operationsCeMois : 0L)
+                    .dateCalcul(LocalDateTime.now())
                     .build();
 
         } catch (Exception e) {
@@ -239,7 +244,7 @@ public class CollecteurServiceImpl implements CollecteurService {
                     .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé avec l'ID: " + id));
 
             // ✅ VÉRIFICATION DES DROITS D'ACCÈS
-            if (!securityService.hasPermissionForCollecteur(collecteur)) {
+            if (!securityService.hasPermissionForCollecteur(collecteur.getId())) {
                 throw new UnauthorizedException("Non autorisé à modifier ce collecteur");
             }
 
@@ -272,7 +277,7 @@ public class CollecteurServiceImpl implements CollecteurService {
         }
     }
 
-    // ✅ CONSERVER TES MÉTHODES EXISTANTES INTACTES
+    // CONSERVER TES MÉTHODES EXISTANTES INTACTES
 
     @Override
     @Transactional
@@ -280,7 +285,7 @@ public class CollecteurServiceImpl implements CollecteurService {
         Collecteur collecteur = collecteurRepository.findById(collecteurId)
                 .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
 
-        if (!securityService.hasPermissionForCollecteur(collecteur)) {
+        if (!securityService.hasPermissionForCollecteur(collecteur.getId())) {
             throw new UnauthorizedAccessException("Non autorisé à modifier le montant maximal");
         }
 

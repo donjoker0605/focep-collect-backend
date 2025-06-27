@@ -179,6 +179,7 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
     @Query("SELECT m FROM Mouvement m " +
             "LEFT JOIN FETCH m.client c " +
             "LEFT JOIN FETCH m.collecteur col " +
+            "LEFT JOIN FETCH col.agence a" +
             "LEFT JOIN FETCH m.compteSource cs " +
             "LEFT JOIN FETCH m.compteDestination cd " +
             "LEFT JOIN FETCH m.journal j " +

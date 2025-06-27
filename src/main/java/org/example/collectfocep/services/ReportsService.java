@@ -57,8 +57,30 @@ public class ReportsService {
         return generateReport(request, agenceId);
     }
 
+    public ReportDTO generateReport(ReportRequestDTO request, Long agenceId) {
+        // Validation
+        if (request == null || agenceId == null) {
+            throw new IllegalArgumentException("Request and agenceId must not be null");
+        }
+
+        // Logique de création du rapport
+        Report report = new Report();
+        report.setType(request.getType());
+        report.setCollecteur(collecteurRepository.findById(request.getCollecteurId())
+                .orElseThrow(() -> new ResourceNotFoundException("Collecteur not found")));
+        report.setAgence(agenceRepository.findById(agenceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Agence not found")));
+        report.setDateFin(LocalDateTime.now());
+        report.setDateDebut(LocalDateTime.now());
+        report.setDescription(request.getDescription());
+
+
+        Report savedReport = reportRepository.save(report);
+        return convertToDTO(savedReport);
+    }
+
     /**
-     * ✅ MÉTHODE MANQUANTE POUR AsyncReportService
+     * MÉTHODE MANQUANTE POUR AsyncReportService
      * Génère un rapport mensuel pour un collecteur
      */
     public String generateMonthlyReport(Long collecteurId, List<Journal> journalEntries, YearMonth month) {

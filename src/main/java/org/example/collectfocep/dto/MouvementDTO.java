@@ -12,38 +12,25 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 public class MouvementDTO {
-
     private Long id;
-    private String reference;
-
-    // Type et montant
-    private String sens; // EPARGNE, RETRAIT
-    private String typeMouvement;
-    private Double montant;
-
-    // Client
-    private Long clientId;
-    private String clientNom;
-    private String clientPrenom;
-
-    // Collecteur
-    private Long collecteurId;
-    private String collecteurNom;
-
-    // Dates
+    private double montant;
+    private String libelle;
+    private String sens;
     private LocalDateTime dateOperation;
-    private LocalDateTime dateSaisie;
+    private String typeMouvement;
 
-    // Soldes
-    private Double soldeAvant;
-    private Double soldeApres;
-
-    // Validation
-    private String statut;
-    private String validePar;
-    private LocalDateTime dateValidation;
-
-    // Autres
+    // Ajoutez ces propriétés manquantes
+    private ClientBasicDTO client;
+    private CollecteurBasicDTO collecteur;
+    private Long journalId;
+    private String status;
+    private String journalReference;
+    private Long compteSourceId;
+    private Long compteDestinationId;
+    private Double commissionMontant;
+    private String commissionType;
+    private LocalDateTime dateCreation;
+    private LocalDateTime dateModification;
+    private String reference;
     private String description;
-    private String numeroRecu;
 }

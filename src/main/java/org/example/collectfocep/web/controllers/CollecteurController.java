@@ -241,34 +241,34 @@ public class CollecteurController {
     }
 
     // ✅ TON CODE EXISTANT - CONSERVÉ INTÉGRALEMENT
-    @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('SUPER_ADMIN') or @securityService.isAdminOfCollecteur(authentication, #id)")
-    @Audited(action = "DELETE", entityType = "Collecteur")
-    public ResponseEntity<ApiResponse<Void>> deleteCollecteur(@PathVariable Long id) {
-        log.info("Suppression du collecteur: {}", id);
-
-        try {
-            Collecteur collecteur = collecteurService.getCollecteurById(id)
-                    .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
-
-            if (collecteurService.hasActiveOperations(collecteur)) {
-                throw new InvalidOperationException("Impossible de supprimer un collecteur ayant des opérations actives");
-            }
-
-            collecteurService.deactivateCollecteur(id);
-
-            return ResponseEntity.ok(
-                    ApiResponse.success(
-                            null,
-                            "Collecteur supprimé avec succès"
-                    )
-            );
-        } catch (Exception e) {
-            log.error("Erreur lors de la suppression", e);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(ApiResponse.error("Erreur: " + e.getMessage()));
-        }
-    }
+//    @DeleteMapping("/{id}")
+//    @PreAuthorize("hasRole('SUPER_ADMIN') or @securityService.isAdminOfCollecteur(authentication, #id)")
+//    @Audited(action = "DELETE", entityType = "Collecteur")
+//    public ResponseEntity<ApiResponse<Void>> deleteCollecteur(@PathVariable Long id) {
+//        log.info("Suppression du collecteur: {}", id);
+//
+//        try {
+//            Collecteur collecteur = collecteurService.getCollecteurById(id)
+//                    .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
+//
+//            if (collecteurService.hasActiveOperations(collecteur)) {
+//                throw new InvalidOperationException("Impossible de supprimer un collecteur ayant des opérations actives");
+//            }
+//
+//            collecteurService.deactivateCollecteur(id);
+//
+//            return ResponseEntity.ok(
+//                    ApiResponse.success(
+//                            null,
+//                            "Collecteur supprimé avec succès"
+//                    )
+//            );
+//        } catch (Exception e) {
+//            log.error("Erreur lors de la suppression", e);
+//            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+//                    .body(ApiResponse.error("Erreur: " + e.getMessage()));
+//        }
+//    }
 
     /**
      * DÉSACTIVER UN COLLECTEUR (soft delete)
@@ -391,13 +391,13 @@ public class CollecteurController {
      */
     @GetMapping("/{id}/dashboard")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'COLLECTEUR')")
-    public ResponseEntity<ApiResponse<CollecteurDashboardDTO>> getCollecteurDashboard(@PathVariable Long id) {
+    public ResponseEntity<ApiResponse<CollecteurDashboardDTO>> getCollecteurDashboard(@PathVariable Long id, Authentication authentication) {
         log.info("📊 Récupération du dashboard du collecteur: {}", id);
 
         try {
             // Pour un collecteur, vérifier qu'il accède à son propre dashboard
             if (securityService.hasRole("COLLECTEUR")) {
-                Long currentCollecteurId = securityService.getCurrentUserId();
+                Long currentCollecteurId = securityService.getCurrentUserId(authentication);
                 if (!id.equals(currentCollecteurId)) {
                     return ResponseEntity.status(HttpStatus.FORBIDDEN)
                             .body(ApiResponse.error("Accès non autorisé"));

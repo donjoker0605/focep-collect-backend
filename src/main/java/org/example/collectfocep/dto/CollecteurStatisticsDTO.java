@@ -45,4 +45,6 @@ public class CollecteurStatisticsDTO {
     private Integer rangAgence;
 
     private LocalDateTime dateCalcul;
+    private Long transactionsCeMois;
+
 }

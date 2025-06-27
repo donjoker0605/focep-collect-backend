@@ -35,4 +35,6 @@ public class ReportRequestDTO {
 
     private boolean includeDetails;
     private boolean includeGraphics;
+
+
 }

@@ -277,4 +277,15 @@ public class ClientController {
                 .mapToDouble(Mouvement::getMontant)
                 .sum();
     }
+
+    @GetMapping
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SUPER_ADMIN')")
+    public ResponseEntity<ApiResponse<List<ClientDTO>>> getAllClients() {
+        log.info("Récupération de tous les clients (pour admin/super admin)");
+        List<Client> clients = clientService.getAllClients();
+        List<ClientDTO> dtos = clients.stream()
+                .map(clientMapper::toDTO)
+                .toList();
+        return ResponseEntity.ok(ApiResponse.success(dtos, "Liste des clients récupérée"));
+    }
 }

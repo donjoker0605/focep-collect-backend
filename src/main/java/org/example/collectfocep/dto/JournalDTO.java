@@ -14,32 +14,28 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class JournalDTO {
-
     private Long id;
     private String reference;
-    private LocalDate dateJournal;
 
-    // Collecteur
+    // Ajoutez ces champs
+    private LocalDate dateDebut;
+    private LocalDate dateFin;
+    private LocalDateTime dateOuverture; // Optionnel si nécessaire
+
+    // Conservez les autres champs existants
+    private LocalDate dateJournal;
     private Long collecteurId;
     private String collecteurNom;
-
-    // Statistiques
     private Double totalEpargne;
     private Double totalRetrait;
     private Double soldeDebut;
     private Double soldeFin;
     private Long nombreOperations;
-
-    // Opérations
     private List<MouvementDTO> operations;
-
-    // Clôture
     private Boolean estCloture;
     private LocalDateTime dateCloture;
     private String cloturePar;
     private Double montantVerse;
-
-    // Validation
     private String statut;
     private String observations;
 }

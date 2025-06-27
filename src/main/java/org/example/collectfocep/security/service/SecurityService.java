@@ -58,6 +58,25 @@ public class SecurityService {
         this.clientRepository = clientRepository;
     }
 
+    /**
+     * Vérifie si les autorités contiennent un rôle spécifique
+     * @param authorities Collection des autorités
+     * @param role Le rôle à vérifier (avec ou sans "ROLE_" prefix)
+     * @return true si le rôle est présent
+     */
+    public boolean hasRole(Collection<? extends GrantedAuthority> authorities, String role) {
+        if (authorities == null || role == null) {
+            return false;
+        }
+
+        // Normalise le rôle (ajoute ROLE_ si nécessaire)
+        String normalizedRole = role.startsWith("ROLE_") ? role : "ROLE_" + role;
+
+        return authorities.stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(authority -> authority.equals(normalizedRole));
+    }
+
     @Cacheable(key = "{'owner-collecteur', #authentication.name, #collecteurId}")
     public boolean isOwnerCollecteur(Authentication authentication, Long collecteurId) {
         if (authentication == null || !authentication.isAuthenticated()) {
@@ -150,15 +169,11 @@ public class SecurityService {
      */
     @Cacheable(key = "{'collecteur-permission-id', #collecteurId}")
     public boolean hasPermissionForCollecteur(Long collecteurId) {
-        try {
-            Collecteur collecteur = collecteurRepository.findById(collecteurId)
-                    .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
-            return hasPermissionForCollecteur(collecteur);
-        } catch (Exception e) {
-            log.error("Erreur lors de la vérification des permissions pour le collecteur {}", collecteurId, e);
-            return false;
-        }
+        // Implémentation directe sans conversion
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return canManageCollecteur(auth, collecteurId);
     }
+
 
 
     /**
@@ -645,11 +660,10 @@ public class SecurityService {
      * Méthode publique pour obtenir l'ID utilisateur courant
      * Sans paramètre - utilise le contexte de sécurité
      */
-    public Long getCurrentUserId() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        return getCurrentUserId(auth);
+    // Ajouter cette méthode
+    public Long getCurrentUserId(Authentication authentication) {
+        return extractUserIdFromAuthentication(authentication);
     }
-
     private String getCurrentUserRole(Authentication authentication) {
         return authentication.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
