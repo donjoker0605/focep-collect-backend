@@ -2,6 +2,7 @@ package org.example.collectfocep.web.controllers;
 
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
+import org.example.collectfocep.aspects.LogActivity;
 import org.example.collectfocep.dto.*;
 import org.example.collectfocep.entities.Client;
 import org.example.collectfocep.entities.Journal;
@@ -13,6 +14,7 @@ import org.example.collectfocep.mappers.MouvementMapperV2;
 import org.example.collectfocep.repositories.ClientRepository;
 import org.example.collectfocep.repositories.JournalRepository;
 import org.example.collectfocep.repositories.MouvementRepository;
+import org.example.collectfocep.services.impl.AuditService;
 import org.example.collectfocep.services.impl.JournalServiceImpl;
 import org.example.collectfocep.services.impl.MouvementServiceImpl;
 import org.example.collectfocep.services.impl.TransactionService;
@@ -35,6 +37,7 @@ import org.springframework.web.bind.annotation.*;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestController
@@ -42,7 +45,6 @@ import java.util.stream.Collectors;
 @Slf4j
 public class MouvementController {
 
-    // ✅ INJECTION DU DateTimeService
     private final DateTimeService dateTimeService;
     private final TransactionService transactionService;
     private final SecurityService securityService;
@@ -52,6 +54,8 @@ public class MouvementController {
     private final MouvementMapperV2 mouvementMapper;
     private final JournalService journalService;
     private final JournalServiceImpl journalServiceImpl;
+    private final AuditService auditService;
+    private final Mouvement mouvement;
 
     @Autowired
     private MouvementServiceImpl mouvementServiceImpl;
@@ -61,8 +65,8 @@ public class MouvementController {
 
     @Autowired
     public MouvementController(
-            DateTimeService dateTimeService, // ✅ NOUVEAU PARAMÈTRE
-            TransactionService transactionService, // ✅ NOUVEAU PARAMÈTRE
+            DateTimeService dateTimeService,
+            TransactionService transactionService,
             MouvementServiceImpl mouvementServiceImpl,
             SecurityService securityService,
             ClientRepository clientRepository,
@@ -70,10 +74,12 @@ public class MouvementController {
             MouvementRepository mouvementRepository,
             MouvementMapperV2 mouvementMapper,
             JournalService journalService,
-            JournalServiceImpl journalServiceImpl) {
+            JournalServiceImpl journalServiceImpl,
+            AuditService auditService,
+            Mouvement mouvement) {
 
-        this.dateTimeService = dateTimeService; // ✅ INITIALISATION
-        this.transactionService = transactionService; // ✅ INITIALISATION
+        this.dateTimeService = dateTimeService;
+        this.transactionService = transactionService;
         this.mouvementServiceImpl = mouvementServiceImpl;
         this.securityService = securityService;
         this.clientRepository = clientRepository;
@@ -82,6 +88,8 @@ public class MouvementController {
         this.mouvementMapper = mouvementMapper;
         this.journalService = journalService;
         this.journalServiceImpl = journalServiceImpl;
+        this.auditService = auditService;
+        this.mouvement= mouvement;
     }
 
     @GetMapping("/{transactionId}")
@@ -90,11 +98,11 @@ public class MouvementController {
         log.info("🔍 Récupération des détails de la transaction: {}", transactionId);
 
         try {
-            // ✅ CORRECTION: Utiliser la requête optimisée avec toutes les relations
+            // Utiliser la requête optimisée avec toutes les relations
             Mouvement mouvement = mouvementRepository.findByIdWithAllRelations(transactionId)
                     .orElseThrow(() -> new ResourceNotFoundException("Transaction non trouvée avec l'ID: " + transactionId));
 
-            // ✅ SÉCURITÉ: Vérifier les droits d'accès
+            // Vérifier les droits d'accès
             if (!securityService.canAccessMouvement(SecurityContextHolder.getContext().getAuthentication(), mouvement)) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
                         .body(ApiResponse.error("UNAUTHORIZED", "Accès non autorisé à cette transaction"));
@@ -203,6 +211,7 @@ public class MouvementController {
 
     @PostMapping("/epargne")
     @PreAuthorize("@securityService.canManageClient(authentication, #request.clientId)")
+    @LogActivity(action = "EPARGNE", entityType = "MOUVEMENT")
     public ResponseEntity<ApiResponse<MouvementCommissionDTO>> effectuerEpargne(@Valid @RequestBody EpargneRequest request) {
         log.info("💰 Traitement d'une opération d'épargne pour le client: {} - Montant: {}",
                 request.getClientId(), request.getMontant());
@@ -238,13 +247,47 @@ public class MouvementController {
                         .body(ApiResponse.error("EPARGNE_ERROR", "Erreur lors de l'enregistrement de l'épargne: " + e.getMessage()));
             }
         });
+
+        auditService.logUserActivity(
+                "EPARGNE",
+                "MOUVEMENT",
+                mouvement.getId(),
+                null, // pas d'ancienne valeur
+                Map.of(
+                        "clientId", request.getClientId(),
+                        "montant", request.getMontant(),
+                        "collecteurId", request.getCollecteurId()
+                )
+        );
+
+        return response;
     }
 
     @PostMapping("/retrait")
     @PreAuthorize("@securityService.canManageClient(authentication, #request.clientId)")
+    @LogActivity(action = "RETRAIT", entityType = "MOUVEMENT")
     public ResponseEntity<ApiResponse<MouvementCommissionDTO>> effectuerRetrait(@Valid @RequestBody RetraitRequest request) {
         log.info("💸 Traitement d'une opération de retrait pour le client: {} - Montant: {}",
                 request.getClientId(), request.getMontant());
+
+        // Validation du solde collecteur
+        ValidationResult validation = soldeValidationService.validateRetraitPossible(
+                request.getCollecteurId(),
+                request.getMontant()
+        );
+
+        if (!validation.isSuccess()) {
+            // Logger l'échec de validation
+            auditService.logAction(
+                    "RETRAIT_REFUSE",
+                    "VALIDATION",
+                    request.getClientId(),
+                    validation.getErrorCode() + ": " + validation.getMessage()
+            );
+
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error(validation.getErrorCode(), validation.getMessage()));
+        }
 
         return transactionService.executeInTransaction(status -> {
             try {
@@ -277,6 +320,8 @@ public class MouvementController {
                         .body(ApiResponse.error("RETRAIT_ERROR", "Erreur lors de l'enregistrement du retrait: " + e.getMessage()));
             }
         });
+
+        return response;
     }
 
     @GetMapping("/journal/{journalId}")

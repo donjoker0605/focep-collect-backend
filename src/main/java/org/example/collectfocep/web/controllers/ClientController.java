@@ -2,6 +2,7 @@ package org.example.collectfocep.web.controllers;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.example.collectfocep.aspects.LogActivity;
 import org.example.collectfocep.dto.ClientDTO;
 import org.example.collectfocep.dto.ClientDetailDTO;
 import org.example.collectfocep.dto.CommissionParameterDTO;
@@ -106,7 +107,7 @@ public class ClientController {
     // Endpoint pour mettre à jour un client
     @PutMapping("/{id}")
     @PreAuthorize("@securityService.canManageClient(authentication, #id)")
-    @Audited(action = "UPDATE", entityType = "Client")
+    @LogActivity(action = "UPDATE_CLIENT", entityType = "Client")
     public ResponseEntity<ApiResponse<ClientDTO>> updateClient(
             @PathVariable Long id,
             @Valid @RequestBody ClientDTO clientDTO) {

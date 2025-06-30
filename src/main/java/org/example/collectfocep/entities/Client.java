@@ -63,6 +63,21 @@ public class Client {
     @JoinColumn(name = "id_agence", nullable = false)
     private Agence agence;
 
+    @Column(name = "latitude", precision = 10, scale = 8)
+    private Double latitude;
+
+    @Column(name = "longitude", precision = 11, scale = 8)
+    private Double longitude;
+
+    @Column(name = "coordonnees_saisie_manuelle")
+    private Boolean coordonneesSaisieManuelle = false;
+
+    @Column(name = "adresse_complete")
+    private String adresseComplete;
+
+    @Column(name = "date_maj_coordonnees")
+    private LocalDateTime dateMajCoordonnees;
+
     public Boolean getValide() {
         return this.valide;
     }

@@ -1,7 +1,9 @@
 package org.example.collectfocep.web.controllers;
 
 import org.example.collectfocep.dto.LoginRequest;
+import org.example.collectfocep.entities.Utilisateur;
 import org.example.collectfocep.security.jwt.JwtUtil;
+import org.example.collectfocep.services.impl.AuditService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -24,6 +26,12 @@ public class AuthenticationController {
 
     @Autowired
     private AuthenticationManager authenticationManager;
+
+    @Autowired
+    private AuditService auditService;
+
+    @Autowired
+    private Utilisateur utilisateur;
 
     @Autowired
     private JwtUtil jwtUtil;
@@ -119,6 +127,13 @@ public class AuthenticationController {
             errorResponse.put("message", "Une erreur inattendue s'est produite");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
+
+        if (response.isSuccessful()) {
+            auditService.logAction("LOGIN", "AUTHENTICATION",
+                    utilisateur.getId(), "Connexion réussie depuis " + request.getDeviceInfo());
+        }
+
+        return response;
     }
 
     @PostMapping("/logout")
@@ -130,6 +145,11 @@ public class AuthenticationController {
         response.put("status", "success");
 
         return ResponseEntity.ok(response);
+
+        auditService.logAction("LOGOUT", "AUTHENTICATION",
+                null, "Déconnexion utilisateur: " + authentication.getName());
+
+        return response;
     }
 
     @GetMapping("/verify")
