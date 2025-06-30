@@ -697,4 +697,30 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
             "WHERE m.client.agence.id = :agenceId " +
             "AND UPPER(m.sens) = UPPER(:sens)")
     Double sumByAgenceIdAndSens(@Param("agenceId") Long agenceId, @Param("sens") String sens);
+
+    /**
+     * Somme des mouvements par collecteur, sens et période
+     * Utilisé pour calculer le solde journalier du collecteur
+     */
+    @Query("SELECT COALESCE(SUM(m.montant), 0) FROM Mouvement m " +
+            "WHERE m.collecteur.id = :collecteurId " +
+            "AND UPPER(m.sens) = UPPER(:sens) " +
+            "AND m.dateOperation BETWEEN :startDateTime AND :endDateTime")
+    Double sumByCollecteurAndSensAndPeriod(@Param("collecteurId") Long collecteurId,
+                                           @Param("sens") String sens,
+                                           @Param("startDateTime") LocalDateTime startDateTime,
+                                           @Param("endDateTime") LocalDateTime endDateTime);
+
+    /**
+     * Compte les mouvements par collecteur, sens et date
+     * Utilisé pour vérifier si le collecteur a fait au moins une épargne dans la journée
+     */
+    @Query("SELECT COUNT(m) FROM Mouvement m " +
+            "WHERE m.collecteur.id = :collecteurId " +
+            "AND UPPER(m.sens) = UPPER(:sens) " +
+            "AND DATE(m.dateOperation) = :date")
+    Long countByCollecteurAndSensAndDate(@Param("collecteurId") Long collecteurId,
+                                         @Param("sens") String sens,
+                                         @Param("date") LocalDate date);
+
 }

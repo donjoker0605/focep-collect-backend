@@ -9,7 +9,8 @@ import org.example.collectfocep.entities.Client;
 import org.example.collectfocep.exceptions.ResourceNotFoundException;
 import org.example.collectfocep.repositories.ClientRepository;
 import org.example.collectfocep.services.impl.AuditService;
-import org.springframework.data.jpa.repository.Query;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -70,11 +71,7 @@ public class GeolocationService {
         return toLocationDTO(client);
     }
 
-    @Query("SELECT c FROM Client c WHERE " +
-            "SQRT(POWER(c.latitude - :latitude, 2) + POWER(c.longitude - :longitude, 2)) * 111 <= :radiusKm " +
-            "ORDER BY SQRT(POWER(c.latitude - :latitude, 2) + POWER(c.longitude - :longitude, 2))")
     public List<ClientLocationDTO> getClientsProches(Double latitude, Double longitude, Double radiusKm) {
-        // Note: Cette requête devrait être dans le repository
         return clientRepository.findClientsInRadius(latitude, longitude, radiusKm)
                 .stream()
                 .map(this::toLocationDTO)
@@ -93,14 +90,33 @@ public class GeolocationService {
                 .build();
     }
 
-    // Ces méthodes devraient récupérer l'utilisateur actuel depuis le SecurityContext
     private Long getCurrentUserId() {
-        // return SecurityContextHolder.getContext()...
-        return 1L; // Placeholder
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() != null) {
+            try {
+                String username = auth.getName();
+                // TODO: Implémenter la récupération de l'ID depuis le repository utilisateur
+                // return userRepository.findByUsername(username).map(User::getId).orElse(null);
+
+                // Temporaire: retourner un ID par défaut
+                return 1L;
+            } catch (Exception e) {
+                log.error("Erreur lors de la récupération de l'ID utilisateur", e);
+                return null;
+            }
+        }
+        return null;
     }
 
     private String getCurrentUserType() {
-        // return SecurityContextHolder.getContext()...
-        return "COLLECTEUR"; // Placeholder
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getAuthorities() != null && !auth.getAuthorities().isEmpty()) {
+            String authority = auth.getAuthorities().iterator().next().getAuthority();
+            if (authority.startsWith("ROLE_")) {
+                authority = authority.substring(5); // Enlever le préfixe ROLE_
+            }
+            return authority;
+        }
+        return "UNKNOWN";
     }
 }

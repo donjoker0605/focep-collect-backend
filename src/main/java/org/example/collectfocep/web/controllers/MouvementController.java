@@ -14,6 +14,7 @@ import org.example.collectfocep.mappers.MouvementMapperV2;
 import org.example.collectfocep.repositories.ClientRepository;
 import org.example.collectfocep.repositories.JournalRepository;
 import org.example.collectfocep.repositories.MouvementRepository;
+import org.example.collectfocep.services.SoldeCollecteurValidationService;
 import org.example.collectfocep.services.impl.AuditService;
 import org.example.collectfocep.services.impl.JournalServiceImpl;
 import org.example.collectfocep.services.impl.MouvementServiceImpl;
@@ -55,7 +56,7 @@ public class MouvementController {
     private final JournalService journalService;
     private final JournalServiceImpl journalServiceImpl;
     private final AuditService auditService;
-    private final Mouvement mouvement;
+    private final SoldeCollecteurValidationService soldeValidationService;
 
     @Autowired
     private MouvementServiceImpl mouvementServiceImpl;
@@ -76,7 +77,7 @@ public class MouvementController {
             JournalService journalService,
             JournalServiceImpl journalServiceImpl,
             AuditService auditService,
-            Mouvement mouvement) {
+            SoldeCollecteurValidationService soldeValidationService) {
 
         this.dateTimeService = dateTimeService;
         this.transactionService = transactionService;
@@ -89,7 +90,7 @@ public class MouvementController {
         this.journalService = journalService;
         this.journalServiceImpl = journalServiceImpl;
         this.auditService = auditService;
-        this.mouvement= mouvement;
+        this.soldeValidationService = soldeValidationService;
     }
 
     @GetMapping("/{transactionId}")
@@ -230,12 +231,24 @@ public class MouvementController {
                     throw new UnauthorizedAgencyAccessException("Client n'appartient pas à votre agence");
                 }
 
-                // ✅ Le DateTimeService est déjà utilisé dans MouvementServiceImpl
                 Mouvement mouvement = mouvementServiceImpl.enregistrerEpargne(client, request.getMontant(), null);
                 MouvementCommissionDTO responseDto = mouvementMapper.toCommissionDto(mouvement);
 
                 log.info("✅ Épargne enregistrée avec succès: ID={}, Client={}, Montant={}",
                         mouvement.getId(), client.getNom(), request.getMontant());
+
+                // Enregistrer l'audit après la création
+                auditService.logUserActivity(
+                        "EPARGNE",
+                        "MOUVEMENT",
+                        mouvement.getId(),
+                        null,
+                        Map.of(
+                                "clientId", request.getClientId(),
+                                "montant", request.getMontant(),
+                                "collecteurId", request.getCollecteurId()
+                        )
+                );
 
                 return ResponseEntity.ok(
                         ApiResponse.success(responseDto, "Opération d'épargne enregistrée avec succès")
@@ -244,24 +257,12 @@ public class MouvementController {
                 log.error("❌ Erreur lors de l'enregistrement de l'épargne", e);
                 status.setRollbackOnly();
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                        .body(ApiResponse.error("EPARGNE_ERROR", "Erreur lors de l'enregistrement de l'épargne: " + e.getMessage()));
+                        .body(ApiResponse.<MouvementCommissionDTO>error("EPARGNE_ERROR",
+                                "Erreur lors de l'enregistrement de l'épargne: " + e.getMessage()));
             }
         });
-
-        auditService.logUserActivity(
-                "EPARGNE",
-                "MOUVEMENT",
-                mouvement.getId(),
-                null, // pas d'ancienne valeur
-                Map.of(
-                        "clientId", request.getClientId(),
-                        "montant", request.getMontant(),
-                        "collecteurId", request.getCollecteurId()
-                )
-        );
-
-        return response;
     }
+
 
     @PostMapping("/retrait")
     @PreAuthorize("@securityService.canManageClient(authentication, #request.clientId)")
@@ -286,7 +287,8 @@ public class MouvementController {
             );
 
             return ResponseEntity.badRequest()
-                    .body(ApiResponse.error(validation.getErrorCode(), validation.getMessage()));
+                    .body(ApiResponse.<MouvementCommissionDTO>error(validation.getErrorCode(),
+                            validation.getMessage()));
         }
 
         return transactionService.executeInTransaction(status -> {
@@ -303,7 +305,6 @@ public class MouvementController {
                     throw new UnauthorizedAgencyAccessException("Client n'appartient pas à votre agence");
                 }
 
-                // ✅ Le DateTimeService est déjà utilisé dans MouvementServiceImpl
                 Mouvement mouvement = mouvementServiceImpl.enregistrerRetrait(client, request.getMontant(), null);
                 MouvementCommissionDTO responseDto = mouvementMapper.toCommissionDto(mouvement);
 
@@ -317,11 +318,10 @@ public class MouvementController {
                 log.error("❌ Erreur lors de l'enregistrement du retrait", e);
                 status.setRollbackOnly();
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                        .body(ApiResponse.error("RETRAIT_ERROR", "Erreur lors de l'enregistrement du retrait: " + e.getMessage()));
+                        .body(ApiResponse.<MouvementCommissionDTO>error("RETRAIT_ERROR",
+                                "Erreur lors de l'enregistrement du retrait: " + e.getMessage()));
             }
         });
-
-        return response;
     }
 
     @GetMapping("/journal/{journalId}")

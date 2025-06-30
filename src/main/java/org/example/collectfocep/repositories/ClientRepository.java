@@ -368,4 +368,17 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
     @Query("SELECT COUNT(c) FROM Client c WHERE c.collecteur.id = :collecteurId AND c.valide = :valide")
     Long countByCollecteurIdAndValide(@Param("collecteurId") Long collecteurId, @Param("valide") boolean valide);
 
+    /**
+     * Recherche des clients dans un rayon géographique
+     * Utilise la formule de distance euclidienne simplifiée (approximation)
+     * 111 km = 1 degré de latitude/longitude (approximation)
+     */
+    @Query("SELECT c FROM Client c WHERE " +
+            "c.latitude IS NOT NULL AND c.longitude IS NOT NULL AND " +
+            "(SQRT(POWER(c.latitude - :latitude, 2) + POWER(c.longitude - :longitude, 2)) * 111) <= :radiusKm " +
+            "ORDER BY SQRT(POWER(c.latitude - :latitude, 2) + POWER(c.longitude - :longitude, 2))")
+    List<Client> findClientsInRadius(@Param("latitude") Double latitude,
+                                     @Param("longitude") Double longitude,
+                                     @Param("radiusKm") Double radiusKm);
+
 }

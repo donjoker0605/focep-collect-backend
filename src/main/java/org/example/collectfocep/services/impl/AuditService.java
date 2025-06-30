@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.example.collectfocep.dto.AuditLogRequest;
 import org.example.collectfocep.dto.JournalActiviteDTO;
 import org.example.collectfocep.entities.AuditLog;
 import org.example.collectfocep.repositories.AuditLogRepository;
@@ -203,6 +204,31 @@ public class AuditService {
             case "EPARGNE": return "Épargne";
             case "RETRAIT": return "Retrait";
             default: return action;
+        }
+    }
+
+    /**
+     * Méthode logActivity pour compatibilité avec AuditLogRequest
+     */
+    public void logActivity(AuditLogRequest request) {
+        try {
+            Map<String, Object> context = new HashMap<>();
+            context.put("userId", request.getUserId());
+            context.put("userType", request.getUserType());
+            context.put("ipAddress", request.getIpAddress());
+            context.put("userAgent", request.getUserAgent());
+            context.put("agenceId", request.getAgenceId());
+
+            logActivityWithContext(
+                    request.getAction(),
+                    request.getEntityType(),
+                    request.getEntityId(),
+                    context
+            );
+
+            log.info("Activité enregistrée: {}", request);
+        } catch (Exception e) {
+            log.error("Erreur lors de l'enregistrement de l'activité: {}", e.getMessage());
         }
     }
 

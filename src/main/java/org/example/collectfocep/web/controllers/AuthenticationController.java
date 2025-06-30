@@ -1,5 +1,6 @@
 package org.example.collectfocep.web.controllers;
 
+import jakarta.servlet.http.HttpServletRequest;
 import org.example.collectfocep.dto.LoginRequest;
 import org.example.collectfocep.entities.Utilisateur;
 import org.example.collectfocep.security.jwt.JwtUtil;
@@ -31,10 +32,10 @@ public class AuthenticationController {
     private AuditService auditService;
 
     @Autowired
-    private Utilisateur utilisateur;
+    private JwtUtil jwtUtil;
 
     @Autowired
-    private JwtUtil jwtUtil;
+    private HttpServletRequest request;
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@Valid @RequestBody LoginRequest loginRequest) {
@@ -82,6 +83,11 @@ public class AuthenticationController {
             response.put("role", role);
             response.put("message", "Connexion réussie");
 
+            // Enregistrer l'audit de connexion
+            String deviceInfo = request.getHeader("User-Agent");
+            auditService.logAction("LOGIN", "AUTHENTICATION",
+                    null, "Connexion réussie depuis " + deviceInfo);
+
             return ResponseEntity.ok(response);
 
         } catch (BadCredentialsException ex) {
@@ -127,29 +133,22 @@ public class AuthenticationController {
             errorResponse.put("message", "Une erreur inattendue s'est produite");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
-
-        if (response.isSuccessful()) {
-            auditService.logAction("LOGIN", "AUTHENTICATION",
-                    utilisateur.getId(), "Connexion réussie depuis " + request.getDeviceInfo());
-        }
-
-        return response;
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<?> logout() {
+    public ResponseEntity<?> logout(Authentication authentication) {
         log.info("👋 Demande de déconnexion reçue");
 
         Map<String, String> response = new HashMap<>();
         response.put("message", "Déconnexion réussie");
         response.put("status", "success");
 
+        if (authentication != null) {
+            auditService.logAction("LOGOUT", "AUTHENTICATION",
+                    null, "Déconnexion utilisateur: " + authentication.getName());
+        }
+
         return ResponseEntity.ok(response);
-
-        auditService.logAction("LOGOUT", "AUTHENTICATION",
-                null, "Déconnexion utilisateur: " + authentication.getName());
-
-        return response;
     }
 
     @GetMapping("/verify")

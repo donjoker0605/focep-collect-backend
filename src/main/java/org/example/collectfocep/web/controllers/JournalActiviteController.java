@@ -34,11 +34,19 @@ public class JournalActiviteController {
 
         log.info("Récupération des activités utilisateur {} pour le {}", userId, date);
 
-        Page<JournalActiviteDTO> activities = auditService.getActivitesByUser(userId, date, pageable);
+        // CORRECTION: Convertir userId en String pour correspondre à la signature de getActivitesByUser
+        String username = getUsernameFromUserId(userId);
+        Page<JournalActiviteDTO> activities = auditService.getActivitesByUser(username, date, pageable);
 
         return ResponseEntity.ok(
                 ApiResponse.success(activities, "Activités récupérées avec succès")
         );
+    }
+
+    private String getUsernameFromUserId(Long userId) {
+        // Implémenter cette méthode pour récupérer le username à partir de l'userId
+        // Par exemple, en utilisant un service utilisateur ou en interrogeant la base de données
+        return "user_" + userId;
     }
 
     @GetMapping("/agence/{agenceId}")
