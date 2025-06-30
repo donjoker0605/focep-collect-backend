@@ -5,6 +5,7 @@ import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -64,10 +65,10 @@ public class Client {
     private Agence agence;
 
     @Column(name = "latitude", precision = 10, scale = 8)
-    private Double latitude;
+    private BigDecimal latitude;
 
     @Column(name = "longitude", precision = 11, scale = 8)
-    private Double longitude;
+    private BigDecimal longitude;
 
     @Column(name = "coordonnees_saisie_manuelle")
     @Builder.Default

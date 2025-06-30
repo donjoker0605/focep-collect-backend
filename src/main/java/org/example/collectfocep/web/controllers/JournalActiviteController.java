@@ -18,7 +18,7 @@ import java.time.LocalDate;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/audit")
+@RequestMapping("/api/activities")
 @RequiredArgsConstructor
 @Slf4j
 public class JournalActiviteController {

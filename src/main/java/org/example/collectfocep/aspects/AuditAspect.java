@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.AfterReturning;
 import org.aspectj.lang.annotation.Around;
@@ -97,27 +98,21 @@ public class AuditAspect {
             pointcut = "@annotation(logActivity)",
             returning = "result"
     )
-    public void logActivityNew(ProceedingJoinPoint joinPoint, LogActivity logActivity, Object result) {
+    public void logActivityNew(JoinPoint joinPoint, LogActivity logActivity, Object result) {
         try {
-            // Utiliser le service d'audit amélioré
             Map<String, Object> context = new HashMap<>();
-
-            // Ajouter les arguments de la méthode
             context.put("methodName", joinPoint.getSignature().getName());
             context.put("args", captureMethodArguments(joinPoint.getArgs()));
 
-            // Ajouter le résultat si disponible
             if (result != null) {
                 context.put("result", extractResultInfo(result));
             }
 
-            // Extraire l'ID de l'entité
             Long entityId = extractEntityIdFromResult(result);
             if (entityId == null) {
                 entityId = extractEntityId(joinPoint.getArgs());
             }
 
-            // Utiliser la méthode enrichie du service
             auditService.logActivityWithContext(
                     logActivity.action(),
                     logActivity.entityType(),
