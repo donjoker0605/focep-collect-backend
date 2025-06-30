@@ -8,6 +8,7 @@ import org.example.collectfocep.dto.LocationUpdateRequest;
 import org.example.collectfocep.entities.Client;
 import org.example.collectfocep.exceptions.ResourceNotFoundException;
 import org.example.collectfocep.repositories.ClientRepository;
+import org.example.collectfocep.services.impl.AuditService;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

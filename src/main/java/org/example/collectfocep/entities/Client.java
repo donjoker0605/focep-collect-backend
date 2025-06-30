@@ -70,6 +70,7 @@ public class Client {
     private Double longitude;
 
     @Column(name = "coordonnees_saisie_manuelle")
+    @Builder.Default
     private Boolean coordonneesSaisieManuelle = false;
 
     @Column(name = "adresse_complete")

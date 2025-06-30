@@ -1,24 +1,26 @@
 package org.example.collectfocep.config;
 
-import io.micrometer.core.instrument.Tag;
+import io.swagger.v3.oas.models.OpenAPI;
+import io.swagger.v3.oas.models.info.Info;
+import io.swagger.v3.oas.models.tags.Tag;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.util.List;
+
 @Configuration
-@EnableSwagger2
 public class SwaggerConfig {
 
     @Bean
-    public Docket api() {
-        return new Docket(DocumentationType.SWAGGER_2)
-                .select()
-                .apis(RequestHandlerSelectors.basePackage("org.example.collectfocep"))
-                .paths(PathSelectors.any())
-                .build()
-                .apiInfo(apiInfo())
-                .tags(
-                        new Tag("Audit", "API de consultation du journal d'activité"),
-                        // Autres tags...
-                );
+    public OpenAPI customOpenAPI() {
+        return new OpenAPI()
+                .info(new Info()
+                        .title("CollectFoCEP API")
+                        .version("1.0")
+                        .description("Documentation de l'API CollectFoCEP"))
+                .tags(List.of(
+                        new Tag().name("Audit").description("Journal d'activité")
+                        // Ajoutez d'autres tags ici
+                ));
     }
 }

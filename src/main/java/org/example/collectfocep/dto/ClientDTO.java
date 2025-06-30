@@ -33,4 +33,10 @@ public class ClientDTO {
     private String numeroCompte;
     private LocalDateTime dateCreation;
     private LocalDateTime dateModification;
+
+    private Double latitude;
+    private Double longitude;
+    private Boolean coordonneesSaisieManuelle;
+    private String adresseComplete;
+    private LocalDateTime dateMajCoordonnees;
 }

@@ -10,6 +10,7 @@ import lombok.*;
 @NoArgsConstructor
 @AllArgsConstructor
 public class LocationUpdateRequest {
+
     @NotNull(message = "La latitude est requise")
     @DecimalMin(value = "-90.0", message = "Latitude invalide")
     @DecimalMax(value = "90.0", message = "Latitude invalide")
@@ -20,6 +21,8 @@ public class LocationUpdateRequest {
     @DecimalMax(value = "180.0", message = "Longitude invalide")
     private Double longitude;
 
+    @Builder.Default
     private Boolean saisieManuelle = false;
+
     private String adresseComplete;
 }
