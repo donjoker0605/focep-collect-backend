@@ -1,6 +1,9 @@
 package org.example.collectfocep.dto;
 
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 @Data
 @Builder
@@ -9,6 +12,7 @@ import lombok.*;
 public class AuditLogRequest {
     private Long userId;
     private String userType;
+    private String username;
     private String action;
     private String entityType;
     private Long entityId;
@@ -16,4 +20,7 @@ public class AuditLogRequest {
     private String ipAddress;
     private String userAgent;
     private Long agenceId;
+    private Boolean success;
+    private String errorMessage;
+    private Long durationMs;
 }

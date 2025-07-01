@@ -53,7 +53,7 @@ public class ClientController {
     // Endpoint pour créer un client
     @PostMapping
     @PreAuthorize("@securityService.canManageCollecteur(authentication, #clientDTO.collecteurId)")
-    @Audited(action = "CREATE", entityType = "Client")
+    @LogActivity(action = "CREATE_CLIENT", entityType = "CLIENT", description = "Création d'un nouveau client")
     public ResponseEntity<ApiResponse<ClientDTO>> createClient(@Valid @RequestBody ClientDTO clientDTO) {
         log.info("Création d'un nouveau client: {}", clientDTO.getNumeroCni());
 
@@ -107,7 +107,7 @@ public class ClientController {
     // Endpoint pour mettre à jour un client
     @PutMapping("/{id}")
     @PreAuthorize("@securityService.canManageClient(authentication, #id)")
-    @LogActivity(action = "UPDATE_CLIENT", entityType = "Client")
+    @LogActivity(action = "MODIFY_CLIENT", entityType = "CLIENT", description = "Modification d'un client")
     public ResponseEntity<ApiResponse<ClientDTO>> updateClient(
             @PathVariable Long id,
             @Valid @RequestBody ClientDTO clientDTO) {
