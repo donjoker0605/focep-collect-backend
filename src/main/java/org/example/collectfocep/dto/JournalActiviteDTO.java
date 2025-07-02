@@ -30,7 +30,8 @@ public class JournalActiviteDTO {
     private Long durationMs;
 
     // Champs calculés pour l'affichage
-    private String timeAgo; // "Il y a 2 heures"
-    private String actionIcon; // Icône pour l'action
-    private String actionColor; // Couleur pour l'action
+    private String timeAgo;
+    private String actionIcon;
+    private String actionColor;
+    private String description;
 }

@@ -212,7 +212,7 @@ public class MouvementController {
 
     @PostMapping("/epargne")
     @PreAuthorize("@securityService.canManageClient(authentication, #request.clientId)")
-    @LogActivity(action = "EPARGNE", entityType = "MOUVEMENT")
+    @LogActivity(action = "TRANSACTION_EPARGNE", entityType = "MOUVEMENT")
     public ResponseEntity<ApiResponse<MouvementCommissionDTO>> effectuerEpargne(@Valid @RequestBody EpargneRequest request) {
         log.info("💰 Traitement d'une opération d'épargne pour le client: {} - Montant: {}",
                 request.getClientId(), request.getMontant());
@@ -237,18 +237,6 @@ public class MouvementController {
                 log.info("✅ Épargne enregistrée avec succès: ID={}, Client={}, Montant={}",
                         mouvement.getId(), client.getNom(), request.getMontant());
 
-                // Enregistrer l'audit après la création
-                auditService.logUserActivity(
-                        "EPARGNE",
-                        "MOUVEMENT",
-                        mouvement.getId(),
-                        null,
-                        Map.of(
-                                "clientId", request.getClientId(),
-                                "montant", request.getMontant(),
-                                "collecteurId", request.getCollecteurId()
-                        )
-                );
 
                 return ResponseEntity.ok(
                         ApiResponse.success(responseDto, "Opération d'épargne enregistrée avec succès")
@@ -266,7 +254,7 @@ public class MouvementController {
 
     @PostMapping("/retrait")
     @PreAuthorize("@securityService.canManageClient(authentication, #request.clientId)")
-    @LogActivity(action = "RETRAIT", entityType = "MOUVEMENT")
+    @LogActivity(action = "TRANSACTION_RETRAIT", entityType = "MOUVEMENT")
     public ResponseEntity<ApiResponse<MouvementCommissionDTO>> effectuerRetrait(@Valid @RequestBody RetraitRequest request) {
         log.info("💸 Traitement d'une opération de retrait pour le client: {} - Montant: {}",
                 request.getClientId(), request.getMontant());

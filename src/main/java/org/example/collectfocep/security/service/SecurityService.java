@@ -808,4 +808,128 @@ public class SecurityService {
         }
     }
 
+    /**
+     * NOUVELLE MÉTHODE : Vérifie si l'utilisateur peut accéder aux activités d'un utilisateur
+     * Logique : Un collecteur peut voir ses propres activités, un admin peut voir les activités
+     * des collecteurs de son agence, un super admin peut tout voir
+     */
+    @Cacheable(key = "{'user-activities-access', #authentication.name, #userId}")
+    public boolean canAccessUserActivities(Authentication authentication, Long userId) {
+        try {
+            if (authentication == null || userId == null) {
+                log.warn("Authentication ou userId null lors de la vérification d'accès aux activités utilisateur");
+                return false;
+            }
+
+            String userEmail = authentication.getName();
+            Collection<? extends GrantedAuthority> authorities = authentication.getAuthorities();
+
+            log.debug("Vérification d'accès aux activités de l'utilisateur {} pour {}", userId, userEmail);
+
+            // SUPER_ADMIN peut voir toutes les activités
+            if (hasRole(authorities, RoleConfig.SUPER_ADMIN)) {
+                log.debug("Accès autorisé pour Super Admin: {}", userEmail);
+                return true;
+            }
+
+            // COLLECTEUR peut voir ses propres activités
+            if (hasRole(authorities, RoleConfig.COLLECTEUR)) {
+                Long currentUserId = getCurrentUserId(authentication);
+                boolean isOwnActivities = currentUserId != null && currentUserId.equals(userId);
+                log.debug("Collecteur {} accès à ses activités (userId={}): {}",
+                        userEmail, userId, isOwnActivities);
+                return isOwnActivities;
+            }
+
+            // ADMIN peut voir les activités des collecteurs de son agence
+            if (hasRole(authorities, RoleConfig.ADMIN)) {
+                return canAdminAccessUserActivities(userEmail, userId);
+            }
+
+            log.warn("Tentative d'accès non autorisée aux activités utilisateur {} par {}", userId, userEmail);
+            return false;
+
+        } catch (Exception e) {
+            log.error("Erreur lors de la vérification d'accès aux activités utilisateur {}: {}",
+                    userId, e.getMessage(), e);
+            return false;
+        }
+    }
+
+    /**
+     * NOUVELLE MÉTHODE : Vérifie si l'utilisateur peut accéder aux activités d'une agence
+     */
+    @Cacheable(key = "{'agence-activities-access', #authentication.name, #agenceId}")
+    public boolean canAccessAgenceActivities(Authentication authentication, Long agenceId) {
+        try {
+            if (authentication == null || agenceId == null) {
+                log.warn("Authentication ou agenceId null lors de la vérification d'accès aux activités agence");
+                return false;
+            }
+
+            String userEmail = authentication.getName();
+            Collection<? extends GrantedAuthority> authorities = authentication.getAuthorities();
+
+            log.debug("Vérification d'accès aux activités de l'agence {} pour {}", agenceId, userEmail);
+
+            // SUPER_ADMIN peut voir toutes les activités
+            if (hasRole(authorities, RoleConfig.SUPER_ADMIN)) {
+                log.debug("Accès autorisé pour Super Admin: {}", userEmail);
+                return true;
+            }
+
+            // ADMIN peut voir les activités de son agence
+            if (hasRole(authorities, RoleConfig.ADMIN)) {
+                boolean hasAccess = verifyAdminAgenceAccess(userEmail, agenceId);
+                log.debug("Admin {} accès aux activités agence {}: {}", userEmail, agenceId, hasAccess);
+                return hasAccess;
+            }
+
+            // COLLECTEUR ne peut PAS voir les activités de l'agence (seulement les siennes)
+            log.debug("Collecteur {} n'a pas accès aux activités de l'agence {}", userEmail, agenceId);
+            return false;
+
+        } catch (Exception e) {
+            log.error("Erreur lors de la vérification d'accès aux activités agence {}: {}",
+                    agenceId, e.getMessage(), e);
+            return false;
+        }
+    }
+
+    /**
+     * MÉTHODE HELPER : Vérifie si un admin peut accéder aux activités d'un utilisateur
+     */
+    private boolean canAdminAccessUserActivities(String adminEmail, Long userId) {
+        try {
+            // Récupérer l'agence de l'admin
+            Optional<Admin> adminOpt = adminRepository.findByAdresseMailWithAgence(adminEmail);
+            if (adminOpt.isEmpty()) {
+                log.debug("Admin non trouvé: {}", adminEmail);
+                return false;
+            }
+
+            Admin admin = adminOpt.get();
+            Long adminAgenceId = admin.getAgence().getId();
+
+            // Vérifier si l'utilisateur ciblé est un collecteur de cette agence
+            Optional<Collecteur> collecteurOpt = collecteurRepository.findByIdWithAgence(userId);
+            if (collecteurOpt.isEmpty()) {
+                log.debug("Collecteur non trouvé pour userId: {}", userId);
+                return false;
+            }
+
+            Collecteur collecteur = collecteurOpt.get();
+            boolean sameAgence = adminAgenceId.equals(collecteur.getAgence().getId());
+
+            log.debug("Admin {} (agence {}) accès aux activités collecteur {} (agence {}): {}",
+                    adminEmail, adminAgenceId, userId,
+                    collecteur.getAgence().getId(), sameAgence);
+
+            return sameAgence;
+
+        } catch (Exception e) {
+            log.error("Erreur lors de la vérification admin-collecteur: {}", e.getMessage(), e);
+            return false;
+        }
+    }
 }

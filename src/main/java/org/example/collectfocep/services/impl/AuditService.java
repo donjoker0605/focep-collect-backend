@@ -8,6 +8,7 @@ import org.example.collectfocep.dto.AuditLogRequest;
 import org.example.collectfocep.dto.JournalActiviteDTO;
 import org.example.collectfocep.entities.AuditLog;
 import org.example.collectfocep.repositories.AuditLogRepository;
+import org.example.collectfocep.util.TimeUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -189,7 +190,17 @@ public class AuditService {
                 .agenceId(getAgenceIdFromContext(log))
                 .actionDisplayName(getActionDisplayName(log.getAction()))
                 .description(buildDescription(log))
+                .timeAgo(TimeUtils.getTimeAgo(log.getTimestamp()))
                 .build();
+    }
+
+    // Méthode pour construire la description à partir d'AuditLog
+    private String buildDescription(AuditLog log) {
+        return String.format("%s effectuée sur %s #%d",
+                getActionDisplayName(log.getAction()),
+                log.getEntityType() != null ? log.getEntityType() : "système",
+                log.getEntityId() != null ? log.getEntityId() : 0
+        );
     }
 
     private String getActionDisplayName(String action) {
@@ -232,13 +243,6 @@ public class AuditService {
         }
     }
 
-    private String buildDescription(AuditLog log) {
-        return String.format("%s effectuée sur %s #%d",
-                getActionDisplayName(log.getAction()),
-                log.getEntityType() != null ? log.getEntityType() : "système",
-                log.getEntityId() != null ? log.getEntityId() : 0
-        );
-    }
 
     // Méthodes utilitaires - à adapter selon votre modèle
     private Long getUserIdFromUsername(String username) {

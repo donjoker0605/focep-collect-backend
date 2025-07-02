@@ -28,22 +28,22 @@ public class JournalActivite {
     private Long userId;
 
     @Column(name = "user_type", nullable = false, length = 20)
-    private String userType; // COLLECTEUR, ADMIN, SUPER_ADMIN
+    private String userType;
 
     @Column(name = "username", length = 100)
     private String username;
 
     @Column(name = "action", nullable = false, length = 50)
-    private String action; // CREATE_CLIENT, MODIFY_CLIENT, LOGIN, LOGOUT, TRANSACTION
+    private String action;
 
     @Column(name = "entity_type", length = 50)
-    private String entityType; // CLIENT, MOUVEMENT, COMMISSION, COLLECTEUR
+    private String entityType;
 
     @Column(name = "entity_id")
     private Long entityId;
 
     @Column(name = "details", columnDefinition = "TEXT")
-    private String details; // JSON des données modifiées
+    private String details;
 
     @Column(name = "ip_address", length = 45)
     private String ipAddress;
@@ -55,8 +55,9 @@ public class JournalActivite {
     private LocalDateTime timestamp;
 
     @Column(name = "agence_id")
-    private Long agenceId; // Pour filtrage par agence
+    private Long agenceId;
 
+    @Builder.Default
     @Column(name = "success", nullable = false)
     private Boolean success = true;
 
@@ -64,7 +65,7 @@ public class JournalActivite {
     private String errorMessage;
 
     @Column(name = "duration_ms")
-    private Long durationMs; // Temps d'exécution en millisecondes
+    private Long durationMs;
 
     @PrePersist
     private void prePersist() {

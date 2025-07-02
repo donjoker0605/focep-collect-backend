@@ -9,6 +9,7 @@ import org.example.collectfocep.dto.JournalActiviteDTO;
 import org.example.collectfocep.entities.JournalActivite;
 import org.example.collectfocep.repositories.JournalActiviteRepository;
 import org.example.collectfocep.services.interfaces.JournalActiviteService;
+import org.example.collectfocep.util.TimeUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -174,7 +175,17 @@ public class JournalActiviteServiceImpl implements JournalActiviteService {
                 .timeAgo(TimeUtils.getTimeAgo(activite.getTimestamp()))
                 .actionIcon(getActionIcon(activite.getAction()))
                 .actionColor(getActionColor(activite.getAction()))
+                .description(buildDescription(activite))
                 .build();
+    }
+
+    // Méthode pour construire la description
+    private String buildDescription(JournalActivite activite) {
+        return String.format("%s effectuée sur %s #%d",
+                getActionDisplayName(activite.getAction()),
+                activite.getEntityType() != null ? activite.getEntityType() : "système",
+                activite.getEntityId() != null ? activite.getEntityId() : 0
+        );
     }
 
     private String getActionDisplayName(String action) {
