@@ -136,7 +136,7 @@ public class MouvementController {
             PageRequest pageRequest = PageRequest.of(page, size, Sort.by("dateOperation").descending());
             Page<Mouvement> mouvements;
 
-            // ✅ UTILISATION DU DateTimeService pour les filtres de date
+            // UTILISATION DU DateTimeService pour les filtres de date
             if (dateDebut != null && dateFin != null) {
                 LocalDateTime startDateTime = dateTimeService.toStartOfDay(dateDebut);
                 LocalDateTime endDateTime = dateTimeService.toEndOfDay(dateFin);
@@ -185,14 +185,14 @@ public class MouvementController {
         try {
             List<Mouvement> mouvements;
 
-            // ✅ UTILISATION DU DateTimeService pour les filtres de date
+            // UTILISATION DU DateTimeService pour les filtres de date
             if (dateDebut != null && dateFin != null) {
                 LocalDateTime startDateTime = dateTimeService.toStartOfDay(dateDebut);
                 LocalDateTime endDateTime = dateTimeService.toEndOfDay(dateFin);
 
                 mouvements = mouvementRepository.findByClientIdAndPeriod(clientId, startDateTime, endDateTime);
             } else {
-                // ✅ CORRECTION: Utiliser une requête avec JOIN FETCH
+                // CORRECTION: Utiliser une requête avec JOIN FETCH
                 mouvements = mouvementRepository.findByClientIdWithAllRelations(clientId);
             }
 

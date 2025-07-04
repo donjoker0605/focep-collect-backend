@@ -3,11 +3,17 @@ package org.example.collectfocep.services;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.dto.ValidationResult;
+import org.example.collectfocep.dto.ActivityEvent;
 import org.example.collectfocep.repositories.MouvementRepository;
+import org.example.collectfocep.security.service.SecurityService;
+import org.example.collectfocep.services.impl.AdminNotificationService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.util.concurrent.CompletableFuture;
 
 @Service
 @RequiredArgsConstructor
@@ -16,32 +22,66 @@ public class SoldeCollecteurValidationService {
 
     private final MouvementRepository mouvementRepository;
 
+    @Autowired
+    private AdminNotificationService adminNotificationService;
+
+    @Autowired
+    private SecurityService securityService;
+
+
     public ValidationResult validateRetraitPossible(Long collecteurId, Double montantRetrait) {
-        log.info("Validation retrait: collecteur={}, montant={}", collecteurId, montantRetrait);
+        try {
+            log.debug("🔍 Validation retrait: collecteur={}, montant={}", collecteurId, montantRetrait);
 
-        // 1. Calculer le solde journalier du collecteur
-        Double soldeJournalier = calculateSoldeJournalierCollecteur(collecteurId);
-        log.info("Solde journalier collecteur: {}", soldeJournalier);
+            // 1. Ton code existant de calcul solde
+            Double soldeJournalier = calculateSoldeJournalier(collecteurId);
 
-        // 2. Vérifier si le collecteur a assez d'espèces
-        if (montantRetrait > soldeJournalier) {
-            return ValidationResult.failure(
-                    "SOLDE_COLLECTEUR_INSUFFISANT",
-                    String.format("Solde disponible: %.2f FCFA, Demandé: %.2f FCFA",
-                            soldeJournalier, montantRetrait)
-            );
+            // 2. Ton code existant de vérification épargne
+            if (!hasEpargneAujourdhui(collecteurId)) {
+                return ValidationResult.error(
+                        "AUCUNE_EPARGNE_JOURNEE",
+                        "Vous devez effectuer au moins une épargne avant tout retrait"
+                );
+            }
+
+            // 3. Ton code existant de vérification solde
+            if (montantRetrait > soldeJournalier) {
+
+                // Déclencher notification solde négatif si applicable
+                Double soldeApresRetrait = soldeJournalier - montantRetrait;
+                if (soldeApresRetrait < 0) {
+                    // Notification asynchrone pour ne pas impacter performance
+                    CompletableFuture.runAsync(() -> {
+                        try {
+                            Long agenceId = securityService.getCurrentUserAgenceId();
+                            ActivityEvent event = ActivityEvent.builder()
+                                    .type("SOLDE_COLLECTEUR_CHECK")
+                                    .collecteurId(collecteurId)
+                                    .solde(soldeApresRetrait)
+                                    .agenceId(agenceId)
+                                    .timestamp(LocalDateTime.now())
+                                    .build();
+
+                            adminNotificationService.evaluateAndNotify(event);
+                        } catch (Exception e) {
+                            log.error("❌ Erreur notification solde: {}", e.getMessage());
+                        }
+                    });
+                }
+
+                return ValidationResult.error(
+                        "SOLDE_COLLECTEUR_INSUFFISANT",
+                        String.format("Solde insuffisant. Disponible: %,.0f FCFA, Demandé: %,.0f FCFA",
+                                soldeJournalier, montantRetrait)
+                );
+            }
+
+            return ValidationResult.success();
+
+        } catch (Exception e) {
+            log.error("❌ Erreur validation retrait: {}", e.getMessage(), e);
+            return ValidationResult.error("VALIDATION_ERROR", "Erreur lors de la validation");
         }
-
-        // 3. Vérifier si le collecteur a fait au moins une épargne aujourd'hui
-        boolean hasEpargneToday = hasEpargneAujourdhui(collecteurId);
-        if (!hasEpargneToday) {
-            return ValidationResult.failure(
-                    "AUCUNE_EPARGNE_JOURNEE",
-                    "Vous devez effectuer au moins une épargne avant tout retrait"
-            );
-        }
-
-        return ValidationResult.success();
     }
 
     private Double calculateSoldeJournalierCollecteur(Long collecteurId) {
