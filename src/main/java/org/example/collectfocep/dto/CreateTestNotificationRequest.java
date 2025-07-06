@@ -1,21 +1,21 @@
 package org.example.collectfocep.dto;
 
-import lombok.Builder;
+import jakarta.validation.constraints.NotNull;
+import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 import org.example.collectfocep.entities.enums.NotificationType;
 import org.example.collectfocep.entities.enums.Priority;
 
 @Data
-@Builder
-public class NotificationCritique {
+@NoArgsConstructor
+@AllArgsConstructor
+public class CreateTestNotificationRequest {
+    @NotNull
     private NotificationType type;
+    @NotNull
     private Priority priority;
     private String title;
     private String message;
-    private String data;
-
-    public boolean isCritical() {
-        return Priority.CRITIQUE.equals(this.priority);
-    }
+    private Long collecteurId;
 }
-

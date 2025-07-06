@@ -23,7 +23,10 @@ public class CacheConfig {
                 new ConcurrentMapCache("journal-actuel"),
                 new ConcurrentMapCache("journaux"),
                 new ConcurrentMapCache("dashboard-data"),
-                new ConcurrentMapCache("client-stafs")
+                new ConcurrentMapCache("client-stafs"),
+                new ConcurrentMapCache("admin-activities"),
+                new ConcurrentMapCache("admin-dashboard"),
+                new ConcurrentMapCache("admin-notifications")
         ));
         return cacheManager;
     }

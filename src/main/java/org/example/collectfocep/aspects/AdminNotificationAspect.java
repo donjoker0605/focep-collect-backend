@@ -5,13 +5,11 @@ import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.annotation.AfterReturning;
 import org.aspectj.lang.annotation.Aspect;
 import org.example.collectfocep.dto.*;
-import org.example.collectfocep.entities.*;
-import org.example.collectfocep.services.impl.AdminNotificationService;
 import org.example.collectfocep.security.service.SecurityService;
+import org.example.collectfocep.services.impl.AdminNotificationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
-import org.springframework.util.ReflectionUtils;
 
 import java.lang.reflect.Field;
 import java.time.LocalDateTime;
@@ -48,14 +46,13 @@ public class AdminNotificationAspect {
 
                     // Créer événement de notification asynchrone
                     CompletableFuture.runAsync(() -> {
-                        ActivityEvent event = ActivityEvent.builder()
-                                .type("TRANSACTION_RETRAIT")
-                                .collecteurId(request.getCollecteurId())
-                                .entityId(mouvement.getId())
-                                .montant(request.getMontant())
-                                .agenceId(getCurrentUserAgenceId())
-                                .timestamp(LocalDateTime.now())
-                                .build();
+                        ActivityEvent event = new ActivityEvent(); // ✅ UTILISER NEW au lieu de builder()
+                        event.setType("TRANSACTION_RETRAIT");
+                        event.setCollecteurId(request.getCollecteurId());
+                        event.setEntityId(mouvement.getId());
+                        event.setMontant(request.getMontant());
+                        event.setAgenceId(getCurrentUserAgenceId());
+                        event.setTimestamp(LocalDateTime.now());
 
                         adminNotificationService.evaluateAndNotify(event);
                     });
@@ -66,7 +63,7 @@ public class AdminNotificationAspect {
         }
     }
 
-    @AfterReturning(pointcut = "execution(* org.example.collectfocep.web.controllers.MouvementController.enregistrerEpargne(..))",
+    @AfterReturning(pointcut = "execution(* org.example.collectfocep.web.controllers.MouvementController.effectuerEpargne(..))",
             returning = "result")
     public void onEpargneEnregistree(JoinPoint joinPoint, Object result) {
         try {
@@ -80,14 +77,13 @@ public class AdminNotificationAspect {
                 if (mouvement != null) {
 
                     CompletableFuture.runAsync(() -> {
-                        ActivityEvent event = ActivityEvent.builder()
-                                .type("TRANSACTION_EPARGNE")
-                                .collecteurId(request.getCollecteurId())
-                                .entityId(mouvement.getId())
-                                .montant(request.getMontant())
-                                .agenceId(getCurrentUserAgenceId())
-                                .timestamp(LocalDateTime.now())
-                                .build();
+                        ActivityEvent event = new ActivityEvent(); // ✅ UTILISER NEW
+                        event.setType("TRANSACTION_EPARGNE");
+                        event.setCollecteurId(request.getCollecteurId());
+                        event.setEntityId(mouvement.getId());
+                        event.setMontant(request.getMontant());
+                        event.setAgenceId(getCurrentUserAgenceId());
+                        event.setTimestamp(LocalDateTime.now());
 
                         adminNotificationService.evaluateAndNotify(event);
                     });
@@ -111,13 +107,12 @@ public class AdminNotificationAspect {
             if (client != null) {
 
                 CompletableFuture.runAsync(() -> {
-                    ActivityEvent event = ActivityEvent.builder()
-                            .type("CREATE_CLIENT")
-                            .collecteurId(client.getCollecteurId())
-                            .entityId(client.getId())
-                            .agenceId(getCurrentUserAgenceId())
-                            .timestamp(LocalDateTime.now())
-                            .build();
+                    ActivityEvent event = new ActivityEvent(); // ✅ UTILISER NEW
+                    event.setType("CREATE_CLIENT");
+                    event.setCollecteurId(client.getCollecteurId());
+                    event.setEntityId(client.getId());
+                    event.setAgenceId(getCurrentUserAgenceId());
+                    event.setTimestamp(LocalDateTime.now());
 
                     adminNotificationService.evaluateAndNotify(event);
                 });
@@ -140,13 +135,12 @@ public class AdminNotificationAspect {
             if (collecteur != null) {
 
                 CompletableFuture.runAsync(() -> {
-                    ActivityEvent event = ActivityEvent.builder()
-                            .type("CREATE_COLLECTEUR")
-                            .collecteurId(collecteur.getId())
-                            .entityId(collecteur.getId())
-                            .agenceId(collecteur.getAgenceId())
-                            .timestamp(LocalDateTime.now())
-                            .build();
+                    ActivityEvent event = new ActivityEvent(); // ✅ UTILISER NEW
+                    event.setType("CREATE_COLLECTEUR");
+                    event.setCollecteurId(collecteur.getId());
+                    event.setEntityId(collecteur.getId());
+                    event.setAgenceId(collecteur.getAgenceId());
+                    event.setTimestamp(LocalDateTime.now());
 
                     adminNotificationService.evaluateAndNotify(event);
                 });
@@ -166,13 +160,12 @@ public class AdminNotificationAspect {
             if (collecteur != null) {
 
                 CompletableFuture.runAsync(() -> {
-                    ActivityEvent event = ActivityEvent.builder()
-                            .type("MODIFY_COLLECTEUR")
-                            .collecteurId(collecteur.getId())
-                            .entityId(collecteur.getId())
-                            .agenceId(collecteur.getAgenceId())
-                            .timestamp(LocalDateTime.now())
-                            .build();
+                    ActivityEvent event = new ActivityEvent(); // ✅ UTILISER NEW
+                    event.setType("MODIFY_COLLECTEUR");
+                    event.setCollecteurId(collecteur.getId());
+                    event.setEntityId(collecteur.getId());
+                    event.setAgenceId(collecteur.getAgenceId());
+                    event.setTimestamp(LocalDateTime.now());
 
                     adminNotificationService.evaluateAndNotify(event);
                 });

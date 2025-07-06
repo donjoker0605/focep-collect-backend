@@ -224,5 +224,6 @@ public interface CollecteurRepository extends JpaRepository<Collecteur, Long> {
             "AND c.dateModificationMontantMax < :cutoffDate")
     List<Collecteur> findLongInactiveCollecteurs(@Param("cutoffDate") LocalDateTime cutoffDate);
 
-    
+    @Query("SELECT c.id FROM Collecteur c WHERE c.agence.id = :agenceId")
+    List<Long> findIdsByAgenceId(@Param("agenceId") Long agenceId);
 }

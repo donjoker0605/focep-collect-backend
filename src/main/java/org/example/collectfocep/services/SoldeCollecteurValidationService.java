@@ -4,10 +4,13 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.dto.ValidationResult;
 import org.example.collectfocep.dto.ActivityEvent;
+import org.example.collectfocep.repositories.CollecteurRepository;
 import org.example.collectfocep.repositories.MouvementRepository;
 import org.example.collectfocep.security.service.SecurityService;
 import org.example.collectfocep.services.impl.AdminNotificationService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -21,6 +24,7 @@ import java.util.concurrent.CompletableFuture;
 public class SoldeCollecteurValidationService {
 
     private final MouvementRepository mouvementRepository;
+    private final CollecteurRepository collecteurRepository;
 
     @Autowired
     private AdminNotificationService adminNotificationService;
@@ -33,10 +37,10 @@ public class SoldeCollecteurValidationService {
         try {
             log.debug("🔍 Validation retrait: collecteur={}, montant={}", collecteurId, montantRetrait);
 
-            // 1. Ton code existant de calcul solde
-            Double soldeJournalier = calculateSoldeJournalier(collecteurId);
+            // 1. Calcul solde corrigé
+            Double soldeJournalier = calculateSoldeJournalierCollecteur(collecteurId); // ✅ CORRIGÉ NOM
 
-            // 2. Ton code existant de vérification épargne
+            // 2. Vérification épargne
             if (!hasEpargneAujourdhui(collecteurId)) {
                 return ValidationResult.error(
                         "AUCUNE_EPARGNE_JOURNEE",
@@ -44,7 +48,7 @@ public class SoldeCollecteurValidationService {
                 );
             }
 
-            // 3. Ton code existant de vérification solde
+            // 3. Vérification solde
             if (montantRetrait > soldeJournalier) {
 
                 // Déclencher notification solde négatif si applicable
@@ -53,14 +57,16 @@ public class SoldeCollecteurValidationService {
                     // Notification asynchrone pour ne pas impacter performance
                     CompletableFuture.runAsync(() -> {
                         try {
-                            Long agenceId = securityService.getCurrentUserAgenceId();
-                            ActivityEvent event = ActivityEvent.builder()
-                                    .type("SOLDE_COLLECTEUR_CHECK")
-                                    .collecteurId(collecteurId)
-                                    .solde(soldeApresRetrait)
-                                    .agenceId(agenceId)
-                                    .timestamp(LocalDateTime.now())
-                                    .build();
+                            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+                            Long agenceId = getAgenceIdFromCollecteur(collecteurId);
+
+                            //utiliser new ActivityEvent() + setters
+                            ActivityEvent event = new ActivityEvent();
+                            event.setType("SOLDE_COLLECTEUR_CHECK");
+                            event.setCollecteurId(collecteurId);
+                            event.setMontant(soldeApresRetrait);
+                            event.setAgenceId(agenceId);
+                            event.setTimestamp(LocalDateTime.now());
 
                             adminNotificationService.evaluateAndNotify(event);
                         } catch (Exception e) {
@@ -81,6 +87,17 @@ public class SoldeCollecteurValidationService {
         } catch (Exception e) {
             log.error("❌ Erreur validation retrait: {}", e.getMessage(), e);
             return ValidationResult.error("VALIDATION_ERROR", "Erreur lors de la validation");
+        }
+    }
+
+    private Long getAgenceIdFromCollecteur(Long collecteurId) {
+        try {
+            return collecteurRepository.findById(collecteurId)
+                    .map(collecteur -> collecteur.getAgence().getId())
+                    .orElse(null);
+        } catch (Exception e) {
+            log.warn("⚠️ Impossible de récupérer agenceId pour collecteur: {}", collecteurId);
+            return null;
         }
     }
 

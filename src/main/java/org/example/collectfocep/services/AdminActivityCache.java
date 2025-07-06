@@ -1,10 +1,13 @@
 package org.example.collectfocep.services;
 
-import jakarta.persistence.Cacheable;
+import org.springframework.cache.annotation.Cacheable;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.dto.ActivitySummary;
+import org.example.collectfocep.entities.JournalActivite;
+import org.example.collectfocep.repositories.AdminRepository;
+import org.example.collectfocep.repositories.CollecteurRepository;
 import org.example.collectfocep.repositories.JournalActiviteRepository;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -16,10 +19,12 @@ import java.util.stream.Collectors;
 
 @Component
 @Slf4j
+@RequiredArgsConstructor
 public class AdminActivityCache {
 
-    private final RedisTemplate<String, Object> redisTemplate;
     private final JournalActiviteRepository journalRepository;
+    private final AdminRepository adminRepository;
+    private final CollecteurRepository collecteurRepository;
 
     private static final String CACHE_PREFIX = "admin:activities:";
     private static final Duration CACHE_TTL = Duration.ofHours(2);
@@ -27,7 +32,7 @@ public class AdminActivityCache {
     /**
      * Cache des activités historiques (> 7 jours)
      */
-    @Cacheable(value = "admin-activities", key = "#adminId + ':' + #collecteurId + ':' + #date")
+    @Cacheable(value = "admin-activities", key = "#adminId + ':' + #collecteurId + ':' + #date") // ✅ MAINTENANT OK
     public List<ActivitySummary> getHistoricalActivities(Long adminId, Long collecteurId, LocalDate date) {
         log.info("📚 Chargement activités historiques depuis DB: admin={}, collecteur={}, date={}",
                 adminId, collecteurId, date);
@@ -35,7 +40,7 @@ public class AdminActivityCache {
         LocalDateTime startOfDay = date.atStartOfDay();
         LocalDateTime endOfDay = date.atTime(23, 59, 59);
 
-        return journalRepository.findByCollecteurAndDateRange(collecteurId, startOfDay, endOfDay)
+        return journalRepository.findByCollecteurIdAndTimestampBetween(collecteurId, startOfDay, endOfDay)
                 .stream()
                 .map(this::toSummary)
                 .collect(Collectors.toList());
@@ -64,5 +69,17 @@ public class AdminActivityCache {
         });
 
         log.info("✅ Cache pré-chargé avec succès");
+    }
+
+    /**
+     * Convertir JournalActivite en ActivitySummary
+     */
+    private ActivitySummary toSummary(JournalActivite journal) {
+        return ActivitySummary.builder()
+                .collecteurId(journal.getUserId())
+                .action(journal.getAction())
+                .timestamp(journal.getTimestamp())
+                .details(journal.getDetails())
+                .build();
     }
 }

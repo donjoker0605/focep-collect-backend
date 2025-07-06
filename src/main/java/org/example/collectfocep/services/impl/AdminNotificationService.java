@@ -1,71 +1,524 @@
 package org.example.collectfocep.services.impl;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.example.collectfocep.dto.ActivityEvent;
-import org.example.collectfocep.dto.ActivitySummary;
-import org.example.collectfocep.dto.AdminDashboardActivities;
-import org.example.collectfocep.dto.NotificationCritique;
+import org.example.collectfocep.dto.*;
 import org.example.collectfocep.entities.*;
 import org.example.collectfocep.entities.enums.NotificationType;
 import org.example.collectfocep.entities.enums.Priority;
 import org.example.collectfocep.repositories.*;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.example.collectfocep.services.interfaces.EmailService;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
 @Transactional
+@RequiredArgsConstructor
 public class AdminNotificationService {
 
     private final AdminNotificationRepository notificationRepository;
+    private final NotificationCooldownRepository cooldownRepository;
+    private final NotificationSettingsRepository settingsRepository;
     private final EmailService emailService;
     private final AdminRepository adminRepository;
     private final CollecteurRepository collecteurRepository;
     private final ClientRepository clientRepository;
     private final MouvementRepository mouvementRepository;
     private final JournalActiviteRepository journalActiviteRepository;
+    private final ObjectMapper objectMapper;
 
-    // CONFIGURATION SEUILS AMÉLIORÉE - maintenant configurable
+    // CONFIGURATION SEUILS
     private static final double SEUIL_TRANSACTION_CRITIQUE_DEFAULT = 100_000.0;
     private static final int SEUIL_INACTIVITE_HEURES = 24;
+    private static final int DEFAULT_COOLDOWN_MINUTES = 30;
 
-    // Circuit breaker pour éviter spam
-    private final Map<String, LocalDateTime> lastNotificationMap = new java.util.concurrent.ConcurrentHashMap<>();
-    private static final java.time.Duration NOTIFICATION_COOLDOWN = java.time.Duration.ofMinutes(5);
+    // ===================================================
+    // MÉTHODES PRINCIPALES DASHBOARD
+    // ===================================================
 
-    @Autowired
-    public AdminNotificationService(
-            AdminNotificationRepository notificationRepository,
-            EmailService emailService,
-            AdminRepository adminRepository,
-            CollecteurRepository collecteurRepository,
-            ClientRepository clientRepository,
-            MouvementRepository mouvementRepository,
-            JournalActiviteRepository journalActiviteRepository) {
-        this.notificationRepository = notificationRepository;
-        this.emailService = emailService;
-        this.adminRepository = adminRepository;
-        this.collecteurRepository = collecteurRepository;
-        this.clientRepository = clientRepository;
-        this.mouvementRepository = mouvementRepository;
-        this.journalActiviteRepository = journalActiviteRepository;
+    /**
+     * 📊 Dashboard principal des notifications
+     */
+    public NotificationDashboardDTO getDashboard(Long adminId) {
+        try {
+            log.debug("📊 Génération dashboard notifications: adminId={}", adminId);
+
+            // Statistiques
+            NotificationStatsDTO stats = getStats(adminId);
+
+            // Notifications récentes (dernières 10)
+            List<AdminNotificationDTO> recentNotifications = getAllNotificationsInternal(
+                    adminId, null, null, false,
+                    org.springframework.data.domain.PageRequest.of(0, 10)
+            ).getContent();
+
+            // Notifications critiques non lues
+            List<AdminNotificationDTO> criticalNotifications = getCriticalNotificationsDTO(adminId);
+
+            return NotificationDashboardDTO.builder()
+                    .stats(stats)
+                    .recentNotifications(recentNotifications)
+                    .criticalNotifications(criticalNotifications)
+                    .lastUpdate(LocalDateTime.now())
+                    .build();
+
+        } catch (Exception e) {
+            log.error("❌ Erreur génération dashboard: {}", e.getMessage(), e);
+            throw new RuntimeException("Erreur lors de la génération du dashboard", e);
+        }
     }
 
     /**
-     * MÉTHODE PRINCIPALE AMÉLIORÉE: Évaluer et créer notification si critique
+     * 📋 Récupérer toutes les notifications avec filtres et pagination
+     */
+    public Page<AdminNotificationDTO> getAllNotifications(Long adminId, NotificationType type,
+                                                          Priority priority, boolean unreadOnly,
+                                                          Pageable pageable) {
+        return getAllNotificationsInternal(adminId, type, priority, unreadOnly, pageable);
+    }
+
+    private Page<AdminNotificationDTO> getAllNotificationsInternal(Long adminId, NotificationType type,
+                                                                   Priority priority, boolean unreadOnly,
+                                                                   Pageable pageable) {
+        try {
+            log.debug("📋 Récupération notifications: adminId={}, type={}, priority={}, unreadOnly={}",
+                    adminId, type, priority, unreadOnly);
+
+            List<AdminNotification> allNotifications;
+
+            if (unreadOnly) {
+                allNotifications = notificationRepository.findUnreadByAdminId(adminId);
+            } else {
+                allNotifications = notificationRepository.findByAdminIdOrderByDateCreationDesc(adminId);
+            }
+
+            // Filtrer par type si spécifié
+            if (type != null) {
+                allNotifications = allNotifications.stream()
+                        .filter(n -> n.getType() == type)
+                        .collect(Collectors.toList());
+            }
+
+            // Filtrer par priorité si spécifiée
+            if (priority != null) {
+                allNotifications = allNotifications.stream()
+                        .filter(n -> n.getPriority() == priority)
+                        .collect(Collectors.toList());
+            }
+
+            // Convertir en DTO
+            List<AdminNotificationDTO> dtos = allNotifications.stream()
+                    .map(this::convertToDTO)
+                    .collect(Collectors.toList());
+
+            // Pagination manuelle
+            int start = (int) pageable.getOffset();
+            int end = Math.min(start + pageable.getPageSize(), dtos.size());
+
+            if (start >= dtos.size()) {
+                return new PageImpl<>(Collections.emptyList(), pageable, dtos.size());
+            }
+
+            List<AdminNotificationDTO> pageContent = dtos.subList(start, end);
+            return new PageImpl<>(pageContent, pageable, dtos.size());
+
+        } catch (Exception e) {
+            log.error("❌ Erreur récupération notifications: {}", e.getMessage(), e);
+            return new PageImpl<>(Collections.emptyList(), pageable, 0);
+        }
+    }
+
+    /**
+     * 🔢 Récupérer statistiques des notifications
+     */
+    public NotificationStatsDTO getStats(Long adminId) {
+        try {
+            log.debug("🔢 Calcul statistiques: adminId={}", adminId);
+
+            Long total = notificationRepository.countByAdminId(adminId);
+            Long nonLues = notificationRepository.countByAdminIdAndLuFalse(adminId);
+            Long critiques = notificationRepository.countByAdminIdAndPriority(adminId, Priority.CRITIQUE);
+            Long critiquesNonLues = notificationRepository.countCriticalUnreadByAdminId(adminId);
+
+            // Dernière notification
+            LocalDateTime derniere = notificationRepository.findByAdminIdOrderByDateCreationDesc(adminId)
+                    .stream()
+                    .findFirst()
+                    .map(AdminNotification::getDateCreation)
+                    .orElse(null);
+
+            return NotificationStatsDTO.builder()
+                    .total(total)
+                    .nonLues(nonLues)
+                    .critiques(critiques)
+                    .critiquesNonLues(critiquesNonLues)
+                    .derniereNotification(derniere)
+                    .build();
+
+        } catch (Exception e) {
+            log.error("❌ Erreur calcul statistiques: {}", e.getMessage(), e);
+            return NotificationStatsDTO.builder()
+                    .total(0L).nonLues(0L).critiques(0L).critiquesNonLues(0L)
+                    .build();
+        }
+    }
+
+    /**
+     * 🚨 Récupérer notifications critiques
+     */
+    public List<AdminNotification> getCriticalNotifications(Long adminId) {
+        return notificationRepository.findCriticalUnreadByAdminId(adminId);
+    }
+
+    private List<AdminNotificationDTO> getCriticalNotificationsDTO(Long adminId) {
+        return getCriticalNotifications(adminId).stream()
+                .map(this::convertToDTO)
+                .collect(Collectors.toList());
+    }
+
+    // ===================================================
+    // ACTIONS SUR NOTIFICATIONS
+    // ===================================================
+
+    /**
+     * ✅ Marquer notification comme lue
+     */
+    public boolean markAsRead(Long notificationId, Long adminId) {
+        try {
+            log.info("✅ Marquer notification comme lue: notificationId={}, adminId={}", notificationId, adminId);
+
+            Optional<AdminNotification> optionalNotification = notificationRepository.findById(notificationId);
+            if (optionalNotification.isEmpty()) {
+                log.warn("⚠️ Notification non trouvée: {}", notificationId);
+                return false;
+            }
+
+            AdminNotification notification = optionalNotification.get();
+
+            // Vérifier autorisation
+            if (!notification.getAdminId().equals(adminId)) {
+                log.warn("⚠️ Accès non autorisé: notification={}, admin={}", notificationId, adminId);
+                return false;
+            }
+
+            if (!notification.isRead()) {
+                notification.markAsRead();
+                notificationRepository.save(notification);
+                log.info("✅ Notification marquée comme lue avec succès");
+                return true;
+            }
+
+            return true; // Déjà lue
+
+        } catch (Exception e) {
+            log.error("❌ Erreur marquage lecture: {}", e.getMessage(), e);
+            return false;
+        }
+    }
+
+    /**
+     * ✅ Marquer toutes les notifications comme lues
+     */
+    public int markAllAsRead(Long adminId) {
+        try {
+            log.info("✅ Marquer toutes notifications comme lues: adminId={}", adminId);
+
+            LocalDateTime now = LocalDateTime.now();
+            int updatedCount = notificationRepository.markAllAsRead(adminId, now);
+
+            log.info("✅ {} notifications marquées comme lues", updatedCount);
+            return updatedCount;
+
+        } catch (Exception e) {
+            log.error("❌ Erreur marquage global: {}", e.getMessage(), e);
+            return 0;
+        }
+    }
+
+    /**
+     * 🗑️ Supprimer une notification
+     */
+    public boolean deleteNotification(Long notificationId, Long adminId) {
+        try {
+            log.info("🗑️ Supprimer notification: notificationId={}, adminId={}", notificationId, adminId);
+
+            Optional<AdminNotification> optionalNotification = notificationRepository.findById(notificationId);
+            if (optionalNotification.isEmpty()) {
+                log.warn("⚠️ Notification non trouvée: {}", notificationId);
+                return false;
+            }
+
+            AdminNotification notification = optionalNotification.get();
+
+            // Vérifier autorisation
+            if (!notification.getAdminId().equals(adminId)) {
+                log.warn("⚠️ Accès non autorisé: notification={}, admin={}", notificationId, adminId);
+                return false;
+            }
+
+            notificationRepository.delete(notification);
+            log.info("✅ Notification supprimée avec succès");
+            return true;
+
+        } catch (Exception e) {
+            log.error("❌ Erreur suppression notification: {}", e.getMessage(), e);
+            return false;
+        }
+    }
+
+    // ===================================================
+    // COMPTEURS
+    // ===================================================
+
+    /**
+     * 🔢 Compter notifications non lues
+     */
+    public Long getUnreadCount(Long adminId) {
+        try {
+            return notificationRepository.countByAdminIdAndLuFalse(adminId);
+        } catch (Exception e) {
+            log.error("❌ Erreur comptage non lues: {}", e.getMessage(), e);
+            return 0L;
+        }
+    }
+
+    /**
+     * 🔢 Compter notifications critiques non lues
+     */
+    public Long getCriticalCount(Long adminId) {
+        try {
+            return notificationRepository.countCriticalUnreadByAdminId(adminId);
+        } catch (Exception e) {
+            log.error("❌ Erreur comptage critiques: {}", e.getMessage(), e);
+            return 0L;
+        }
+    }
+
+    // ===================================================
+    // FILTRES ET RECHERCHE
+    // ===================================================
+
+    /**
+     * 🔍 Notifications par collecteur
+     */
+    public List<AdminNotificationDTO> getNotificationsByCollecteur(Long adminId, Long collecteurId) {
+        try {
+            log.debug("🔍 Notifications par collecteur: adminId={}, collecteurId={}", adminId, collecteurId);
+
+            List<AdminNotification> notifications = notificationRepository.findByCollecteurIdOrderByDateCreationDesc(collecteurId);
+
+            // Filtrer par admin
+            return notifications.stream()
+                    .filter(n -> n.getAdminId().equals(adminId))
+                    .map(this::convertToDTO)
+                    .collect(Collectors.toList());
+
+        } catch (Exception e) {
+            log.error("❌ Erreur notifications collecteur: {}", e.getMessage(), e);
+            return Collections.emptyList();
+        }
+    }
+
+    /**
+     * 🔍 Notifications par période
+     */
+    public List<AdminNotificationDTO> getNotificationsByPeriod(Long adminId, LocalDateTime debut, LocalDateTime fin) {
+        try {
+            log.debug("🔍 Notifications par période: adminId={}, debut={}, fin={}", adminId, debut, fin);
+
+            List<AdminNotification> notifications = notificationRepository.findRecentByAdminId(adminId, debut);
+
+            // Filtrer par période de fin
+            return notifications.stream()
+                    .filter(n -> n.getDateCreation().isBefore(fin))
+                    .map(this::convertToDTO)
+                    .collect(Collectors.toList());
+
+        } catch (Exception e) {
+            log.error("❌ Erreur notifications période: {}", e.getMessage(), e);
+            return Collections.emptyList();
+        }
+    }
+
+    // ===================================================
+    // CONFIGURATION
+    // ===================================================
+
+    /**
+     * ⚙️ Récupérer configuration des notifications
+     */
+    public List<NotificationSettingsDTO> getSettings(Long adminId) {
+        try {
+            log.debug("⚙️ Récupération configuration: adminId={}", adminId);
+
+            List<NotificationSettings> settings = settingsRepository.findByAdminIdOrderByType(adminId);
+
+            return settings.stream()
+                    .map(this::convertSettingsToDTO)
+                    .collect(Collectors.toList());
+
+        } catch (Exception e) {
+            log.error("❌ Erreur récupération config: {}", e.getMessage(), e);
+            return Collections.emptyList();
+        }
+    }
+
+    /**
+     * ⚙️ Mettre à jour configuration
+     */
+    public void updateSettings(Long adminId, List<NotificationSettingsDTO> settingsDTOs) {
+        try {
+            log.info("⚙️ Mise à jour configuration: adminId={}", adminId);
+
+            for (NotificationSettingsDTO dto : settingsDTOs) {
+                Optional<NotificationSettings> existing = settingsRepository.findByAdminIdAndType(adminId, dto.getType());
+
+                if (existing.isPresent()) {
+                    NotificationSettings settings = existing.get();
+                    settings.setEnabled(dto.getEnabled());
+                    settings.setEmailEnabled(dto.getEmailEnabled());
+                    settings.setThresholdValue(dto.getThresholdValue());
+                    settings.setCooldownMinutes(dto.getCooldownMinutes());
+                    settings.preUpdate();
+                    settingsRepository.save(settings);
+                } else {
+                    NotificationSettings newSettings = NotificationSettings.builder()
+                            .adminId(adminId)
+                            .type(dto.getType())
+                            .enabled(dto.getEnabled())
+                            .emailEnabled(dto.getEmailEnabled())
+                            .thresholdValue(dto.getThresholdValue())
+                            .cooldownMinutes(dto.getCooldownMinutes())
+                            .build();
+                    settingsRepository.save(newSettings);
+                }
+            }
+
+            log.info("✅ Configuration mise à jour avec succès");
+
+        } catch (Exception e) {
+            log.error("❌ Erreur mise à jour config: {}", e.getMessage(), e);
+            throw new RuntimeException("Erreur lors de la mise à jour de la configuration", e);
+        }
+    }
+
+    // ===================================================
+    // ACTIONS AVANCÉES
+    // ===================================================
+
+    /**
+     * 📧 Renvoyer email pour notification critique
+     */
+    public boolean resendEmail(Long notificationId, Long adminId) {
+        try {
+            log.info("📧 Renvoi email notification: notificationId={}, adminId={}", notificationId, adminId);
+
+            Optional<AdminNotification> optionalNotification = notificationRepository.findById(notificationId);
+            if (optionalNotification.isEmpty()) {
+                return false;
+            }
+
+            AdminNotification notification = optionalNotification.get();
+
+            // Vérifier autorisation
+            if (!notification.getAdminId().equals(adminId)) {
+                return false;
+            }
+
+            // Renvoyer email
+            sendCriticalNotification(adminId, notification);
+            return true;
+
+        } catch (Exception e) {
+            log.error("❌ Erreur renvoi email: {}", e.getMessage(), e);
+            return false;
+        }
+    }
+
+    /**
+     * 🧹 Nettoyer anciennes notifications
+     */
+    public int cleanupOldNotifications(Long adminId, int daysOld) {
+        try {
+            log.info("🧹 Nettoyage notifications: adminId={}, daysOld={}", adminId, daysOld);
+
+            LocalDateTime cutoff = LocalDateTime.now().minusDays(daysOld);
+
+            // Compter d'abord
+            List<AdminNotification> toDelete = notificationRepository.findByAdminIdOrderByDateCreationDesc(adminId)
+                    .stream()
+                    .filter(n -> n.isRead() && n.getDateLecture() != null && n.getDateLecture().isBefore(cutoff))
+                    .collect(Collectors.toList());
+
+            // Supprimer
+            notificationRepository.deleteAll(toDelete);
+
+            log.info("✅ {} notifications supprimées", toDelete.size());
+            return toDelete.size();
+
+        } catch (Exception e) {
+            log.error("❌ Erreur nettoyage: {}", e.getMessage(), e);
+            return 0;
+        }
+    }
+
+    /**
+     * 🧪 Créer notification de test
+     */
+    public void createTestNotification(Long adminId, CreateTestNotificationRequest request) {
+        try {
+            log.info("🧪 Création notification test: adminId={}, type={}", adminId, request.getType());
+
+            AdminNotification testNotification = AdminNotification.builder()
+                    .adminId(adminId)
+                    .collecteurId(request.getCollecteurId())
+                    .type(request.getType())
+                    .priority(request.getPriority())
+                    .title(request.getTitle() != null ? request.getTitle() : "Notification de test")
+                    .message(request.getMessage() != null ? request.getMessage() : "Ceci est une notification de test")
+                    .dateCreation(LocalDateTime.now())
+                    .lu(false)
+                    .groupedCount(1)
+                    .emailSent(false)
+                    .build();
+
+            notificationRepository.save(testNotification);
+
+            // Envoyer email si critique
+            if (testNotification.isCritical()) {
+                CompletableFuture.runAsync(() -> sendCriticalNotification(adminId, testNotification));
+            }
+
+            log.info("✅ Notification de test créée avec succès");
+
+        } catch (Exception e) {
+            log.error("❌ Erreur création notification test: {}", e.getMessage(), e);
+            throw new RuntimeException("Erreur lors de la création de la notification test", e);
+        }
+    }
+
+    // ===================================================
+    // MÉTHODES EXISTANTES CORRIGÉES
+    // ===================================================
+
+    /**
+     * MÉTHODE PRINCIPALE: Évaluer et créer notification si critique
      */
     public void evaluateAndNotify(ActivityEvent event) {
         try {
-            log.debug("🔍 Évaluation événement: type={}, collecteur={}",
-                    event.getType(), event.getCollecteurId());
+            log.debug("🔍 Évaluation événement: type={}, collecteur={}", event.getType(), event.getCollecteurId());
 
             // 1. Déterminer si l'événement mérite une notification critique
             NotificationCritique notification = evaluateCriticalEvent(event);
@@ -90,11 +543,11 @@ public class AdminNotificationService {
             }
 
             // Vérifier si grouper avec notification existante
-            AdminNotification existingNotif = findGroupableNotification(
-                    adminId, event.getCollecteurId(), notification.getType());
+            Optional<AdminNotification> existingNotif = notificationRepository.findGroupableNotification(
+                    adminId, event.getCollecteurId(), notification.getType(), LocalDateTime.now().minusHours(1));
 
-            if (existingNotif != null) {
-                groupNotification(existingNotif, notification);
+            if (existingNotif.isPresent()) {
+                groupNotification(existingNotif.get(), notification);
                 return;
             }
 
@@ -110,7 +563,7 @@ public class AdminNotificationService {
                     .data(notification.getData())
                     .dateCreation(LocalDateTime.now())
                     .agenceId(event.getAgenceId())
-                    .groupedCount(1) //
+                    .groupedCount(1)
                     .build();
 
             notificationRepository.save(notif);
@@ -131,243 +584,143 @@ public class AdminNotificationService {
         }
     }
 
-    /**
-     * ✅ NOUVEAU: Circuit breaker pour éviter spam notifications
-     */
-    private boolean isInCooldown(Long collecteurId, NotificationType type) {
-        String key = collecteurId + ":" + type.name();
-        LocalDateTime lastNotification = lastNotificationMap.get(key);
+    // ===================================================
+    // MÉTHODES UTILITAIRES PRIVÉES
+    // ===================================================
 
-        if (lastNotification != null) {
-            java.time.Duration timeSinceLastNotification =
-                    java.time.Duration.between(lastNotification, LocalDateTime.now());
-            return timeSinceLastNotification.compareTo(NOTIFICATION_COOLDOWN) < 0;
+    /**
+     * Convertir AdminNotification en DTO
+     */
+    private AdminNotificationDTO convertToDTO(AdminNotification notification) {
+        String collecteurNom = null;
+        String agenceNom = null;
+
+        if (notification.getCollecteurId() != null) {
+            collecteurNom = getCollecteurNom(notification.getCollecteurId());
         }
 
-        return false;
+        if (notification.getAgenceId() != null) {
+            agenceNom = getAgenceNom(notification.getAgenceId());
+        }
+
+        return AdminNotificationDTO.builder()
+                .id(notification.getId())
+                .adminId(notification.getAdminId())
+                .collecteurId(notification.getCollecteurId())
+                .collecteurNom(collecteurNom)
+                .agenceId(notification.getAgenceId())
+                .agenceNom(agenceNom)
+                .type(notification.getType())
+                .priority(notification.getPriority())
+                .title(notification.getTitle())
+                .message(notification.getMessage())
+                .data(notification.getData())
+                .dateCreation(notification.getDateCreation())
+                .dateLecture(notification.getDateLecture())
+                .lu(notification.getLu())
+                .groupedCount(notification.getGroupedCount())
+                .emailSent(notification.getEmailSent())
+                .minutesSinceCreation(notification.getMinutesSinceCreation())
+                .build();
+    }
+
+    /**
+     * Convertir NotificationSettings en DTO
+     */
+    private NotificationSettingsDTO convertSettingsToDTO(NotificationSettings settings) {
+        return NotificationSettingsDTO.builder()
+                .type(settings.getType())
+                .enabled(settings.getEnabled())
+                .emailEnabled(settings.getEmailEnabled())
+                .thresholdValue(settings.getThresholdValue())
+                .cooldownMinutes(settings.getCooldownMinutes())
+                .build();
+    }
+
+    /**
+     * Circuit breaker pour éviter spam notifications
+     */
+    private boolean isInCooldown(Long collecteurId, NotificationType type) {
+        return cooldownRepository.isInCooldown(
+                collecteurId,
+                type.name(),
+                LocalDateTime.now().minusMinutes(DEFAULT_COOLDOWN_MINUTES)
+        );
     }
 
     private void markNotificationSent(Long collecteurId, NotificationType type) {
-        String key = collecteurId + ":" + type.name();
-        lastNotificationMap.put(key, LocalDateTime.now());
+        Optional<NotificationCooldown> existing = cooldownRepository.findByCollecteurIdAndNotificationType(
+                collecteurId, type.name());
+
+        if (existing.isPresent()) {
+            cooldownRepository.updateLastSentAt(collecteurId, type.name(), LocalDateTime.now());
+        } else {
+            NotificationCooldown cooldown = NotificationCooldown.create(collecteurId, type.name());
+            cooldownRepository.save(cooldown);
+        }
     }
 
     /**
      * Grouper notifications similaires
      */
-    private AdminNotification findGroupableNotification(Long adminId, Long collecteurId, NotificationType type) {
-        LocalDateTime cutoff = LocalDateTime.now().minusHours(1); // Grouper sur 1h
-
-        return notificationRepository.findRecentGroupable(adminId, collecteurId, type, cutoff)
-                .orElse(null);
-    }
-
     private void groupNotification(AdminNotification existing, NotificationCritique newEvent) {
-        existing.setGroupedCount(existing.getGroupedCount() + 1);
-        existing.setLastOccurrence(LocalDateTime.now());
+        existing.incrementGroupedCount();
         existing.setMessage(existing.getMessage() +
                 String.format(" (+%d occurrences)", existing.getGroupedCount() - 1));
-
         notificationRepository.save(existing);
+
         log.info("📊 Notification groupée: {} (total: {})",
                 existing.getType(), existing.getGroupedCount());
     }
 
     /**
-     * Évaluation avec nouvelles vérifications
+     * Envoyer email critique
      */
-    private NotificationCritique evaluateCriticalEvent(ActivityEvent event) {
-        switch (event.getType()) {
-            case "TRANSACTION_EPARGNE":
-            case "TRANSACTION_RETRAIT":
-                return evaluateTransactionEvent(event);
-
-            case "CREATE_CLIENT":
-                return evaluateClientCreationEvent(event);
-
-            case "CREATE_COLLECTEUR":
-                return evaluateCollecteurCreationEvent(event);
-
-            case "MODIFY_COLLECTEUR":
-                return evaluateCollecteurModificationEvent(event);
-
-            case "SOLDE_COLLECTEUR_CHECK": // ✅ NOUVEAU
-                return evaluateSoldeEvent(event);
-
-            case "COLLECTEUR_LOGIN":
-                return evaluateInactivityEvent(event);
-
-            default:
-                return null; // Événement non critique
-        }
-    }
-
-    /**
-     * Évaluation transaction avec seuil montantMaxRetrait
-     */
-    private NotificationCritique evaluateTransactionEvent(ActivityEvent event) {
-        Double montant = event.getMontant();
-        if (montant == null) return null;
-
+    private void sendCriticalNotification(Long adminId, AdminNotification notification) {
         try {
-            Collecteur collecteur = collecteurRepository.findById(event.getCollecteurId()).orElse(null);
-            if (collecteur == null) return null;
-
-            // Vérifier d'abord montantMaxRetrait du collecteur
-            if ("TRANSACTION_RETRAIT".equals(event.getType()) &&
-                    montant > collecteur.getMontantMaxRetrait()) {
-
-                return NotificationCritique.builder()
-                        .type(NotificationType.RETRAIT_DEPASSEMENT)
-                        .priority(Priority.CRITIQUE)
-                        .title("Retrait dépassant le seuil autorisé")
-                        .message(String.format(
-                                "Retrait de %,.0f FCFA par %s %s dépasse le seuil autorisé de %,.0f FCFA",
-                                montant,
-                                collecteur.getPrenom(),
-                                collecteur.getNom(),
-                                collecteur.getMontantMaxRetrait()
-                        ))
-                        .data(buildTransactionData(event, collecteur.getMontantMaxRetrait()))
-                        .build();
+            Optional<Admin> adminOpt = adminRepository.findById(adminId);
+            if (adminOpt.isEmpty()) {
+                log.warn("⚠️ Admin non trouvé: {}", adminId);
+                return;
             }
 
-            // Ensuite vérifier seuil global
-            if (montant >= SEUIL_TRANSACTION_CRITIQUE_DEFAULT) {
-                String collecteurNom = collecteur.getPrenom() + " " + collecteur.getNom();
+            Admin admin = adminOpt.get();
+            if (admin.getAdresseMail() == null || admin.getAdresseMail().trim().isEmpty()) {
+                log.warn("⚠️ Admin sans email: {}", adminId);
+                return;
+            }
 
-                return NotificationCritique.builder()
-                        .type(NotificationType.TRANSACTION_IMPORTANTE)
-                        .priority(Priority.CRITIQUE)
-                        .title("Transaction importante détectée")
-                        .message(String.format("Transaction de %,.0f FCFA par %s",
-                                montant, collecteurNom))
-                        .data(buildTransactionData(event, SEUIL_TRANSACTION_CRITIQUE_DEFAULT))
-                        .build();
+            EmailNotification email = EmailNotification.urgent(
+                    admin.getAdresseMail(),
+                    notification.getTitle(),
+                    buildEmailContent(notification)
+            );
+
+            boolean sent = emailService.send(email);
+            if (sent) {
+                notification.markEmailSent();
+                notificationRepository.save(notification);
+                log.info("📧 Email critique envoyé à: {}", admin.getAdresseMail());
             }
 
         } catch (Exception e) {
-            log.error("❌ Erreur évaluation transaction: {}", e.getMessage(), e);
+            log.error("❌ Erreur envoi email critique: {}", e.getMessage(), e);
         }
-
-        return null;
     }
 
     /**
-     * Évaluation client GPS avec priority HAUTE (critique selon tes specs)
+     * Méthodes utilitaires pour noms
      */
-    private NotificationCritique evaluateClientCreationEvent(ActivityEvent event) {
-        if (event.getEntityId() == null) return null;
-
-        try {
-            Client client = clientRepository.findById(event.getEntityId()).orElse(null);
-
-            if (client != null && (client.getLatitude() == null || client.getLongitude() == null)) {
-                String collecteurNom = getCollecteurNom(event.getCollecteurId());
-
-                return NotificationCritique.builder()
-                        .type(NotificationType.CLIENT_SANS_GPS)
-                        .priority(Priority.HAUTE)
-                        .title("Client créé sans géolocalisation")
-                        .message(String.format("Client %s %s créé par %s sans coordonnées GPS",
-                                client.getPrenom(), client.getNom(), collecteurNom))
-                        .data(buildClientData(client))
-                        .build();
-            }
-        } catch (Exception e) {
-            log.error("❌ Erreur évaluation client GPS: {}", e.getMessage(), e);
-        }
-
-        return null;
+    private String getCollecteurNom(Long collecteurId) {
+        return collecteurRepository.findById(collecteurId)
+                .map(c -> c.getPrenom() + " " + c.getNom())
+                .orElse("Collecteur inconnu");
     }
 
-    /**
-     * Évaluation création collecteur
-     */
-    private NotificationCritique evaluateCollecteurCreationEvent(ActivityEvent event) {
-        if (event.getEntityId() == null) return null;
-
-        try {
-            Collecteur collecteur = collecteurRepository.findById(event.getEntityId()).orElse(null);
-            if (collecteur == null) return null;
-
-            return NotificationCritique.builder()
-                    .type(NotificationType.COLLECTEUR_CREATED)
-                    .priority(Priority.NORMALE)
-                    .title("Nouveau collecteur créé")
-                    .message(String.format(
-                            "Nouveau collecteur %s %s créé dans l'agence %s",
-                            collecteur.getPrenom(),
-                            collecteur.getNom(),
-                            collecteur.getAgence().getNomAgence()
-                    ))
-                    .data(buildCollecteurData(collecteur))
-                    .build();
-
-        } catch (Exception e) {
-            log.error("❌ Erreur évaluation création collecteur: {}", e.getMessage(), e);
-        }
-
-        return null;
-    }
-
-    /**
-     * Évaluation modification collecteur
-     */
-    private NotificationCritique evaluateCollecteurModificationEvent(ActivityEvent event) {
-        if (event.getEntityId() == null) return null;
-
-        try {
-            Collecteur collecteur = collecteurRepository.findById(event.getEntityId()).orElse(null);
-            if (collecteur == null) return null;
-
-            return NotificationCritique.builder()
-                    .type(NotificationType.COLLECTEUR_MODIFIED)
-                    .priority(Priority.NORMALE)
-                    .title("Collecteur modifié")
-                    .message(String.format(
-                            "Collecteur %s %s a été modifié",
-                            collecteur.getPrenom(),
-                            collecteur.getNom()
-                    ))
-                    .data(buildCollecteurData(collecteur))
-                    .build();
-
-        } catch (Exception e) {
-            log.error("❌ Erreur évaluation modification collecteur: {}", e.getMessage(), e);
-        }
-
-        return null;
-    }
-
-    /**
-     * Évaluation solde négatif
-     */
-    private NotificationCritique evaluateSoldeEvent(ActivityEvent event) {
-        Double solde = event.getSolde();
-
-        if (solde != null && solde < 0) {
-            String collecteurNom = getCollecteurNom(event.getCollecteurId());
-
-            return NotificationCritique.builder()
-                    .type(NotificationType.SOLDE_NEGATIF)
-                    .priority(Priority.CRITIQUE)
-                    .title("Solde collecteur négatif")
-                    .message(String.format("Solde de %s: %,.0f FCFA (négatif)",
-                            collecteurNom, solde))
-                    .data(buildSoldeData(event))
-                    .build();
-        }
-
-        return null;
-    }
-
-    /**
-     * Évaluation inactivité (placeholder)
-     */
-    private NotificationCritique evaluateInactivityEvent(ActivityEvent event) {
-        // À implémenter selon tes besoins d'inactivité
-        return null;
+    private String getAgenceNom(Long agenceId) {
+        return adminRepository.findById(agenceId)
+                .map(admin -> admin.getAgence() != null ? admin.getAgence().getNomAgence() : "Agence inconnue")
+                .orElse("Agence inconnue");
     }
 
     /**
@@ -377,178 +730,80 @@ public class AdminNotificationService {
         return collecteurRepository.findById(collecteurId)
                 .map(collecteur -> {
                     Long agenceId = collecteur.getAgence().getId();
-                    return adminRepository.findByAgenceId(agenceId)
-                            .map(Admin::getId)
-                            .orElse(null);
+                    List<Admin> admins = adminRepository.findByAgenceId(agenceId);
+                    if (admins != null && !admins.isEmpty()) {
+                        return admins.get(0).getId();
+                    }
+                    return null;
                 })
                 .orElse(null);
     }
 
+
     /**
-     * Envoi email critique asynchrone
+     * Évaluation des événements critiques
      */
-    private void sendCriticalNotification(Long adminId, AdminNotification notification) {
-        try {
-            Admin admin = adminRepository.findById(adminId).orElse(null);
-            if (admin != null && admin.getAdresseMail() != null) {
-                EmailNotification email = EmailNotification.builder()
-                        .destinataire(admin.getAdresseMail())
-                        .sujet("[URGENT] " + notification.getTitle())
-                        .contenu(buildEmailContent(notification))
-                        .build();
-
-                emailService.sendAsync(email);
-
-                // Marquer email envoyé
-                notification.setEmailSent(true);
-                notificationRepository.save(notification);
-
-                log.info("📧 Email critique envoyé à: {}", admin.getAdresseMail());
-            }
-        } catch (Exception e) {
-            log.error("❌ Erreur envoi email critique: {}", e.getMessage(), e);
+    private NotificationCritique evaluateCriticalEvent(ActivityEvent event) {
+        switch (event.getType()) {
+            case "TRANSACTION_EPARGNE":
+            case "TRANSACTION_RETRAIT":
+                return evaluateTransactionEvent(event);
+            case "CREATE_CLIENT":
+                return evaluateClientCreationEvent(event);
+            case "SOLDE_COLLECTEUR_CHECK":
+                return evaluateSoldeEvent(event);
+            default:
+                return null;
         }
     }
 
-    // ===== NIVEAU 2: DASHBOARD ADMIN (POLLING) - AMÉLIORÉ =====
+    private NotificationCritique evaluateTransactionEvent(ActivityEvent event) {
+        Double montant = event.getMontant();
+        if (montant == null || montant < SEUIL_TRANSACTION_CRITIQUE_DEFAULT) return null;
 
-    /**
-     * Dashboard admin avec cache intelligent
-     */
-    @Cacheable(value = "admin-dashboard", key = "#adminId + '-' + #lastMinutes",
-            condition = "#lastMinutes <= 60") // Cache seulement les requêtes récentes
-    public AdminDashboardActivities getDashboardActivities(Long adminId, int lastMinutes) {
-        try {
-            log.debug("📊 Calcul dashboard admin: adminId={}, lastMinutes={}", adminId, lastMinutes);
+        String collecteurNom = getCollecteurNom(event.getCollecteurId());
 
-            Long agenceId = getAdminAgenceId(adminId);
-            LocalDateTime since = LocalDateTime.now().minusMinutes(lastMinutes);
+        return NotificationCritique.builder()
+                .type(NotificationType.MONTANT_ELEVE)
+                .priority(Priority.CRITIQUE)
+                .title("Transaction importante détectée")
+                .message(String.format("Transaction de %,.0f FCFA par %s", montant, collecteurNom))
+                .data(buildTransactionData(event))
+                .build();
+    }
 
-            // Récupérer les collecteurs de l'agence
-            List<Long> collecteurIds = collecteurRepository.findIdsByAgenceId(agenceId);
+    private NotificationCritique evaluateClientCreationEvent(ActivityEvent event) {
+        // Logique d'évaluation pour création client
+        return null; // À implémenter selon vos besoins
+    }
 
-            // Activités récentes des collecteurs
-            List<ActivitySummary> activities = journalActiviteRepository
-                    .findRecentActivitiesByCollecteurs(collecteurIds, since);
+    private NotificationCritique evaluateSoldeEvent(ActivityEvent event) {
+        Double solde = event.getMontant(); // Utiliser montant comme solde
+        if (solde == null || solde >= 0) return null;
 
-            // Notifications non lues
-            Long unreadCount = notificationRepository.countByAdminIdAndLuFalse(adminId);
+        String collecteurNom = getCollecteurNom(event.getCollecteurId());
 
-            // Notifications urgentes
-            Long urgentCount = notificationRepository.countByAdminIdAndPriorityAndLuFalse(
-                    adminId, Priority.CRITIQUE);
-
-            // Statistiques rapides
-            Map<String, Long> stats = calculateQuickStats(collecteurIds, since);
-
-            return AdminDashboardActivities.builder()
-                    .agenceId(agenceId)
-                    .adminId(adminId)
-                    .lastUpdate(LocalDateTime.now())
-                    .activitiesCount((long) activities.size())
-                    .unreadNotifications(unreadCount)
-                    .urgentNotifications(urgentCount) // ✅ NOUVEAU
-                    .activities(activities)
-                    .stats(stats)
-                    .build();
-
-        } catch (Exception e) {
-            log.error("❌ Erreur dashboard admin: {}", e.getMessage(), e);
-            throw new RuntimeException("Erreur lors du chargement du dashboard", e);
-        }
+        return NotificationCritique.builder()
+                .type(NotificationType.SOLDE_NEGATIF)
+                .priority(Priority.CRITIQUE)
+                .title("Solde collecteur négatif")
+                .message(String.format("Solde de %s: %,.0f FCFA (négatif)", collecteurNom, solde))
+                .data(buildSoldeData(event))
+                .build();
     }
 
     /**
-     * Récupérer notifications critiques non lues
+     * Construction des données JSON
      */
-    public List<AdminNotification> getCriticalNotifications(Long adminId) {
-        return notificationRepository.findUnreadByAdminIdOrderByPriorityAndDate(adminId);
-    }
-
-    /**
-     * Marquer notification comme lue
-     */
-    @Transactional
-    public void markAsRead(Long notificationId, Long adminId) {
-        AdminNotification notification = notificationRepository.findById(notificationId)
-                .orElseThrow(() -> new RuntimeException("Notification non trouvée"));
-
-        // Vérifier autorisation
-        if (!notification.getAdminId().equals(adminId)) {
-            throw new RuntimeException("Accès non autorisé à cette notification");
-        }
-
-        notification.setLu(true);
-        notification.setDateLecture(LocalDateTime.now());
-        notificationRepository.save(notification);
-
-        log.info("✅ Notification marquée comme lue: id={}, admin={}", notificationId, adminId);
-    }
-
-    // ===== MÉTHODES UTILITAIRES =====
-
-    private String getCollecteurNom(Long collecteurId) {
-        return collecteurRepository.findById(collecteurId)
-                .map(c -> c.getPrenom() + " " + c.getNom())
-                .orElse("Collecteur inconnu");
-    }
-
-    private Long getAdminAgenceId(Long adminId) {
-        return adminRepository.findById(adminId)
-                .map(admin -> admin.getAgence().getId())
-                .orElseThrow(() -> new RuntimeException("Admin non trouvé"));
-    }
-
-    /**
-     * Statistiques rapides pour le dashboard
-     */
-    private Map<String, Long> calculateQuickStats(List<Long> collecteurIds, LocalDateTime since) {
-        return Map.of(
-                "transactions", mouvementRepository.countByCollecteurIdsAndDateAfter(collecteurIds, since),
-                "nouveauxClients", clientRepository.countByCollecteurIdsAndDateAfter(collecteurIds, since),
-                "collecteursActifs", countByCollecteurIdsAndDateAfter(collecteurIds, since),
-        );
-    }
-
-    // Méthodes de construction des données JSON
-    private String buildTransactionData(ActivityEvent event, Double threshold) {
+    private String buildTransactionData(ActivityEvent event) {
         try {
             Map<String, Object> data = Map.of(
                     "montant", event.getMontant(),
-                    "threshold", threshold,
                     "collecteurId", event.getCollecteurId(),
                     "entityId", event.getEntityId() != null ? event.getEntityId() : 0L,
                     "timestamp", event.getTimestamp()
             );
-            return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(data);
-        } catch (Exception e) {
-            return "{}";
-        }
-    }
-
-    private String buildClientData(Client client) {
-        try {
-            Map<String, Object> data = Map.of(
-                    "clientId", client.getId(),
-                    "nom", client.getNom(),
-                    "prenom", client.getPrenom(),
-                    "hasGps", client.getLatitude() != null && client.getLongitude() != null
-            );
-            return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(data);
-        } catch (Exception e) {
-            return "{}";
-        }
-    }
-
-    private String buildCollecteurData(Collecteur collecteur) {
-        try {
-            Map<String, Object> data = Map.of(
-                    "collecteurId", collecteur.getId(),
-                    "nom", collecteur.getNom(),
-                    "prenom", collecteur.getPrenom(),
-                    "agenceNom", collecteur.getAgence().getNomAgence()
-            );
-            return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(data);
+            return objectMapper.writeValueAsString(data);
         } catch (Exception e) {
             return "{}";
         }
@@ -557,11 +812,11 @@ public class AdminNotificationService {
     private String buildSoldeData(ActivityEvent event) {
         try {
             Map<String, Object> data = Map.of(
-                    "solde", event.getSolde(),
+                    "solde", event.getMontant(),
                     "collecteurId", event.getCollecteurId(),
                     "timestamp", event.getTimestamp()
             );
-            return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(data);
+            return objectMapper.writeValueAsString(data);
         } catch (Exception e) {
             return "{}";
         }
@@ -569,45 +824,31 @@ public class AdminNotificationService {
 
     private String buildEmailContent(AdminNotification notification) {
         StringBuilder content = new StringBuilder();
-        content.append("<h2>Notification Critique - FOCEP Collecte</h2>");
+        content.append("<h2>🚨 Notification Critique - FOCEP Collecte</h2>");
         content.append("<p><strong>Type:</strong> ").append(notification.getType()).append("</p>");
         content.append("<p><strong>Priorité:</strong> ").append(notification.getPriority()).append("</p>");
         content.append("<p><strong>Message:</strong> ").append(notification.getMessage()).append("</p>");
         content.append("<p><strong>Date:</strong> ").append(notification.getDateCreation()).append("</p>");
         content.append("<hr>");
         content.append("<p>Veuillez vous connecter à votre dashboard administrateur pour plus de détails.</p>");
-        content.append("<p>FOCEP Collecte - Système de notifications automatiques</p>");
+        content.append("<p><strong>FOCEP Collecte</strong> - Système de notifications automatiques</p>");
         return content.toString();
     }
+
+    // ===================================================
+    // MÉTHODES HÉRITÉES (compatibilité)
+    // ===================================================
 
     public List<AdminNotification> getAllNotifications(Long adminId) {
         return notificationRepository.findByAdminIdOrderByDateCreationDesc(adminId);
     }
 
-    public Long getUnreadCount(Long adminId) {
-        return notificationRepository.countByAdminIdAndLuFalse(adminId);
-    }
-
-    @Transactional
-    public void markAllAsRead(Long adminId) {
-        List<AdminNotification> unreadNotifications = notificationRepository
-                .findByAdminIdAndLuFalse(adminId);
-
-        unreadNotifications.forEach(notification -> {
-            notification.setLu(true);
-            notification.setDateLecture(LocalDateTime.now());
-        });
-
-        notificationRepository.saveAll(unreadNotifications);
-        log.info("✅ Toutes les notifications marquées comme lues pour admin: {}", adminId);
-    }
-
-    // Méthode pour nettoyer les anciennes notifications (à appeler périodiquement)
+    // Nettoyage automatique
     @Scheduled(cron = "0 0 2 * * ?") // Tous les jours à 2h du matin
     @Transactional
     public void cleanupOldNotifications() {
-        LocalDateTime cutoff = LocalDateTime.now().minusDays(90); // Garder 90 jours
-        notificationRepository.deleteOldReadNotifications(cutoff);
-        log.info("🧹 Nettoyage notifications anciennes > 90 jours effectué");
+        LocalDateTime cutoff = LocalDateTime.now().minusDays(90);
+        int deleted = notificationRepository.deleteOldReadNotifications(cutoff);
+        log.info("🧹 Nettoyage automatique: {} notifications supprimées", deleted);
     }
 }
