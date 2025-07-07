@@ -31,8 +31,12 @@ public class AdminActivityCache {
 
     /**
      * Cache des activités historiques (> 7 jours)
+     *
+     * Note: Le paramètre collecteurId représente en fait userId dans le contexte
+     * de l'entité JournalActivite. Dans ce système, userId = collecteur.id quand
+     * userType = "COLLECTEUR"
      */
-    @Cacheable(value = "admin-activities", key = "#adminId + ':' + #collecteurId + ':' + #date") // ✅ MAINTENANT OK
+    @Cacheable(value = "admin-activities", key = "#adminId + ':' + #collecteurId + ':' + #date")
     public List<ActivitySummary> getHistoricalActivities(Long adminId, Long collecteurId, LocalDate date) {
         log.info("📚 Chargement activités historiques depuis DB: admin={}, collecteur={}, date={}",
                 adminId, collecteurId, date);
@@ -40,7 +44,27 @@ public class AdminActivityCache {
         LocalDateTime startOfDay = date.atStartOfDay();
         LocalDateTime endOfDay = date.atTime(23, 59, 59);
 
-        return journalRepository.findByCollecteurIdAndTimestampBetween(collecteurId, startOfDay, endOfDay)
+        // collecteurId est passé comme userId car dans l'entité JournalActivite,
+        // userId stocke l'ID du collecteur quand userType = "COLLECTEUR"
+        return journalRepository.findByUserIdAndTimestampBetweenAsList(collecteurId, startOfDay, endOfDay)
+                .stream()
+                .map(this::toSummary)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Récupérer les activités par agence pour une période
+     * Utile pour les rapports administratifs globaux
+     */
+    @Cacheable(value = "admin-activities-agence", key = "#adminId + ':' + #agenceId + ':' + #date")
+    public List<ActivitySummary> getHistoricalActivitiesByAgence(Long adminId, Long agenceId, LocalDate date) {
+        log.info("📚 Chargement activités agence depuis DB: admin={}, agence={}, date={}",
+                adminId, agenceId, date);
+
+        LocalDateTime startOfDay = date.atStartOfDay();
+        LocalDateTime endOfDay = date.atTime(23, 59, 59);
+
+        return journalRepository.findByAgenceIdAndTimestampBetweenAsList(agenceId, startOfDay, endOfDay)
                 .stream()
                 .map(this::toSummary)
                 .collect(Collectors.toList());
@@ -56,16 +80,22 @@ public class AdminActivityCache {
         LocalDate yesterday = LocalDate.now().minusDays(1);
         LocalDate lastWeek = LocalDate.now().minusDays(7);
 
-        // Pré-charger les données de la semaine dernière pour tous les admins
+        // ✅ AMÉLIORATION : Pré-charger à deux niveaux (collecteur et agence)
         adminRepository.findAll().forEach(admin -> {
             Long agenceId = admin.getAgence().getId();
             List<Long> collecteurIds = collecteurRepository.findIdsByAgenceId(agenceId);
 
+            // Pré-charger par collecteur
             collecteurIds.forEach(collecteurId -> {
                 for (LocalDate date = lastWeek; !date.isAfter(yesterday); date = date.plusDays(1)) {
                     getHistoricalActivities(admin.getId(), collecteurId, date);
                 }
             });
+
+            // Pré-charger par agence (pour rapports globaux)
+            for (LocalDate date = lastWeek; !date.isAfter(yesterday); date = date.plusDays(1)) {
+                getHistoricalActivitiesByAgence(admin.getId(), agenceId, date);
+            }
         });
 
         log.info("✅ Cache pré-chargé avec succès");
@@ -73,13 +103,31 @@ public class AdminActivityCache {
 
     /**
      * Convertir JournalActivite en ActivitySummary
+     *
+     * Maintenant plus explicite sur la correspondance userId -> collecteurId
      */
     private ActivitySummary toSummary(JournalActivite journal) {
         return ActivitySummary.builder()
-                .collecteurId(journal.getUserId())
+                .collecteurId(journal.getUserId()) // userId représente collecteur.id quand userType="COLLECTEUR"
                 .action(journal.getAction())
                 .timestamp(journal.getTimestamp())
                 .details(journal.getDetails())
+                .entityType(journal.getEntityType())
+                .entityId(journal.getEntityId())
+                .success(journal.getSuccess())
+                .errorMessage(journal.getErrorMessage())
+                .durationMs(journal.getDurationMs())
+                .username(journal.getUsername())
+                .userType(journal.getUserType())
+                .ipAddress(journal.getIpAddress())
+                .agenceId(journal.getAgenceId())
                 .build();
+    }
+    /**
+     * Vider le cache pour une date spécifique
+     * Utile pour forcer un rechargement après des modifications
+     */
+    public void evictCacheForDate(Long adminId, Long collecteurId, LocalDate date) {
+        log.info("🗑️ Vidage cache pour admin={}, collecteur={}, date={}", adminId, collecteurId, date);
     }
 }

@@ -15,7 +15,7 @@ import java.util.List;
 public interface JournalActiviteRepository extends JpaRepository<JournalActivite, Long> {
 
     /**
-     * Recherche par utilisateur et période
+     * Recherche par utilisateur et période - Version avec pagination
      */
     @Query("SELECT j FROM JournalActivite j " +
             "WHERE j.userId = :userId " +
@@ -26,6 +26,19 @@ public interface JournalActiviteRepository extends JpaRepository<JournalActivite
             @Param("startDate") LocalDateTime startDate,
             @Param("endDate") LocalDateTime endDate,
             Pageable pageable);
+
+    /**
+     * Recherche par utilisateur et période - Version List directe
+     * Utilisée par AdminActivityCache et autres services nécessitant une List complète
+     */
+    @Query("SELECT j FROM JournalActivite j " +
+            "WHERE j.userId = :userId " +
+            "AND j.timestamp BETWEEN :startDate AND :endDate " +
+            "ORDER BY j.timestamp DESC")
+    List<JournalActivite> findByUserIdAndTimestampBetweenAsList(
+            @Param("userId") Long userId,
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
 
     /**
      * Recherche par agence et période
@@ -39,6 +52,18 @@ public interface JournalActiviteRepository extends JpaRepository<JournalActivite
             @Param("startDate") LocalDateTime startDate,
             @Param("endDate") LocalDateTime endDate,
             Pageable pageable);
+
+    /**
+     * Recherche par agence et période - Version List directe
+     */
+    @Query("SELECT j FROM JournalActivite j " +
+            "WHERE j.agenceId = :agenceId " +
+            "AND j.timestamp BETWEEN :startDate AND :endDate " +
+            "ORDER BY j.timestamp DESC")
+    List<JournalActivite> findByAgenceIdAndTimestampBetweenAsList(
+            @Param("agenceId") Long agenceId,
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate);
 
     /**
      * Recherche par action et période
@@ -108,10 +133,4 @@ public interface JournalActiviteRepository extends JpaRepository<JournalActivite
             @Param("endDate") LocalDateTime endDate,
             Pageable pageable);
 
-    @Query("SELECT ja FROM JournalActivite ja WHERE ja.collecteurId = :collecteurId AND ja.timestamp BETWEEN :start AND :end ORDER BY ja.timestamp DESC")
-    List<JournalActivite> findByCollecteurIdAndTimestampBetween(
-            @Param("collecteurId") Long collecteurId,
-            @Param("start") LocalDateTime start,
-            @Param("end") LocalDateTime end
-    );
 }
