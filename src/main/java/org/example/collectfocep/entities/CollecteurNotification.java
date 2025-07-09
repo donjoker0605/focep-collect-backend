@@ -470,4 +470,66 @@ public class CollecteurNotification {
     public void setErreurEnvoi(String erreurEnvoi) {
         this.erreurEnvoi = erreurEnvoi;
     }
+
+    // =====================================
+// MÉTHODES FACTORY BUILDER FLUIDES
+// =====================================
+
+    /**
+     * Builder pour notification urgente
+     */
+    public static CollecteurNotificationBuilder urgent() {
+        return CollecteurNotification.builder()
+                .priorite(Priorite.URGENT)
+                .type(NotificationType.SYSTEM_ALERT)
+                .icone("🚨")
+                .couleur("#F44336");
+    }
+
+    /**
+     * Builder pour notification d'information
+     */
+    public static CollecteurNotificationBuilder info() {
+        return CollecteurNotification.builder()
+                .priorite(Priorite.NORMAL)
+                .type(NotificationType.INFORMATION)
+                .icone("ℹ️")
+                .couleur("#2196F3");
+    }
+
+    /**
+     * Builder pour notification de rappel
+     */
+    public static CollecteurNotificationBuilder rappel() {
+        return CollecteurNotification.builder()
+                .priorite(Priorite.HIGH)
+                .type(NotificationType.REMINDER)
+                .icone("⏰")
+                .couleur("#FF9800");
+    }
+
+    /**
+     * Builder pour message admin
+     */
+    public static CollecteurNotificationBuilder messageAdmin(Long adminId, String adminNom) {
+        return CollecteurNotification.builder()
+                .priorite(Priorite.NORMAL)
+                .type(NotificationType.ADMIN_MESSAGE)
+                .adminId(adminId)
+                .adminNom(adminNom)
+                .icone("📨")
+                .couleur("#9C27B0")
+                .persistante(true);
+    }
+
+    /**
+     * Builder pour alerte système
+     */
+    public static CollecteurNotificationBuilder alerte() {
+        return CollecteurNotification.builder()
+                .priorite(Priorite.HIGH)
+                .type(NotificationType.WARNING)
+                .icone("⚠️")
+                .couleur("#FF9800");
+    }
 }

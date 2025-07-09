@@ -241,7 +241,7 @@ public class CollecteurActivityService {
 
             // 📋 Récupération des activités
             List<JournalActivite> activites = journalActiviteRepository
-                    .findByUserIdAndTimestampBetweenAsList(collecteurId, startDateTime, endDateTime);
+                    .findByUserIdAndTimestampBetweenAsList(collecteur.getId(), startDateTime, endDateTime);
 
             // 📊 Calculs de base
             int totalActivites = activites.size();

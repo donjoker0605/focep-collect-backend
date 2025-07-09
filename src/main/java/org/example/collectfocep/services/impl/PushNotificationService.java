@@ -17,6 +17,7 @@ import java.util.concurrent.CompletableFuture;
 
 /**
  * 🔔 Service pour l'envoi de notifications push via Firebase Cloud Messaging
+ * VERSION CORRIGÉE - Compatible Firebase Admin SDK 9.2.0
  *
  * FONCTIONNALITÉS :
  * - Envoi de notifications push individuelles et en masse
@@ -226,8 +227,7 @@ public class PushNotificationService {
      * 🏗️ Construit un message FCM à partir d'une notification
      */
     private Message buildFCMMessage(String fcmToken, CollecteurNotification notification) {
-        // Construction des données personnalisées
-        Map<String, String> data = new HashMap<>();
+        Map<String, Object> data = new HashMap<>();
         data.put("notificationId", notification.getId().toString());
         data.put("type", notification.getType().name());
         data.put("priority", notification.getPriorite().name());
@@ -245,11 +245,6 @@ public class PushNotificationService {
             data.put("extraData", notification.getDonnees());
         }
 
-        // Configuration de la notification visuelle
-        Notification.Builder notificationBuilder = Notification.builder()
-                .setTitle(notification.getTitre())
-                .setBody(notification.getMessage());
-
         // Icône et couleur si disponibles
         if (notification.getIconeEffective() != null) {
             // Note: FCM ne supporte pas directement les emojis comme icône
@@ -261,6 +256,14 @@ public class PushNotificationService {
             data.put("color", notification.getCouleurEffective());
         }
 
+        // Configuration de la notification visuelle
+        Notification.Builder notificationBuilder = Notification.builder()
+                .setTitle(notification.getTitre())
+                .setBody(notification.getMessage());
+
+        Map<String, String> androidData = new HashMap<>();
+        data.forEach((key, value) -> androidData.put(key, value.toString()));
+
         // Configuration Android spécifique
         AndroidConfig androidConfig = AndroidConfig.builder()
                 .setNotification(AndroidNotification.builder()
@@ -270,7 +273,7 @@ public class PushNotificationService {
                         .setPriority(getAndroidPriority(notification.getPriorite()))
                         .setChannelId(getNotificationChannel(notification.getType()))
                         .build())
-                .putAllData(data)
+                .putAllData(androidData) // Utiliser androidData (Map<String, String>)
                 .build();
 
         // Configuration iOS spécifique
@@ -291,7 +294,7 @@ public class PushNotificationService {
                 .setNotification(notificationBuilder.build())
                 .setAndroidConfig(androidConfig)
                 .setApnsConfig(apnsConfig)
-                .putAllData(data)
+                .putAllData(androidData)
                 .build();
     }
 
@@ -315,7 +318,7 @@ public class PushNotificationService {
             if (isTokenError(e)) {
                 return PushNotificationResult.builder()
                         .success(false)
-                        .errorCode(e.getErrorCode())
+                        .errorCode(e.getErrorCode().name())
                         .errorMessage("Token invalide: " + e.getMessage())
                         .tokenInvalid(true)
                         .attempts(attempt + 1)
@@ -337,7 +340,7 @@ public class PushNotificationService {
 
             return PushNotificationResult.builder()
                     .success(false)
-                    .errorCode(e.getErrorCode())
+                    .errorCode(e.getErrorCode().name())
                     .errorMessage(e.getMessage())
                     .attempts(attempt + 1)
                     .build();
@@ -425,10 +428,10 @@ public class PushNotificationService {
     private boolean isTokenError(Exception e) {
         if (e instanceof FirebaseMessagingException) {
             FirebaseMessagingException fme = (FirebaseMessagingException) e;
-            String errorCode = fme.getErrorCode();
-            return "registration-token-not-registered".equals(errorCode) ||
-                    "invalid-registration-token".equals(errorCode) ||
-                    "mismatched-credential".equals(errorCode);
+            String errorCode = fme.getErrorCode().name();
+            return "UNREGISTERED".equals(errorCode) ||
+                    "INVALID_ARGUMENT".equals(errorCode) ||
+                    "SENDER_ID_MISMATCH".equals(errorCode);
         }
         return false;
     }
@@ -437,10 +440,10 @@ public class PushNotificationService {
      * 🔄 Détermine si l'erreur justifie un retry
      */
     private boolean shouldRetry(FirebaseMessagingException e) {
-        String errorCode = e.getErrorCode();
-        return "unavailable".equals(errorCode) ||
-                "internal-error".equals(errorCode) ||
-                "quota-exceeded".equals(errorCode);
+        String errorCode = e.getErrorCode().name();
+        return "UNAVAILABLE".equals(errorCode) ||
+                "INTERNAL".equals(errorCode) ||
+                "QUOTA_EXCEEDED".equals(errorCode);
     }
 
     /**
@@ -460,19 +463,20 @@ public class PushNotificationService {
 
     /**
      * ⚙️ Obtient la priorité Android en fonction de la priorité de notification
+     * 🔧 CORRECTION: Utilisation des vraies constantes Firebase
      */
     private AndroidNotification.Priority getAndroidPriority(CollecteurNotification.Priorite priorite) {
         switch (priorite) {
             case URGENT:
                 return AndroidNotification.Priority.HIGH;
             case HIGH:
-                return AndroidNotification.Priority.DEFAULT_PRIORITY;
+                return AndroidNotification.Priority.DEFAULT;
             case NORMAL:
-                return AndroidNotification.Priority.DEFAULT_PRIORITY;
+                return AndroidNotification.Priority.DEFAULT;
             case LOW:
                 return AndroidNotification.Priority.MIN;
             default:
-                return AndroidNotification.Priority.DEFAULT_PRIORITY;
+                return AndroidNotification.Priority.DEFAULT;
         }
     }
 

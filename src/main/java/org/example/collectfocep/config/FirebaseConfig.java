@@ -45,7 +45,7 @@ public class FirebaseConfig {
     @Value("${app.firebase.project-id:}")
     private String projectId;
 
-    private static final String FIREBASE_APP_NAME = "FOCEP-App";
+    public static final String FIREBASE_APP_NAME = "FOCEP-App";
 
     /**
      * 🚀 Initialise Firebase lors du démarrage de l'application
@@ -240,7 +240,7 @@ class FirebaseSecurityConfig {
                 @org.springframework.web.bind.annotation.RequestParam(defaultValue = "Ceci est un test de notification") String message) {
 
             try {
-                FirebaseMessaging messaging = FirebaseMessaging.getInstance(FirebaseApp.getInstance(FIREBASE_APP_NAME));
+                FirebaseMessaging messaging = FirebaseMessaging.getInstance(FirebaseApp.getInstance(FirebaseConfig.FIREBASE_APP_NAME));
 
                 com.google.firebase.messaging.Message testMessage = com.google.firebase.messaging.Message.builder()
                         .setToken(fcmToken)
