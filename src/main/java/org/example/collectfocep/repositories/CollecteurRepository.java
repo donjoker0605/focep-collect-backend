@@ -226,4 +226,14 @@ public interface CollecteurRepository extends JpaRepository<Collecteur, Long> {
 
     @Query("SELECT c.id FROM Collecteur c WHERE c.agence.id = :agenceId")
     List<Long> findIdsByAgenceId(@Param("agenceId") Long agenceId);
+
+    @Query("SELECT c FROM Collecteur c JOIN FETCH c.agence")
+    List<Collecteur> findAllWithAgence();
+
+    @Query("SELECT c FROM Collecteur c JOIN FETCH c.agence WHERE c.agence.id = :agenceId")
+    List<Collecteur> findByAgenceIdWithAgence(@Param("agenceId") Long agenceId);
+
+    @Query("SELECT c FROM Collecteur c WHERE c.fcmToken IS NOT NULL")
+    List<Collecteur> findCollecteursWithFCMToken();
+
 }

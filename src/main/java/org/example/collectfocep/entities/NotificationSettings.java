@@ -34,7 +34,7 @@ public class NotificationSettings {
     private Boolean emailEnabled = true;
 
     @Column(name = "threshold_value", precision = 15, scale = 2)
-    private BigDecimal thresholdValue;
+    private Double thresholdValue;
 
     @Column(name = "cooldown_minutes")
     @Builder.Default
@@ -60,15 +60,31 @@ public class NotificationSettings {
         return Boolean.TRUE.equals(this.emailEnabled) && shouldNotify();
     }
 
-    public boolean exceedsThreshold(BigDecimal value) {
+    public boolean exceedsThreshold(Double value) {
         if (this.thresholdValue == null || value == null) {
             return false;
         }
-        return value.compareTo(this.thresholdValue) > 0;
+        return value > this.thresholdValue;
     }
 
     @PreUpdate
     public void preUpdate() {
         this.updatedAt = LocalDateTime.now();
+    }
+
+    public void setThresholdValue(Double thresholdValue) {
+        this.thresholdValue = thresholdValue;
+    }
+
+    public void setCooldownMinutes(Integer cooldownMinutes) {
+        this.cooldownMinutes = cooldownMinutes;
+    }
+
+    public void setEnabled(Boolean enabled) {
+        this.enabled = enabled;
+    }
+
+    public void setEmailEnabled(Boolean emailEnabled) {
+        this.emailEnabled = emailEnabled;
     }
 }

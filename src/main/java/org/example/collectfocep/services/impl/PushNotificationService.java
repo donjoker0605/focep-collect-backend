@@ -365,7 +365,7 @@ public class PushNotificationService {
             }
 
             // Envoi en lot
-            BatchResponse batchResponse = FirebaseMessaging.getInstance().sendAll(messages);
+            BatchResponse batchResponse = FirebaseMessaging.getInstance().sendEach(messages);
 
             int successCount = batchResponse.getSuccessCount();
             int failureCount = batchResponse.getFailureCount();

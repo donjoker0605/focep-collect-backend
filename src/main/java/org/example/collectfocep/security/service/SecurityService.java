@@ -673,12 +673,13 @@ public class SecurityService {
                 .orElse(null);
     }
 
-    private Long getCurrentUserAgenceId(Authentication authentication) {
+    public Long getCurrentUserAgenceId(Authentication authentication) {
         if (authentication.getPrincipal() instanceof JwtAuthenticationFilter.JwtUserPrincipal) {
             return ((JwtAuthenticationFilter.JwtUserPrincipal) authentication.getPrincipal()).getAgenceId();
         }
         return null;
     }
+
 
     public boolean canAccessCollecteurData(Authentication auth, Long collecteurId) {
         if (auth == null || !auth.isAuthenticated()) {

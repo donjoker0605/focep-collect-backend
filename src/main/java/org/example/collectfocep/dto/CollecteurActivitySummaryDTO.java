@@ -300,8 +300,8 @@ public class CollecteurActivitySummaryDTO {
     /**
      * Builder avec statut automatique basé sur les métriques
      */
-    public static CollecteurActivitySummaryDTO.CollecteurActivitySummaryDTOBuilder withAutoStatus() {
-        return CollecteurActivitySummaryDTO.builder();
+    public static CollecteurActivitySummaryDTO createWithAutoStatus() {
+        return CollecteurActivitySummaryDTO.builder().build();
     }
 
     /**
@@ -392,5 +392,13 @@ public class CollecteurActivitySummaryDTO {
     public String toString() {
         return String.format("CollecteurSummary{id=%d, nom='%s', agence='%s', activités=%d, statut='%s', score=%d}",
                 collecteurId, collecteurNom, agenceNom, totalActivites, statut, scoreActivite);
+    }
+
+    public String getCollecteurNom() {
+        return this.collecteurNom;
+    }
+
+    public Integer getScoreActivite() {
+        return this.scoreActivite;
     }
 }

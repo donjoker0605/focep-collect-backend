@@ -140,15 +140,4 @@ public class AdminNotification {
     public long getMinutesSinceCreation() {
         return java.time.Duration.between(this.dateCreation, LocalDateTime.now()).toMinutes();
     }
-
-    // =====================================
-    // INDEX HINTS (commentaires pour DBA)
-    // =====================================
-    /*
-    Indexes recommandés:
-    - idx_admin_non_lues (admin_id, lu)
-    - idx_admin_date (admin_id, date_creation DESC)
-    - idx_collecteur (collecteur_id)
-    - idx_type_priority (type, priority)
-    */
 }

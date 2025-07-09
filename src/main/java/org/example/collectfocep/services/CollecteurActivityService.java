@@ -10,7 +10,10 @@ import org.example.collectfocep.repositories.CollecteurRepository;
 import org.example.collectfocep.repositories.JournalActiviteRepository;
 import org.example.collectfocep.security.config.RoleConfig;
 import org.example.collectfocep.security.service.SecurityService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Service;
@@ -111,7 +114,8 @@ public class CollecteurActivityService {
 
             // 📋 Récupération de toutes les activités sur la période
             List<JournalActivite> activites = journalActiviteRepository
-                    .findByUserIdAndTimestampBetween(collecteurId, startDateTime, endDateTime);
+                    .findByUserIdAndTimestampBetween(collecteurId, startDateTime, endDateTime, Pageable.unpaged())
+                    .getContent();
 
             // 📊 Calcul des statistiques
             Map<String, Object> stats = new HashMap<>();
@@ -171,7 +175,7 @@ public class CollecteurActivityService {
 
             // 🔍 Récupération des activités critiques
             List<JournalActivite> activites = journalActiviteRepository
-                    .findByUserIdAndTimestampBetween(collecteurId, startDateTime, endDateTime);
+                    .findByUserIdAndTimestampBetweenAsList(collecteurId, startDateTime, endDateTime);
 
             // 🚨 Filtrage des activités critiques
             List<JournalActivite> criticalActivities = activites.stream()
@@ -237,7 +241,7 @@ public class CollecteurActivityService {
 
             // 📋 Récupération des activités
             List<JournalActivite> activites = journalActiviteRepository
-                    .findByUserIdAndTimestampBetween(collecteur.getId(), startDateTime, endDateTime);
+                    .findByUserIdAndTimestampBetweenAsList(collecteurId, startDateTime, endDateTime);
 
             // 📊 Calculs de base
             int totalActivites = activites.size();

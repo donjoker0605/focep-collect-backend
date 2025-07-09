@@ -7,9 +7,13 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.Type;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.annotations.JdbcTypeCode;
+import java.sql.Types;
 
 import jakarta.persistence.*;
+
+import java.sql.Types;
 import java.time.LocalDateTime;
 
 /**
@@ -119,7 +123,7 @@ public class CollecteurNotification {
      * Données supplémentaires au format JSON
      * Exemple : {"montant": 50000, "clientNom": "Dupont", "action": "redirect"}
      */
-    @Type(org.hibernate.type.SqlTypes.JSON)
+    @JdbcTypeCode(Types.LONGVARCHAR)
     @Column(name = "donnees", columnDefinition = "JSON")
     private String donnees;
 
@@ -394,46 +398,34 @@ public class CollecteurNotification {
                 priorite, type.getDisplayName(), titre, collecteurId);
     }
 
-    // =====================================
-    // MÉTHODES BUILDER PERSONNALISÉES
-    // =====================================
-
-    /**
-     * Builder pour notification urgente
-     */
-    public static CollecteurNotificationBuilder urgent() {
+    public static CollecteurNotification createUrgent(Long collecteurId, String titre, String message) {
         return CollecteurNotification.builder()
+                .collecteurId(collecteurId)
                 .priorite(Priorite.URGENT)
-                .type(NotificationType.SYSTEM_ALERT);
+                .type(NotificationType.SYSTEM_ALERT)
+                .titre(titre)
+                .message(message)
+                .build();
     }
 
-    /**
-     * Builder pour notification d'information
-     */
-    public static CollecteurNotificationBuilder info() {
+    public static CollecteurNotification createInfo(Long collecteurId, String titre, String message) {
         return CollecteurNotification.builder()
+                .collecteurId(collecteurId)
                 .priorite(Priorite.NORMAL)
-                .type(NotificationType.INFORMATION);
+                .type(NotificationType.INFORMATION)
+                .titre(titre)
+                .message(message)
+                .build();
     }
 
-    /**
-     * Builder pour rappel
-     */
-    public static CollecteurNotificationBuilder rappel() {
+    public static CollecteurNotification createRappel(Long collecteurId, String titre, String message) {
         return CollecteurNotification.builder()
+                .collecteurId(collecteurId)
                 .priorite(Priorite.HIGH)
-                .type(NotificationType.REMINDER);
-    }
-
-    /**
-     * Builder pour message admin
-     */
-    public static CollecteurNotificationBuilder messageAdmin(Long adminId, String adminNom) {
-        return CollecteurNotification.builder()
-                .priorite(Priorite.NORMAL)
-                .type(NotificationType.ADMIN_MESSAGE)
-                .adminId(adminId)
-                .adminNom(adminNom);
+                .type(NotificationType.REMINDER)
+                .titre(titre)
+                .message(message)
+                .build();
     }
 
     // =====================================
@@ -461,5 +453,21 @@ public class CollecteurNotification {
     public String toString() {
         return String.format("CollecteurNotification{id=%d, collecteur=%d, type=%s, priorite=%s, titre='%s', lu=%s}",
                 id, collecteurId, type, priorite, titre, lu);
+    }
+
+    public Long getCollecteurId() {
+        return this.collecteurId;
+    }
+
+    public Boolean getSuppressible() {
+        return this.suppressible;
+    }
+
+    public Long getId() {
+        return this.id;
+    }
+
+    public void setErreurEnvoi(String erreurEnvoi) {
+        this.erreurEnvoi = erreurEnvoi;
     }
 }

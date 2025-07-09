@@ -718,9 +718,7 @@ public class AdminNotificationService {
     }
 
     private String getAgenceNom(Long agenceId) {
-        return adminRepository.findById(agenceId)
-                .map(admin -> admin.getAgence() != null ? admin.getAgence().getNomAgence() : "Agence inconnue")
-                .orElse("Agence inconnue");
+        return "Agence " + agenceId;
     }
 
     /**
