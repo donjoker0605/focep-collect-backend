@@ -19,13 +19,13 @@ public class NotificationSettingsDTO {
     private Boolean enabled;
     @NotNull
     private Boolean emailEnabled;
-    private Double thresholdValue;
+    private BigDecimal thresholdValue;
     private Integer cooldownMinutes;
 
     // Getters pour AdminNotificationService
     public String getType() { return type; }
     public Boolean getEnabled() { return enabled; }
     public Boolean getEmailEnabled() { return emailEnabled; }
-    public Double getThresholdValue() { return thresholdValue; }
+    public BigDecimal getThresholdValue() { return thresholdValue; }
     public Integer getCooldownMinutes() { return cooldownMinutes; }
 }
