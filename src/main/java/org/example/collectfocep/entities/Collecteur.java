@@ -65,13 +65,29 @@ public class Collecteur extends Utilisateur {
     @JsonIgnoreProperties({"collecteurs"})
     private RapportMensuel rapport;
 
-    @Column(name = "fgm_token")
-    private String fgmToken;
+    @Column(name = "fcm_token")
+    private String fcmToken;
 
     @Column(name = "fcm_token_updated_at")
     private LocalDateTime fcmTokenUpdatedAt;
 
     // Méthodes utilitaires (gardez vos méthodes existantes)
+
+    public String getFcmToken() {
+        return fcmToken;
+    }
+
+    public void setFcmToken(String fcmToken) {
+        this.fcmToken = fcmToken;
+    }
+
+    public LocalDateTime getFcmTokenUpdatedAt() {
+        return fcmTokenUpdatedAt;
+    }
+
+    public void setFcmTokenUpdatedAt(LocalDateTime fcmTokenUpdatedAt) {
+        this.fcmTokenUpdatedAt = fcmTokenUpdatedAt;
+    }
 
     public void addClient(Client client) {
         if (clients == null) {

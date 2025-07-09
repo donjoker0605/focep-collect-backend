@@ -4,17 +4,24 @@ import com.google.auth.oauth2.GoogleCredentials;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.FirebaseOptions;
 import com.google.firebase.messaging.FirebaseMessaging;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.actuate.health.AbstractHealthIndicator;
+import org.springframework.boot.actuate.health.Health;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.Resource;
 
 import jakarta.annotation.PostConstruct;
+import org.springframework.stereotype.Component;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
 import java.util.Map;
+
+import static org.example.collectfocep.config.FirebaseConfig.FIREBASE_APP_NAME;
 
 /**
  * 🔥 Configuration Firebase pour l'application FOCEP
@@ -274,35 +281,28 @@ class FirebaseSecurityConfig {
 /**
  * 📊 Configuration des métriques Firebase pour Actuator
  */
-@org.springframework.stereotype.Component
-@lombok.RequiredArgsConstructor
-class FirebaseHealthIndicator implements org.springframework.boot.actuator.health.HealthIndicator {
-
-    private final FirebaseConfig.FirebaseConfigValidator validator;
-
-    @Override
-    public org.springframework.boot.actuator.health.Health health() {
-        try {
-            boolean isValid = validator.validateConfiguration();
-            FirebaseConfig.FirebaseInfo info = validator.getFirebaseInfo();
-
-            if (isValid) {
-                return org.springframework.boot.actuator.health.Health.up()
-                        .withDetail("firebase", info)
-                        .withDetail("status", "Firebase opérationnel")
-                        .build();
-            } else {
-                return org.springframework.boot.actuator.health.Health.down()
-                        .withDetail("firebase", info)
-                        .withDetail("status", "Firebase non opérationnel")
-                        .build();
-            }
-
-        } catch (Exception e) {
-            return org.springframework.boot.actuator.health.Health.down()
-                    .withDetail("error", e.getMessage())
-                    .withDetail("status", "Erreur de vérification Firebase")
-                    .build();
-        }
-    }
-}
+//@Component
+//@RequiredArgsConstructor
+//public class FirebaseHealthIndicator extends AbstractHealthIndicator {
+//
+//    private final FirebaseConfig.FirebaseConfigValidator validator;
+//
+//    @Override
+//    protected void doHealthCheck(Health.Builder builder) throws Exception {
+//        try {
+//            boolean isValid = validator.validateConfiguration();
+//            FirebaseInfo info = validator.getFirebaseInfo();
+//
+//            builder.withDetail("firebase", info);
+//
+//            if (isValid) {
+//                builder.up();
+//            } else {
+//                builder.down();
+//            }
+//        } catch (Exception e) {
+//            builder.down()
+//                    .withDetail("error", e.getMessage());
+//        }
+//    }
+//}

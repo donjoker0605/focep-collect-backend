@@ -27,6 +27,8 @@ public interface CollecteurMapper {
     @Mapping(target = "rapportId", ignore = true)
     @Mapping(target = "clients", ignore = true)
     @Mapping(target = "comptes", ignore = true)
+    @Mapping(target = "fcmToken", ignore = true)
+    @Mapping(target = "fcmTokenUpdatedAt", ignore = true)
     Collecteur toEntity(CollecteurCreateDTO dto);
 
     @Mapping(target = "id", ignore = true)
@@ -44,6 +46,8 @@ public interface CollecteurMapper {
     @Mapping(target = "rapportId", ignore = true)
     @Mapping(target = "clients", ignore = true)
     @Mapping(target = "comptes", ignore = true)
+    @Mapping(target = "fcmToken", ignore = true)
+    @Mapping(target = "fcmTokenUpdatedAt", ignore = true)
     void updateEntityFromDTO(CollecteurUpdateDTO dto, @MappingTarget Collecteur collecteur);
 
     @Named("mapAgence")
