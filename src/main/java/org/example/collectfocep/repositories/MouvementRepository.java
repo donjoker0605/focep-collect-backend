@@ -174,6 +174,89 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
     List<Mouvement> findByClientId(@Param("clientId") Long clientId);
 
     /**
+     *  Recherche paginée par client
+     */
+    @Query("SELECT m FROM Mouvement m " +
+            "WHERE m.client.id = :clientId " +
+            "ORDER BY m.dateOperation DESC")
+    Page<Mouvement> findByClientId(@Param("clientId") Long clientId, Pageable pageable);
+
+    /**
+     *  Recherche avec filtres multiples
+     */
+    @Query("SELECT m FROM Mouvement m " +
+            "WHERE m.client.id = :clientId " +
+            "AND (:type IS NULL OR UPPER(m.sens) = UPPER(:type) OR UPPER(m.typeMouvement) = UPPER(:type)) " +
+            "AND (:dateDebut IS NULL OR DATE(m.dateOperation) >= :dateDebut) " +
+            "AND (:dateFin IS NULL OR DATE(m.dateOperation) <= :dateFin)")
+    Page<Mouvement> findByClientIdWithFilters(
+            @Param("clientId") Long clientId,
+            @Param("type") String type,
+            @Param("dateDebut") LocalDate dateDebut,
+            @Param("dateFin") LocalDate dateFin,
+            Pageable pageable
+    );
+
+    /**
+     * Statistiques par client et période
+     */
+    @Query("SELECT " +
+            "SUM(CASE WHEN UPPER(m.sens) = 'EPARGNE' OR UPPER(m.typeMouvement) = 'EPARGNE' THEN m.montant ELSE 0 END) as totalEpargne, " +
+            "SUM(CASE WHEN UPPER(m.sens) = 'RETRAIT' OR UPPER(m.typeMouvement) = 'RETRAIT' THEN m.montant ELSE 0 END) as totalRetraits, " +
+            "COUNT(m) as nombreTransactions " +
+            "FROM Mouvement m " +
+            "WHERE m.client.id = :clientId " +
+            "AND (:dateDebut IS NULL OR DATE(m.dateOperation) >= :dateDebut) " +
+            "AND (:dateFin IS NULL OR DATE(m.dateOperation) <= :dateFin)")
+    Object[] getClientStatistics(
+            @Param("clientId") Long clientId,
+            @Param("dateDebut") LocalDate dateDebut,
+            @Param("dateFin") LocalDate dateFin
+    );
+
+    /**
+     *  Calcul du solde d'un client à une date précise
+     */
+    @Query("SELECT " +
+            "SUM(CASE WHEN UPPER(m.sens) = 'EPARGNE' OR UPPER(m.typeMouvement) = 'EPARGNE' THEN m.montant " +
+            "          WHEN UPPER(m.sens) = 'RETRAIT' OR UPPER(m.typeMouvement) = 'RETRAIT' THEN -m.montant " +
+            "          ELSE 0 END) " +
+            "FROM Mouvement m " +
+            "WHERE m.client.id = :clientId " +
+            "AND DATE(m.dateOperation) <= :date")
+    Double calculateClientBalanceAtDate(
+            @Param("clientId") Long clientId,
+            @Param("date") LocalDate date
+    );
+
+    /**
+     *  Transactions d'un client par mois (pour graphiques)
+     */
+    @Query("SELECT " +
+            "YEAR(m.dateOperation) as annee, " +
+            "MONTH(m.dateOperation) as mois, " +
+            "SUM(CASE WHEN UPPER(m.sens) = 'EPARGNE' OR UPPER(m.typeMouvement) = 'EPARGNE' THEN m.montant ELSE 0 END) as epargne, " +
+            "SUM(CASE WHEN UPPER(m.sens) = 'RETRAIT' OR UPPER(m.typeMouvement) = 'RETRAIT' THEN m.montant ELSE 0 END) as retraits " +
+            "FROM Mouvement m " +
+            "WHERE m.client.id = :clientId " +
+            "AND m.dateOperation >= :dateDebut " +
+            "GROUP BY YEAR(m.dateOperation), MONTH(m.dateOperation) " +
+            "ORDER BY annee DESC, mois DESC")
+    List<Object[]> getClientMonthlyStats(
+            @Param("clientId") Long clientId,
+            @Param("dateDebut") LocalDateTime dateDebut
+    );
+
+    /**
+     *  Dernière transaction d'un client
+     */
+    @Query("SELECT m FROM Mouvement m " +
+            "WHERE m.client.id = :clientId " +
+            "ORDER BY m.dateOperation DESC " +
+            "LIMIT 1")
+    Optional<Mouvement> findLastTransactionByClientId(@Param("clientId") Long clientId);
+
+    /**
      * Mouvements par client avec toutes les relations
      */
     @Query("SELECT m FROM Mouvement m " +
@@ -338,13 +421,57 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
             @Param("dateFin") LocalDateTime dateFin
     );
 
+    @Query("SELECT SUM(m.montant) FROM Mouvement m " +
+            "WHERE m.collecteur.id = :collecteurId " +
+            "AND (UPPER(m.sens) = 'EPARGNE' OR UPPER(m.typeMouvement) = 'EPARGNE') " +
+            "AND DATE(m.dateOperation) = :date")
+    Double sumEpargneByCollecteurAndDate(@Param("collecteurId") Long collecteurId,
+                                         @Param("date") LocalDate date);
+
+    @Query("SELECT SUM(m.montant) FROM Mouvement m " +
+            "WHERE m.collecteur.id = :collecteurId " +
+            "AND (UPPER(m.sens) = 'RETRAIT' OR UPPER(m.typeMouvement) = 'RETRAIT') " +
+            "AND DATE(m.dateOperation) = :date")
+    Double sumRetraitsByCollecteurAndDate(@Param("collecteurId") Long collecteurId,
+                                          @Param("date") LocalDate date);
+
+    @Query("SELECT c.id, SUM(m.montant) as total " +
+            "FROM Collecteur c " +
+            "LEFT JOIN c.mouvements m " +
+            "WHERE c.agence.id = :agenceId " +
+            "AND (UPPER(m.sens) = 'EPARGNE' OR UPPER(m.typeMouvement) = 'EPARGNE') " +
+            "AND DATE(m.dateOperation) BETWEEN :dateDebut AND :dateFin " +
+            "GROUP BY c.id " +
+            "ORDER BY total DESC")
+    List<Object[]> getCollecteurRankingInAgence(@Param("agenceId") Long agenceId,
+                                                @Param("dateDebut") LocalDate dateDebut,
+                                                @Param("dateFin") LocalDate dateFin);
+
     /**
      * Total épargne par collecteur
      */
-    @Query("SELECT COALESCE(SUM(m.montant), 0) FROM Mouvement m " +
-            "WHERE m.client.collecteur.id = :collecteurId " +
-            "AND UPPER(m.sens) = 'EPARGNE'")
-    Double sumEpargneByCollecteurId(@Param("collecteurId") Long collecteurId);
+    @Query("SELECT SUM(m.montant) FROM Mouvement m " +
+            "WHERE m.collecteur.id = :collecteurId " +
+            "AND (UPPER(m.sens) = 'EPARGNE' OR UPPER(m.typeMouvement) = 'EPARGNE') " +
+            "AND DATE(m.dateOperation) BETWEEN :dateDebut AND :dateFin")
+    Double sumEpargneByCollecteur(@Param("collecteurId") Long collecteurId,
+                                  @Param("dateDebut") LocalDate dateDebut,
+                                  @Param("dateFin") LocalDate dateFin);
+
+    @Query("SELECT SUM(m.montant) FROM Mouvement m " +
+            "WHERE m.collecteur.id = :collecteurId " +
+            "AND (UPPER(m.sens) = 'RETRAIT' OR UPPER(m.typeMouvement) = 'RETRAIT') " +
+            "AND DATE(m.dateOperation) BETWEEN :dateDebut AND :dateFin")
+    Double sumRetraitsByCollecteur(@Param("collecteurId") Long collecteurId,
+                                   @Param("dateDebut") LocalDate dateDebut,
+                                   @Param("dateFin") LocalDate dateFin);
+
+    @Query("SELECT COUNT(m) FROM Mouvement m " +
+            "WHERE m.collecteur.id = :collecteurId " +
+            "AND DATE(m.dateOperation) BETWEEN :dateDebut AND :dateFin")
+    Long countByCollecteurAndPeriod(@Param("collecteurId") Long collecteurId,
+                                    @Param("dateDebut") LocalDate dateDebut,
+                                    @Param("dateFin") LocalDate dateFin);
 
     /**
      * Somme retraits par collecteur et période

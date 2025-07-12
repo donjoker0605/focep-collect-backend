@@ -5,21 +5,28 @@ import org.example.collectfocep.entities.Collecteur;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 public interface CollecteurService {
-    // ✅ MÉTHODES PRINCIPALES CORRIGÉES
+    // MÉTHODES PRINCIPALES CORRIGÉES
     Collecteur saveCollecteur(CollecteurCreateDTO dto);
     Collecteur updateCollecteur(Long id, CollecteurUpdateDTO dto);
 
-    // ✅ NOUVELLES MÉTHODES AJOUTÉES
+    // NOUVELLES MÉTHODES AJOUTÉES POUR ADMIN CONTROLLER
     Page<Collecteur> getCollecteursByAgence(Long agenceId, Pageable pageable);
     Page<Collecteur> searchCollecteursByAgence(Long agenceId, String search, Pageable pageable);
     Collecteur toggleCollecteurStatus(Long collecteurId);
-    CollecteurStatisticsDTO getCollecteurStatistics(Long collecteurId);
 
-    // ✅ MÉTHODES STANDARD
+    // MÉTHODES CORRIGÉES AVEC BONS PARAMÈTRES
+    CollecteurStatisticsDTO getCollecteurStatistics(Long collecteurId);
+    Map<String, Object> getCollecteurStatisticsWithDateRange(Long collecteurId, LocalDate dateDebut, LocalDate dateFin);
+    Map<String, Object> getCollecteurPerformanceMetrics(Long collecteurId, LocalDate dateDebut, LocalDate dateFin);
+    void updateCollecteurStatus(Long collecteurId, Boolean active);
+
+    // MÉTHODES STANDARD
     Optional<Collecteur> getCollecteurById(Long id);
     List<Collecteur> getAllCollecteurs();
     Page<Collecteur> getAllCollecteurs(Pageable pageable);
@@ -31,7 +38,7 @@ public interface CollecteurService {
     CollecteurDTO convertToDTO(Collecteur collecteur);
     CollecteurDashboardDTO getDashboardStats(Long collecteurId);
 
-    // ✅ MÉTHODES DEPRECATED POUR COMPATIBILITÉ
+    // MÉTHODES DEPRECATED POUR COMPATIBILITÉ
     @Deprecated
     Collecteur saveCollecteur(CollecteurDTO dto, Long agenceId);
     @Deprecated

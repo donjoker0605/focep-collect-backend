@@ -157,4 +157,7 @@ public interface JournalRepository extends JpaRepository<Journal, Long> {
             "WHERE j.collecteur.id = :collecteurId AND j.dateDebut = :date")
     boolean existsByCollecteurIdAndDate(@Param("collecteurId") Long collecteurId, @Param("date") LocalDate date);
 
+    @Query("SELECT j FROM Journal j WHERE j.collecteur.id = :collecteurId ORDER BY j.dateDebut DESC")
+    Page<Journal> findByCollecteurId(@Param("collecteurId") Long collecteurId, Pageable pageable);
+
 }

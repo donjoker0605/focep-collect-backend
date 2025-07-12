@@ -1,5 +1,6 @@
 package org.example.collectfocep.services.interfaces;
 
+import org.example.collectfocep.dto.JournalDTO;
 import org.example.collectfocep.entities.Collecteur;
 import org.example.collectfocep.entities.Journal;
 import org.example.collectfocep.entities.Mouvement;
@@ -14,8 +15,7 @@ import java.util.Optional;
 public interface JournalService {
 
     /**
-     *MÉTHODE PRINCIPALE: Récupère ou crée le journal du jour automatiquement
-     * Garantit qu'il n'y a qu'un seul journal par collecteur/jour
+     * MÉTHODE PRINCIPALE: Récupère ou crée le journal du jour automatiquement
      */
     Journal getOrCreateJournalDuJour(Long collecteurId, LocalDate date);
 
@@ -30,35 +30,29 @@ public interface JournalService {
     Journal cloturerJournalDuJour(Long collecteurId, LocalDate date);
 
     /**
+     * NOUVELLE MÉTHODE POUR AdminCollecteurController
+     */
+    Page<JournalDTO> getJournauxByCollecteurPaginated(Long collecteurId, Pageable pageable);
+
+    /**
      * NOUVELLE MÉTHODE POUR AsyncReportService
-     * Récupère les entrées de journal pour un mois donné
      */
     List<Journal> getMonthlyEntries(Long collecteurId, YearMonth month);
 
     /**
-     *  NOUVELLE MÉTHODE POUR ReportService
-     * Créer un nouveau journal pour un collecteur
+     * NOUVELLE MÉTHODE POUR ReportService
      */
     Journal createJournal(Long collecteurId);
 
-    // MÉTHODES EXISTANTES CONSERVÉES POUR COMPATIBILITÉ
+    // MÉTHODES EXISTANTES CONSERVÉES
     List<Journal> getAllJournaux();
-
     Page<Journal> getAllJournaux(Pageable pageable);
-
     Optional<Journal> getJournalById(Long id);
-
     Journal saveJournal(Journal journal);
-
     Journal cloturerJournal(Long journalId);
-
     List<Journal> getJournauxByCollecteurAndDateRange(Long collecteurId, LocalDate dateDebut, LocalDate dateFin);
-
     Page<Journal> getJournauxByCollecteurAndDateRange(Long collecteurId, LocalDate dateDebut, LocalDate dateFin, Pageable pageable);
-
     void deleteJournal(Long id);
-
     Mouvement saveMouvement(Mouvement mouvement, Journal journal);
-
     List<Journal> getJournauxByCollecteurAndDateRange(Collecteur collecteur, LocalDate dateDebut, LocalDate dateFin);
 }

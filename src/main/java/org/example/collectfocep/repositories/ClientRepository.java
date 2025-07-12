@@ -42,8 +42,6 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
     @Query("SELECT c FROM Client c WHERE c.collecteur = :collecteur ORDER BY c.dateCreation DESC")
     Page<Client> findByCollecteur(@Param("collecteur") Collecteur collecteur, Pageable pageable);
 
-    @Query("SELECT COUNT(c) FROM Client c WHERE c.collecteur.id = :collecteurId")
-    Long countByCollecteurId(@Param("collecteurId") Long collecteurId);
 
     @Query("SELECT COUNT(c) FROM Client c WHERE c.collecteur = :collecteur")
     Long countByCollecteur(@Param("collecteur") Collecteur collecteur);
@@ -328,6 +326,14 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
             "AND c.dateModification < :cutoffDate")
     List<Client> findLongInactiveClients(@Param("cutoffDate") LocalDateTime cutoffDate);
 
+    @Query("SELECT COUNT(DISTINCT c) FROM Client c " +
+            "LEFT JOIN c.mouvements m " +
+            "WHERE c.collecteur.id = :collecteurId " +
+            "AND DATE(m.dateOperation) BETWEEN :dateDebut AND :dateFin")
+    Long countActiveByCollecteurId(@Param("collecteurId") Long collecteurId,
+                                   @Param("dateDebut") LocalDate dateDebut,
+                                   @Param("dateFin") LocalDate dateFin);
+
     /**
      * Clients sans transactions récentes
      */
@@ -359,6 +365,9 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
      * Compte les clients validés d'un collecteur spécifique
      * Méthode manquante nécessaire pour AdminDashboardService
      */
+    @Query("SELECT COUNT(c) FROM Client c WHERE c.collecteur.id = :collecteurId")
+    Long countByCollecteurId(@Param("collecteurId") Long collecteurId);
+
     @Query("SELECT COUNT(c) FROM Client c WHERE c.collecteur.id = :collecteurId AND c.valide = true")
     Long countByCollecteurIdAndValideTrue(@Param("collecteurId") Long collecteurId);
 

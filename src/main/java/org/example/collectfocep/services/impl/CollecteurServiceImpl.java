@@ -29,9 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -570,5 +568,163 @@ public class CollecteurServiceImpl implements CollecteurService {
         updateDTO.setActive(dto.isActive());
 
         return updateCollecteur(id, updateDTO);
+    }
+
+    /**
+     * 🔥 NOUVELLE MÉTHODE: Statistiques avec plage de dates
+     */
+    @Override
+    public Map<String, Object> getCollecteurStatisticsWithDateRange(Long collecteurId, LocalDate dateDebut, LocalDate dateFin) {
+        log.info("📊 Calcul statistiques collecteur {} du {} au {}", collecteurId, dateDebut, dateFin);
+
+        // 1. Récupérer le collecteur
+        Collecteur collecteur = getCollecteurById(collecteurId)
+                .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé: " + collecteurId));
+
+        // 2. Compter les clients
+        Long totalClients = clientRepository.countByCollecteurId(collecteurId);
+        Long clientsActifs = clientRepository.countActiveByCollecteurId(collecteurId, dateDebut, dateFin);
+
+        // 3. Calculer les montants
+        Double totalEpargne = mouvementRepository.sumEpargneByCollecteur(collecteurId, dateDebut, dateFin);
+        Double totalRetraits = mouvementRepository.sumRetraitsByCollecteur(collecteurId, dateDebut, dateFin);
+        Double soldeNet = (totalEpargne != null ? totalEpargne : 0.0) - (totalRetraits != null ? totalRetraits : 0.0);
+
+        // 4. Compter les transactions
+        Long nombreTransactions = mouvementRepository.countByCollecteurAndPeriod(collecteurId, dateDebut, dateFin);
+
+        // 5. Calculer les moyennes
+        Double moyenneParClient = totalClients > 0 ? soldeNet / totalClients : 0.0;
+        Double moyenneParTransaction = nombreTransactions > 0 ? totalEpargne / nombreTransactions : 0.0;
+
+        // 6. Performance vs objectifs
+        Double objectifMensuel = collecteur.getMontantMaxRetrait() != null ? collecteur.getMontantMaxRetrait() : 100000.0;
+        Double tauxRealisation = objectifMensuel > 0 ? (totalEpargne != null ? totalEpargne : 0.0) / objectifMensuel * 100 : 0.0;
+
+        // ✅ SOLUTION: Utiliser HashMap au lieu de Map.of()
+        Map<String, Object> statistics = new HashMap<>();
+        statistics.put("collecteurId", collecteurId);
+        statistics.put("collecteurNom", collecteur.getNom());
+        statistics.put("collecteurPrenom", collecteur.getPrenom());
+        statistics.put("dateCalcul", LocalDateTime.now());
+        statistics.put("totalClients", totalClients != null ? totalClients : 0L);
+        statistics.put("clientsActifs", clientsActifs != null ? clientsActifs : 0L);
+        statistics.put("totalEpargne", totalEpargne != null ? totalEpargne : 0.0);
+        statistics.put("totalRetraits", totalRetraits != null ? totalRetraits : 0.0);
+        statistics.put("soldeNet", soldeNet);
+        statistics.put("nombreTransactions", nombreTransactions != null ? nombreTransactions : 0L);
+        statistics.put("moyenneParClient", moyenneParClient);
+        statistics.put("moyenneParTransaction", moyenneParTransaction);
+        statistics.put("objectifMensuel", objectifMensuel);
+        statistics.put("tauxRealisation", tauxRealisation);
+
+        // Déterminer la performance
+        String performance;
+        if (tauxRealisation >= 100) {
+            performance = "EXCELLENT";
+        } else if (tauxRealisation >= 80) {
+            performance = "BON";
+        } else if (tauxRealisation >= 60) {
+            performance = "MOYEN";
+        } else {
+            performance = "FAIBLE";
+        }
+        statistics.put("performance", performance);
+
+        return statistics;
+    }
+
+    /**
+     * Métriques de performance
+     */
+    @Override
+    public Map<String, Object> getCollecteurPerformanceMetrics(Long collecteurId, LocalDate dateDebut, LocalDate dateFin) {
+        log.info("📈 Calcul performance collecteur {} du {} au {}", collecteurId, dateDebut, dateFin);
+
+        // Évolution jour par jour
+        List<Map<String, Object>> evolutionJournaliere = new ArrayList<>();
+        LocalDate currentDate = dateDebut;
+
+        while (!currentDate.isAfter(dateFin)) {
+            Double epargneJour = mouvementRepository.sumEpargneByCollecteurAndDate(collecteurId, currentDate);
+            Double retraitsJour = mouvementRepository.sumRetraitsByCollecteurAndDate(collecteurId, currentDate);
+
+            // HashMap pour éviter les limites de Map.of()
+            Map<String, Object> journee = new HashMap<>();
+            journee.put("date", currentDate);
+            journee.put("epargne", epargneJour != null ? epargneJour : 0.0);
+            journee.put("retraits", retraitsJour != null ? retraitsJour : 0.0);
+            journee.put("net", (epargneJour != null ? epargneJour : 0.0) - (retraitsJour != null ? retraitsJour : 0.0));
+
+            evolutionJournaliere.add(journee);
+            currentDate = currentDate.plusDays(1);
+        }
+
+        // Tendance (croissante, stable, décroissante)
+        String tendance = calculerTendance(evolutionJournaliere);
+
+        // Ranking par rapport aux autres collecteurs de l'agence
+        Integer ranking = calculateCollecteurRanking(collecteurId, dateDebut, dateFin);
+
+        //  HashMap pour le résultat final
+        Map<String, Object> performance = new HashMap<>();
+        performance.put("evolutionJournaliere", evolutionJournaliere);
+        performance.put("tendance", tendance);
+        performance.put("ranking", ranking);
+        performance.put("periode", dateDebut + " au " + dateFin);
+
+        return performance;
+    }
+
+    /**
+     *  Mise à jour du statut
+     */
+    @Override
+    public void updateCollecteurStatus(Long collecteurId, Boolean active) {
+        log.info("⚡ Changement statut collecteur {}: {}", collecteurId, active);
+
+        Collecteur collecteur = getCollecteurById(collecteurId)
+                .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé: " + collecteurId));
+
+        collecteur.setActive(active);
+        collecteurRepository.save(collecteur);
+
+        log.info("✅ Statut collecteur {} mis à jour: {}", collecteurId, active);
+    }
+
+    // Méthodes utilitaires privées
+    private String calculerTendance(List<Map<String, Object>> evolution) {
+        if (evolution.size() < 3) return "STABLE";
+
+        // Comparer les 3 derniers jours avec les 3 premiers
+        double debut = evolution.subList(0, 3).stream()
+                .mapToDouble(e -> (Double) e.get("net")).average().orElse(0.0);
+        double fin = evolution.subList(evolution.size() - 3, evolution.size()).stream()
+                .mapToDouble(e -> (Double) e.get("net")).average().orElse(0.0);
+
+        double variation = Math.abs(debut) > 0 ? ((fin - debut) / Math.abs(debut)) * 100 : 0;
+
+        if (variation > 10) return "CROISSANTE";
+        if (variation < -10) return "DECROISSANTE";
+        return "STABLE";
+    }
+
+    private Integer calculateCollecteurRanking(Long collecteurId, LocalDate dateDebut, LocalDate dateFin) {
+        // Récupérer l'agence du collecteur
+        Collecteur collecteur = getCollecteurById(collecteurId).orElse(null);
+        if (collecteur == null) return null;
+
+        // Calculer le ranking dans l'agence
+        List<Object[]> rankings = mouvementRepository.getCollecteurRankingInAgence(
+                collecteur.getAgence().getId(), dateDebut, dateFin);
+
+        for (int i = 0; i < rankings.size(); i++) {
+            Long id = (Long) rankings.get(i)[0];
+            if (id.equals(collecteurId)) {
+                return i + 1;
+            }
+        }
+
+        return rankings.size();
     }
 }

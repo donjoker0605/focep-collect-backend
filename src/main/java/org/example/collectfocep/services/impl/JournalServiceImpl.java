@@ -1,6 +1,7 @@
 package org.example.collectfocep.services.impl;
 
 import lombok.extern.slf4j.Slf4j;
+import org.example.collectfocep.dto.JournalDTO;
 import org.example.collectfocep.entities.Collecteur;
 import org.example.collectfocep.entities.Journal;
 import org.example.collectfocep.entities.Mouvement;
@@ -369,5 +370,30 @@ public class JournalServiceImpl implements JournalService {
 
         log.info("✅ Clôture automatique terminée: {} journaux clôturés", nombreClotures);
         return nombreClotures;
+    }
+
+    @Override
+    public Page<JournalDTO> getJournauxByCollecteurPaginated(Long collecteurId, Pageable pageable) {
+        log.info("📋 Récupération paginée des journaux pour collecteur: {}", collecteurId);
+
+        try {
+            // Récupérer les journaux avec pagination
+            Page<Journal> journauxPage = journalRepository.findByCollecteurId(collecteurId, pageable);
+
+            // Convertir en DTO
+            return journauxPage.map(journal -> JournalDTO.builder()
+                    .id(journal.getId())
+                    .collecteurId(journal.getCollecteur().getId())
+                    .dateDebut(journal.getDateDebut())
+                    .dateFin(journal.getDateFin())
+                    .statut(journal.getStatut())
+                    .estCloture(journal.isEstCloture())
+                    .reference(journal.getReference())
+                    .build());
+
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la récupération des journaux paginés: {}", e.getMessage(), e);
+            throw new RuntimeException("Erreur récupération journaux: " + e.getMessage(), e);
+        }
     }
 }

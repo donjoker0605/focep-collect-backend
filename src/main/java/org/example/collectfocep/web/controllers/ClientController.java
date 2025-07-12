@@ -3,10 +3,7 @@ package org.example.collectfocep.web.controllers;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.aspects.LogActivity;
-import org.example.collectfocep.dto.ClientDTO;
-import org.example.collectfocep.dto.ClientDetailDTO;
-import org.example.collectfocep.dto.CommissionParameterDTO;
-import org.example.collectfocep.dto.CompteDTO;
+import org.example.collectfocep.dto.*;
 import org.example.collectfocep.entities.Client;
 import org.example.collectfocep.entities.CommissionParameter;
 import org.example.collectfocep.entities.Compte;
@@ -25,15 +22,22 @@ import org.example.collectfocep.util.ApiResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
+
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import java.util.Comparator;
 
 @RestController
 @RequestMapping("/api/clients")
@@ -288,5 +292,215 @@ public class ClientController {
                 .map(clientMapper::toDTO)
                 .toList();
         return ResponseEntity.ok(ApiResponse.success(dtos, "Liste des clients récupérée"));
+    }
+
+    /**
+     *  Statistiques d'un client
+     * Endpoint séparé pour les statistiques (même si with-transactions les contient déjà)
+     */
+    @GetMapping("/{id}/statistics")
+    @PreAuthorize("@securityService.canManageClient(authentication, #id)")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getClientStatistics(@PathVariable Long id) {
+        log.info("📊 Récupération des statistiques du client: {}", id);
+
+        try {
+            // 1. Récupérer le client
+            Client client = clientService.getClientById(id)
+                    .orElseThrow(() -> new ResourceNotFoundException("Client non trouvé avec l'ID: " + id));
+
+            // 2. Récupérer ses transactions
+            List<Mouvement> transactions = mouvementRepository.findByClientIdWithAllRelations(id);
+
+            // 3. Calculer les statistiques
+            Double totalEpargne = calculateTotalEpargne(transactions);
+            Double totalRetraits = calculateTotalRetraits(transactions);
+            Double soldeTotal = calculateClientBalance(transactions);
+
+            // Statistiques par période
+            LocalDate aujourdhui = LocalDate.now();
+            LocalDate debutMois = aujourdhui.withDayOfMonth(1);
+            LocalDate debutSemaine = aujourdhui.with(DayOfWeek.MONDAY);
+
+            Double epargneCurrentMois = calculateEpargnePeriod(transactions, debutMois, aujourdhui);
+            Double epargneCurrentSemaine = calculateEpargnePeriod(transactions, debutSemaine, aujourdhui);
+
+            // Dernière transaction
+            Optional<Mouvement> derniereTransaction = transactions.stream()
+                    .max(Comparator.comparing(Mouvement::getDateOperation));
+
+            // 4. Construire la réponse
+            Map<String, Object> stats = Map.of(
+                    "totalEpargne", totalEpargne,
+                    "totalRetraits", totalRetraits,
+                    "soldeTotal", soldeTotal,
+                    "nombreTransactions", transactions.size(),
+                    "epargneCurrentMois", epargneCurrentMois,
+                    "epargneCurrentSemaine", epargneCurrentSemaine,
+                    "derniereTransaction", derniereTransaction.map(t -> Map.of(
+                            "date", t.getDateOperation(),
+                            "montant", t.getMontant(),
+                            "type", t.getSens()
+                    )).orElse(null),
+                    "moyenneEpargneParTransaction", transactions.size() > 0 ? totalEpargne / transactions.size() : 0
+            );
+
+            ApiResponse<Map<String, Object>> response = ApiResponse.success(stats);
+            response.addMeta("clientId", id);
+            response.addMeta("dateCalcul", LocalDateTime.now());
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            log.error("❌ Erreur lors du calcul des statistiques du client {}: {}", id, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Erreur lors du calcul des statistiques"));
+        }
+    }
+
+    /**
+     *  Solde d'un client
+     * Endpoint séparé pour le solde
+     */
+    @GetMapping("/{id}/balance")
+    @PreAuthorize("@securityService.canManageClient(authentication, #id)")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getClientBalance(@PathVariable Long id) {
+        log.info("💰 Récupération du solde du client: {}", id);
+
+        try {
+            // 1. Vérifier que le client existe
+            Client client = clientService.getClientById(id)
+                    .orElseThrow(() -> new ResourceNotFoundException("Client non trouvé avec l'ID: " + id));
+
+            // 2. Récupérer ses transactions
+            List<Mouvement> transactions = mouvementRepository.findByClientIdWithAllRelations(id);
+
+            // 3. Calculer le solde
+            Double totalEpargne = calculateTotalEpargne(transactions);
+            Double totalRetraits = calculateTotalRetraits(transactions);
+            Double soldeTotal = calculateClientBalance(transactions);
+
+            // 4. Solde par période
+            LocalDate aujourdhui = LocalDate.now();
+            LocalDate debutMois = aujourdhui.withDayOfMonth(1);
+
+            Double soldePrecedent = calculateSoldeAtDate(transactions, debutMois.minusDays(1));
+            Double evolutionMois = soldeTotal - soldePrecedent;
+
+            Map<String, Object> balance = Map.of(
+                    "soldeTotal", soldeTotal,
+                    "totalEpargne", totalEpargne,
+                    "totalRetraits", totalRetraits,
+                    "soldePrecedent", soldePrecedent,
+                    "evolutionMois", evolutionMois,
+                    "lastUpdated", LocalDateTime.now(),
+                    "clientNom", client.getPrenom() + " " + client.getNom()
+            );
+
+            ApiResponse<Map<String, Object>> response = ApiResponse.success(balance);
+            response.addMeta("clientId", id);
+            response.addMeta("currency", "FCFA");
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            log.error("❌ Erreur lors du calcul du solde du client {}: {}", id, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Erreur lors du calcul du solde"));
+        }
+    }
+
+    /**
+     * 🔥 ENDPOINT 3: Transactions d'un client avec pagination
+     * Endpoint séparé pour les transactions avec filtres avancés
+     */
+    @GetMapping("/{id}/transactions")
+    @PreAuthorize("@securityService.canManageClient(authentication, #id)")
+    public ResponseEntity<ApiResponse<Page<MouvementDTO>>> getClientTransactions(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "dateOperation") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDir,
+            @RequestParam(required = false) String type, // EPARGNE ou RETRAIT
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateDebut,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFin) {
+
+        log.info("📋 Récupération des transactions du client: {} (page={}, size={})", id, page, size);
+
+        try {
+            // 1. Vérifier que le client existe
+            clientService.getClientById(id)
+                    .orElseThrow(() -> new ResourceNotFoundException("Client non trouvé avec l'ID: " + id));
+
+            // 2. Configuration pagination
+            Sort.Direction direction = sortDir.equalsIgnoreCase("desc") ?
+                    Sort.Direction.DESC : Sort.Direction.ASC;
+            PageRequest pageRequest = PageRequest.of(page, size, Sort.by(direction, sortBy));
+
+            // 3. Récupérer les transactions avec filtres
+            Page<Mouvement> transactionsPage;
+
+            if (type != null || dateDebut != null || dateFin != null) {
+                // Utiliser la recherche avec filtres (méthode à ajouter au repository)
+                transactionsPage = mouvementRepository.findByClientIdWithFilters(
+                        id, type, dateDebut, dateFin, pageRequest);
+            } else {
+                // Récupération simple (méthode à ajouter au repository)
+                transactionsPage = mouvementRepository.findByClientId(id, pageRequest);
+            }
+
+            // 4. Mapper vers DTO
+            Page<MouvementDTO> dtoPage = transactionsPage.map(mouvementMapper::toDTO);
+
+            ApiResponse<Page<MouvementDTO>> response = ApiResponse.success(dtoPage);
+            response.addMeta("clientId", id);
+            response.addMeta("filtres", Map.of(
+                    "type", type != null ? type : "tous",
+                    "dateDebut", dateDebut != null ? dateDebut.toString() : "aucune",
+                    "dateFin", dateFin != null ? dateFin.toString() : "aucune"
+            ));
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la récupération des transactions du client {}: {}", id, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Erreur lors de la récupération des transactions"));
+        }
+    }
+
+// ============================================
+// 🔥 MÉTHODES UTILITAIRES PRIVÉES À AJOUTER
+// ============================================
+
+    /**
+     * Calculer l'épargne sur une période donnée
+     */
+    private Double calculateEpargnePeriod(List<Mouvement> transactions, LocalDate debut, LocalDate fin) {
+        return transactions.stream()
+                .filter(t -> "epargne".equals(t.getSens()) || "EPARGNE".equals(t.getTypeMouvement()))
+                .filter(t -> {
+                    LocalDate dateOp = t.getDateOperation().toLocalDate();
+                    return !dateOp.isBefore(debut) && !dateOp.isAfter(fin);
+                })
+                .mapToDouble(Mouvement::getMontant)
+                .sum();
+    }
+
+    /**
+     * Calculer le solde à une date précise
+     */
+    private Double calculateSoldeAtDate(List<Mouvement> transactions, LocalDate date) {
+        return transactions.stream()
+                .filter(t -> !t.getDateOperation().toLocalDate().isAfter(date))
+                .mapToDouble(t -> {
+                    if ("epargne".equals(t.getSens()) || "EPARGNE".equals(t.getTypeMouvement())) {
+                        return t.getMontant();
+                    } else if ("retrait".equals(t.getSens()) || "RETRAIT".equals(t.getTypeMouvement())) {
+                        return -t.getMontant();
+                    }
+                    return 0.0;
+                })
+                .sum();
     }
 }
