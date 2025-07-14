@@ -3,12 +3,18 @@ package org.example.collectfocep.exceptions;
 
 
 public class BusinessException extends RuntimeException {
-    private final String code; // ✅ Renommé
+    private final String code;
     private final String details;
+
+    public BusinessException(String message, String code) {
+        super(message);
+        this.code = code;
+        this.details = null;
+    }
 
     public BusinessException(String message, String code, String details) {
         super(message);
-        this.code = code; // ✅ Cohérent
+        this.code = code;
         this.details = details;
     }
 
