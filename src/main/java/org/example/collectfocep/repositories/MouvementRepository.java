@@ -241,7 +241,7 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
             "WHERE m.client.id = :clientId " +
             "AND m.dateOperation >= :dateDebut " +
             "GROUP BY YEAR(m.dateOperation), MONTH(m.dateOperation) " +
-            "ORDER BY annee DESC, mois DESC")
+            "ORDER BY YEAR(m.dateOperation) DESC, MONTH(m.dateOperation) DESC")  // ✅ CORRECTION
     List<Object[]> getClientMonthlyStats(
             @Param("clientId") Long clientId,
             @Param("dateDebut") LocalDateTime dateDebut
@@ -435,13 +435,12 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
     Double sumRetraitsByCollecteurAndDate(@Param("collecteurId") Long collecteurId,
                                           @Param("date") LocalDate date);
 
-    @Query("SELECT c.id, SUM(m.montant) as total " +
-            "FROM Collecteur c " +
-            "LEFT JOIN c.mouvements m " +
-            "WHERE c.agence.id = :agenceId " +
+    @Query("SELECT m.collecteur.id, SUM(m.montant) as total " +
+            "FROM Mouvement m " +
+            "WHERE m.collecteur.agence.id = :agenceId " +
             "AND (UPPER(m.sens) = 'EPARGNE' OR UPPER(m.typeMouvement) = 'EPARGNE') " +
             "AND DATE(m.dateOperation) BETWEEN :dateDebut AND :dateFin " +
-            "GROUP BY c.id " +
+            "GROUP BY m.collecteur.id " +
             "ORDER BY total DESC")
     List<Object[]> getCollecteurRankingInAgence(@Param("agenceId") Long agenceId,
                                                 @Param("dateDebut") LocalDate dateDebut,
@@ -750,7 +749,7 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
             "FROM Mouvement m " +
             "WHERE m.dateOperation BETWEEN :startDate AND :endDate " +
             "GROUP BY DATE(m.dateOperation) " +
-            "ORDER BY jour")
+            "ORDER BY DATE(m.dateOperation)")
     List<Object[]> getVolumeByDay(
             @Param("startDate") LocalDateTime startDate,
             @Param("endDate") LocalDateTime endDate);

@@ -326,9 +326,8 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
             "AND c.dateModification < :cutoffDate")
     List<Client> findLongInactiveClients(@Param("cutoffDate") LocalDateTime cutoffDate);
 
-    @Query("SELECT COUNT(DISTINCT c) FROM Client c " +
-            "LEFT JOIN c.mouvements m " +
-            "WHERE c.collecteur.id = :collecteurId " +
+    @Query("SELECT COUNT(DISTINCT m.client) FROM Mouvement m " +
+            "WHERE m.collecteur.id = :collecteurId " +
             "AND DATE(m.dateOperation) BETWEEN :dateDebut AND :dateFin")
     Long countActiveByCollecteurId(@Param("collecteurId") Long collecteurId,
                                    @Param("dateDebut") LocalDate dateDebut,
