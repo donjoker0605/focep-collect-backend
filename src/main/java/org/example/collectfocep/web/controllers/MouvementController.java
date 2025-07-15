@@ -15,6 +15,7 @@ import org.example.collectfocep.repositories.ClientRepository;
 import org.example.collectfocep.repositories.JournalRepository;
 import org.example.collectfocep.repositories.MouvementRepository;
 import org.example.collectfocep.services.SoldeCollecteurValidationService;
+import org.example.collectfocep.services.TransactionValidationService;
 import org.example.collectfocep.services.impl.AuditService;
 import org.example.collectfocep.services.impl.JournalServiceImpl;
 import org.example.collectfocep.services.impl.MouvementServiceImpl;
@@ -37,8 +38,10 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @RestController
@@ -57,6 +60,7 @@ public class MouvementController {
     private final JournalServiceImpl journalServiceImpl;
     private final AuditService auditService;
     private final SoldeCollecteurValidationService soldeValidationService;
+    private final TransactionValidationService transactionValidationService;
 
     @Autowired
     private MouvementServiceImpl mouvementServiceImpl;
@@ -77,7 +81,8 @@ public class MouvementController {
             JournalService journalService,
             JournalServiceImpl journalServiceImpl,
             AuditService auditService,
-            SoldeCollecteurValidationService soldeValidationService) {
+            SoldeCollecteurValidationService soldeValidationService,
+            TransactionValidationService transactionValidationService) {
 
         this.dateTimeService = dateTimeService;
         this.transactionService = transactionService;
@@ -91,6 +96,7 @@ public class MouvementController {
         this.journalServiceImpl = journalServiceImpl;
         this.auditService = auditService;
         this.soldeValidationService = soldeValidationService;
+        this.transactionValidationService = transactionValidationService;
     }
 
     @GetMapping("/{transactionId}")
@@ -555,6 +561,184 @@ public class MouvementController {
         } catch (Exception e) {
             log.debug("⚠️ Erreur chargement client prénom pour mouvement {}", mouvement.getId());
             return "N/A";
+        }
+    }
+
+    /**
+     * Pré-validation d'une épargne
+     */
+    @PostMapping("/validate/epargne")
+    @PreAuthorize("@securityService.canManageCollecteur(authentication, #request.collecteurId)")
+    public ResponseEntity<ApiResponse<TransactionPreValidationDTO>> validateEpargne(
+            @Valid @RequestBody TransactionValidationRequest request) {
+
+        log.info("📋 Pré-validation épargne: client={}, collecteur={}, montant={}",
+                request.getClientId(), request.getCollecteurId(), request.getMontant());
+
+        try {
+            TransactionPreValidationDTO validation = transactionValidationService
+                    .validateEpargne(request.getClientId(), request.getCollecteurId(), request.getMontant());
+
+            return ResponseEntity.ok(ApiResponse.success(validation,
+                    validation.getCanProceed() ? "Validation réussie" : "Validation échouée"));
+
+        } catch (Exception e) {
+            log.error("❌ Erreur validation épargne: {}", e.getMessage(), e);
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("VALIDATION_ERROR", "Erreur: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Pré-validation d'un retrait
+     */
+    @PostMapping("/validate/retrait")
+    @PreAuthorize("@securityService.canManageCollecteur(authentication, #request.collecteurId)")
+    public ResponseEntity<ApiResponse<TransactionPreValidationDTO>> validateRetrait(
+            @Valid @RequestBody TransactionValidationRequest request) {
+
+        log.info("📋 Pré-validation retrait: client={}, collecteur={}, montant={}",
+                request.getClientId(), request.getCollecteurId(), request.getMontant());
+
+        try {
+            TransactionPreValidationDTO validation = transactionValidationService
+                    .validateRetrait(request.getClientId(), request.getCollecteurId(), request.getMontant());
+
+            return ResponseEntity.ok(ApiResponse.success(validation,
+                    validation.getCanProceed() ? "Validation réussie" : "Validation échouée"));
+
+        } catch (Exception e) {
+            log.error("❌ Erreur validation retrait: {}", e.getMessage(), e);
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("VALIDATION_ERROR", "Erreur: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Vérification rapide du téléphone d'un client
+     */
+    @GetMapping("/client/{clientId}/phone-status")
+    @PreAuthorize("@securityService.canManageClient(authentication, #clientId)")
+    public ResponseEntity<ApiResponse<Boolean>> checkClientPhoneStatus(@PathVariable Long clientId) {
+
+        log.info("📞 Vérification téléphone client: {}", clientId);
+
+        try {
+            Boolean hasPhone = transactionValidationService.clientHasValidPhone(clientId);
+            return ResponseEntity.ok(ApiResponse.success(hasPhone,
+                    hasPhone ? "Client a un téléphone" : "Client sans téléphone"));
+
+        } catch (Exception e) {
+            log.error("❌ Erreur vérification téléphone: {}", e.getMessage(), e);
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("PHONE_CHECK_ERROR", "Erreur: " + e.getMessage()));
+        }
+    }
+
+
+    /**
+     * Recherche client optimisée pour autocomplete
+     */
+    @GetMapping("/client/search")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'COLLECTEUR')")
+    public ResponseEntity<ApiResponse<List<ClientSearchDTO>>> searchClientsForTransaction(
+            @RequestParam Long collecteurId,
+            @RequestParam String query,
+            @RequestParam(defaultValue = "10") int limit) {
+
+        log.info("🔍 Recherche clients pour transaction: collecteur={}, query='{}', limit={}",
+                collecteurId, query, limit);
+
+        try {
+            // Vérifier les permissions
+            if (!securityService.canManageCollecteur(
+                    SecurityContextHolder.getContext().getAuthentication(), collecteurId)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(ApiResponse.error("UNAUTHORIZED", "Accès non autorisé"));
+            }
+
+            if (query.trim().length() < 2) {
+                return ResponseEntity.ok(ApiResponse.success(
+                        Collections.emptyList(),
+                        "Requête trop courte"
+                ));
+            }
+
+            // Utilisation de la méthode optimisée du repository
+            PageRequest pageRequest = PageRequest.of(0, limit);
+            Page<Client> clientsPage = clientRepository.findByCollecteurIdAndSearch(
+                    collecteurId, query.trim(), pageRequest);
+
+            List<ClientSearchDTO> searchResults = clientsPage.getContent().stream()
+                    .map(client -> ClientSearchDTO.builder()
+                            .id(client.getId())
+                            .nom(client.getNom())
+                            .prenom(client.getPrenom())
+                            .numeroCompte(client.getNumeroCompte())
+                            .numeroCni(client.getNumeroCni())
+                            .telephone(client.getTelephone())
+                            .displayName(String.format("%s %s", client.getPrenom(), client.getNom()))
+                            .hasPhone(client.getTelephone() != null && !client.getTelephone().trim().isEmpty())
+                            .build())
+                    .collect(Collectors.toList());
+
+            return ResponseEntity.ok(ApiResponse.success(
+                    searchResults,
+                    String.format("Trouvé %d client(s)", searchResults.size())
+            ));
+
+        } catch (Exception e) {
+            log.error("❌ Erreur recherche clients: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("SEARCH_ERROR", "Erreur: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Recherche par numéro de compte
+     */
+    @GetMapping("/client/search-by-account")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'COLLECTEUR')")
+    public ResponseEntity<ApiResponse<ClientSearchDTO>> searchClientByAccount(
+            @RequestParam Long collecteurId,
+            @RequestParam String accountNumber) {
+
+        log.info("🔍 Recherche par numéro compte: collecteur={}, compte='{}'",
+                collecteurId, accountNumber);
+
+        try {
+            // Vérifier les permissions
+            if (!securityService.canManageCollecteur(
+                    SecurityContextHolder.getContext().getAuthentication(), collecteurId)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(ApiResponse.error("UNAUTHORIZED", "Accès non autorisé"));
+            }
+
+            Optional<Client> clientOpt = clientRepository.findByCollecteurIdAndNumeroCompte(
+                    collecteurId, accountNumber.trim());
+
+            if (clientOpt.isPresent()) {
+                Client client = clientOpt.get();
+                ClientSearchDTO result = ClientSearchDTO.builder()
+                        .id(client.getId())
+                        .nom(client.getNom())
+                        .prenom(client.getPrenom())
+                        .numeroCompte(client.getNumeroCompte())
+                        .numeroCni(client.getNumeroCni())
+                        .telephone(client.getTelephone())
+                        .displayName(String.format("%s %s", client.getPrenom(), client.getNom()))
+                        .hasPhone(client.getTelephone() != null && !client.getTelephone().trim().isEmpty())
+                        .build();
+
+                return ResponseEntity.ok(ApiResponse.success(result, "Client trouvé"));
+            } else {
+                return ResponseEntity.ok(ApiResponse.success(null, "Aucun client trouvé"));
+            }
+
+        } catch (Exception e) {
+            log.error("❌ Erreur recherche par compte: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("SEARCH_ERROR", "Erreur: " + e.getMessage()));
         }
     }
 }

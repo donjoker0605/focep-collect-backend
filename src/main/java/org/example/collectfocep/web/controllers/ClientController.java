@@ -13,6 +13,7 @@ import org.example.collectfocep.mappers.ClientMapper;
 import org.example.collectfocep.mappers.CommissionParameterMapper;
 import org.example.collectfocep.mappers.CompteMapper;
 import org.example.collectfocep.mappers.MouvementMapperV2;
+import org.example.collectfocep.repositories.ClientRepository;
 import org.example.collectfocep.repositories.CommissionParameterRepository;
 import org.example.collectfocep.repositories.MouvementRepository;
 import org.example.collectfocep.security.annotations.Audited;
@@ -52,8 +53,7 @@ public class ClientController {
     private final MouvementMapperV2 mouvementMapper;
     private final CommissionParameterRepository commissionParameterRepository;
     private final CommissionParameterMapper commissionParameterMapper;
-
-    // 🔥 NOUVEAU : Service de géolocalisation
+    private final ClientRepository clientRepository;
     private final GeolocationService geolocationService;
 
     // Endpoint pour créer un client
@@ -647,5 +647,97 @@ public class ClientController {
                     return 0.0;
                 })
                 .sum();
+    }
+
+    /**
+     * Recherche client optimisée avec debounce côté frontend
+     */
+    @GetMapping("/collecteur/{collecteurId}/search")
+    @PreAuthorize("@securityService.canManageCollecteur(authentication, #collecteurId)")
+    public ResponseEntity<ApiResponse<List<ClientSearchDTO>>> searchClientsOptimized(
+            @PathVariable Long collecteurId,
+            @RequestParam String query,
+            @RequestParam(defaultValue = "10") int limit) {
+
+        log.info("🔍 Recherche clients optimisée: collecteur={}, query='{}', limit={}",
+                collecteurId, query, limit);
+
+        try {
+            if (query.trim().length() < 2) {
+                return ResponseEntity.ok(ApiResponse.success(
+                        Collections.emptyList(),
+                        "Requête trop courte"
+                ));
+            }
+
+            // Utilisation de la méthode optimisée du repository
+            PageRequest pageRequest = PageRequest.of(0, limit);
+            Page<Client> clientsPage = clientRepository.findByCollecteurIdAndSearch(
+                    collecteurId, query.trim(), pageRequest);
+
+            List<ClientSearchDTO> searchResults = clientsPage.getContent().stream()
+                    .map(client -> ClientSearchDTO.builder()
+                            .id(client.getId())
+                            .nom(client.getNom())
+                            .prenom(client.getPrenom())
+                            .numeroCompte(client.getNumeroCompte())
+                            .numeroCni(client.getNumeroCni())
+                            .telephone(client.getTelephone())
+                            .displayName(String.format("%s %s", client.getPrenom(), client.getNom()))
+                            .hasPhone(client.getTelephone() != null && !client.getTelephone().trim().isEmpty())
+                            .build())
+                    .collect(Collectors.toList());
+
+            return ResponseEntity.ok(ApiResponse.success(
+                    searchResults,
+                    String.format("Trouvé %d client(s)", searchResults.size())
+            ));
+
+        } catch (Exception e) {
+            log.error("❌ Erreur recherche clients: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("SEARCH_ERROR", "Erreur: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Recherche par numéro de compte
+     */
+    @GetMapping("/collecteur/{collecteurId}/search-by-account")
+    @PreAuthorize("@securityService.canManageCollecteur(authentication, #collecteurId)")
+    public ResponseEntity<ApiResponse<ClientSearchDTO>> searchByAccountNumber(
+            @PathVariable Long collecteurId,
+            @RequestParam String accountNumber) {
+
+        log.info("🔍 Recherche par numéro compte: collecteur={}, compte='{}'",
+                collecteurId, accountNumber);
+
+        try {
+            Optional<Client> clientOpt = clientRepository.findByCollecteurIdAndNumeroCompte(
+                    collecteurId, accountNumber.trim());
+
+            if (clientOpt.isPresent()) {
+                Client client = clientOpt.get();
+                ClientSearchDTO result = ClientSearchDTO.builder()
+                        .id(client.getId())
+                        .nom(client.getNom())
+                        .prenom(client.getPrenom())
+                        .numeroCompte(client.getNumeroCompte())
+                        .numeroCni(client.getNumeroCni())
+                        .telephone(client.getTelephone())
+                        .displayName(String.format("%s %s", client.getPrenom(), client.getNom()))
+                        .hasPhone(client.getTelephone() != null && !client.getTelephone().trim().isEmpty())
+                        .build();
+
+                return ResponseEntity.ok(ApiResponse.success(result, "Client trouvé"));
+            } else {
+                return ResponseEntity.ok(ApiResponse.success(null, "Aucun client trouvé"));
+            }
+
+        } catch (Exception e) {
+            log.error("❌ Erreur recherche par compte: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("SEARCH_ERROR", "Erreur: " + e.getMessage()));
+        }
     }
 }

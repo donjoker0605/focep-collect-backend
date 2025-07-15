@@ -389,4 +389,36 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
                                      @Param("longitude") Double longitude,
                                      @Param("radiusKm") Double radiusKm);
 
+    /**
+     * Recherche client par collecteur et numéro de compte
+     */
+    @Query("SELECT c FROM Client c " +
+            "WHERE c.collecteur.id = :collecteurId " +
+            "AND c.numeroCompte = :numeroCompte")
+    Optional<Client> findByCollecteurIdAndNumeroCompte(
+            @Param("collecteurId") Long collecteurId,
+            @Param("numeroCompte") String numeroCompte);
+
+    /**
+     * Recherche rapide avec limite pour autocomplete
+     */
+    @Query("SELECT c FROM Client c " +
+            "WHERE c.collecteur.id = :collecteurId " +
+            "AND (:search IS NULL OR :search = '' OR " +
+            "LOWER(c.nom) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+            "LOWER(c.prenom) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+            "LOWER(c.numeroCompte) LIKE LOWER(CONCAT('%', :search, '%'))) " +
+            "ORDER BY c.dateModification DESC")
+    List<Client> findTopByCollecteurIdAndSearchOrderByDateModificationDesc(
+            @Param("collecteurId") Long collecteurId,
+            @Param("search") String search,
+            Pageable pageable);
+
+    /**
+     * Vérifier si client a un téléphone
+     */
+    @Query("SELECT CASE WHEN (c.telephone IS NOT NULL AND c.telephone != '') THEN true ELSE false END " +
+            "FROM Client c WHERE c.id = :clientId")
+    Boolean hasValidPhone(@Param("clientId") Long clientId);
+
 }
