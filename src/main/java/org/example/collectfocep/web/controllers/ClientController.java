@@ -18,6 +18,7 @@ import org.example.collectfocep.repositories.MouvementRepository;
 import org.example.collectfocep.security.annotations.Audited;
 import org.example.collectfocep.services.interfaces.ClientService;
 import org.example.collectfocep.services.interfaces.CompteService;
+import org.example.collectfocep.services.GeolocationService;
 import org.example.collectfocep.util.ApiResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -30,14 +31,12 @@ import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
 
+import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.stream.Collectors;
-import java.util.Comparator;
 
 @RestController
 @RequestMapping("/api/clients")
@@ -54,12 +53,21 @@ public class ClientController {
     private final CommissionParameterRepository commissionParameterRepository;
     private final CommissionParameterMapper commissionParameterMapper;
 
+    // 🔥 NOUVEAU : Service de géolocalisation
+    private final GeolocationService geolocationService;
+
     // Endpoint pour créer un client
     @PostMapping
     @PreAuthorize("@securityService.canManageCollecteur(authentication, #clientDTO.collecteurId)")
     @LogActivity(action = "CREATE_CLIENT", entityType = "CLIENT", description = "Création d'un nouveau client")
     public ResponseEntity<ApiResponse<ClientDTO>> createClient(@Valid @RequestBody ClientDTO clientDTO) {
         log.info("Création d'un nouveau client: {}", clientDTO.getNumeroCni());
+
+        // 🔥 NOUVEAU : Log des coordonnées GPS si présentes
+        if (clientDTO.getLatitude() != null && clientDTO.getLongitude() != null) {
+            log.info("📍 Création client avec localisation: lat={}, lng={}, manuel={}",
+                    clientDTO.getLatitude(), clientDTO.getLongitude(), clientDTO.getCoordonneesSaisieManuelle());
+        }
 
         // Log pour debugging
         log.debug("DTO reçu - collecteurId: {}, agenceId: {}",
@@ -116,6 +124,12 @@ public class ClientController {
             @PathVariable Long id,
             @Valid @RequestBody ClientDTO clientDTO) {
         log.info("Mise à jour du client: {}", id);
+
+        // 🔥 NOUVEAU : Log des coordonnées GPS si présentes
+        if (clientDTO.getLatitude() != null && clientDTO.getLongitude() != null) {
+            log.info("📍 Mise à jour client avec localisation: lat={}, lng={}, manuel={}",
+                    clientDTO.getLatitude(), clientDTO.getLongitude(), clientDTO.getCoordonneesSaisieManuelle());
+        }
 
         Client client = clientService.getClientById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Client non trouvé avec l'ID: " + id));
@@ -201,6 +215,13 @@ public class ClientController {
                     .dateModification(client.getDateModification())
                     .collecteurId(client.getCollecteur() != null ? client.getCollecteur().getId() : null)
                     .agenceId(client.getAgence() != null ? client.getAgence().getId() : null)
+                    // 🔥 NOUVEAU : Champs géolocalisation
+                    .latitude(client.getLatitude() != null ? client.getLatitude().doubleValue() : null)
+                    .longitude(client.getLongitude() != null ? client.getLongitude().doubleValue() : null)
+                    .coordonneesSaisieManuelle(client.getCoordonneesSaisieManuelle())
+                    .adresseComplete(client.getAdresseComplete())
+                    .dateMajCoordonnees(client.getDateMajCoordonnees())
+                    .sourceLocalisation(client.isManualLocation() ? "MANUAL" : "GPS")
                     .transactions(transactions.stream()
                             .map(mouvementMapper::toDTO)
                             .collect(Collectors.toList()))
@@ -218,6 +239,127 @@ public class ClientController {
             log.error("❌ Erreur lors de la récupération du client avec transactions {}", id, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error("CLIENT_DETAIL_ERROR", "Erreur: " + e.getMessage()));
+        }
+    }
+
+    // 🔥 NOUVEAU : Endpoints pour la géolocalisation
+
+    /**
+     * Mettre à jour la localisation d'un client
+     */
+    @PutMapping("/{clientId}/location")
+    @PreAuthorize("@securityService.canManageClient(authentication, #clientId)")
+    @LogActivity(action = "UPDATE_CLIENT_LOCATION", entityType = "CLIENT", description = "Mise à jour localisation client")
+    public ResponseEntity<ApiResponse<ClientLocationDTO>> updateClientLocation(
+            @PathVariable Long clientId,
+            @Valid @RequestBody LocationUpdateRequest request) {
+
+        log.info("📍 Mise à jour localisation client: {}", clientId);
+
+        try {
+            ClientLocationDTO result = geolocationService.updateClientLocation(clientId, request);
+            return ResponseEntity.ok(ApiResponse.success(result, "Localisation mise à jour avec succès"));
+        } catch (Exception e) {
+            log.error("❌ Erreur mise à jour localisation: {}", e.getMessage(), e);
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("LOCATION_UPDATE_ERROR", "Erreur: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Obtenir la localisation d'un client
+     */
+    @GetMapping("/{clientId}/location")
+    @PreAuthorize("@securityService.canManageClient(authentication, #clientId)")
+    public ResponseEntity<ApiResponse<ClientLocationDTO>> getClientLocation(@PathVariable Long clientId) {
+        log.info("📍 Récupération localisation client: {}", clientId);
+
+        try {
+            ClientLocationDTO location = geolocationService.getClientLocation(clientId);
+            return ResponseEntity.ok(ApiResponse.success(location, "Localisation récupérée"));
+        } catch (Exception e) {
+            log.error("❌ Erreur récupération localisation: {}", e.getMessage(), e);
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("LOCATION_GET_ERROR", "Erreur: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Obtenir les clients proches d'une position
+     */
+    @GetMapping("/location/nearby")
+    @PreAuthorize("hasAnyRole('COLLECTEUR', 'ADMIN', 'SUPER_ADMIN')")
+    public ResponseEntity<ApiResponse<List<ClientLocationDTO>>> getNearbyClients(
+            @RequestParam Double latitude,
+            @RequestParam Double longitude,
+            @RequestParam(defaultValue = "5.0") Double radiusKm) {
+
+        log.info("📍 Recherche clients proches: lat={}, lng={}, radius={}km", latitude, longitude, radiusKm);
+
+        try {
+            List<ClientLocationDTO> nearbyClients = geolocationService.getClientsProches(latitude, longitude, radiusKm);
+            return ResponseEntity.ok(ApiResponse.success(nearbyClients,
+                    String.format("Trouvé %d clients dans un rayon de %.1f km", nearbyClients.size(), radiusKm)));
+        } catch (Exception e) {
+            log.error("❌ Erreur recherche clients proches: {}", e.getMessage(), e);
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("NEARBY_CLIENTS_ERROR", "Erreur: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Valider des coordonnées GPS
+     */
+    @PostMapping("/location/validate")
+    @PreAuthorize("hasAnyRole('COLLECTEUR', 'ADMIN', 'SUPER_ADMIN')")
+    public ResponseEntity<ApiResponse<Boolean>> validateCoordinates(
+            @RequestParam Double latitude,
+            @RequestParam Double longitude) {
+
+        log.info("📍 Validation coordonnées: lat={}, lng={}", latitude, longitude);
+
+        try {
+            boolean isValid = geolocationService.validateCoordinates(latitude, longitude);
+            String message = isValid ? "Coordonnées valides" : "Coordonnées invalides";
+            return ResponseEntity.ok(ApiResponse.success(isValid, message));
+        } catch (Exception e) {
+            log.error("❌ Erreur validation coordonnées: {}", e.getMessage(), e);
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("COORDINATE_VALIDATION_ERROR", "Erreur: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Statistiques de géolocalisation
+     */
+    @GetMapping("/location/statistics")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getLocationStatistics() {
+        log.info("📊 Récupération statistiques géolocalisation");
+
+        try {
+            // Utiliser la méthode du service si elle existe
+            if (clientService instanceof org.example.collectfocep.services.impl.ClientServiceImpl) {
+                org.example.collectfocep.services.impl.ClientServiceImpl.LocationStatistics stats =
+                        ((org.example.collectfocep.services.impl.ClientServiceImpl) clientService).getLocationStatistics();
+
+                Map<String, Object> result = Map.of(
+                        "totalClients", stats.getTotalClients(),
+                        "clientsWithLocation", stats.getClientsWithLocation(),
+                        "clientsWithoutLocation", stats.getClientsWithoutLocation(),
+                        "manualEntries", stats.getManualEntries(),
+                        "gpsEntries", stats.getGpsEntries(),
+                        "coveragePercentage", stats.getCoveragePercentage()
+                );
+
+                return ResponseEntity.ok(ApiResponse.success(result, "Statistiques de géolocalisation"));
+            } else {
+                return ResponseEntity.ok(ApiResponse.error("SERVICE_NOT_AVAILABLE", "Statistiques non disponibles"));
+            }
+        } catch (Exception e) {
+            log.error("❌ Erreur récupération statistiques: {}", e.getMessage(), e);
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("STATISTICS_ERROR", "Erreur: " + e.getMessage()));
         }
     }
 
@@ -328,21 +470,24 @@ public class ClientController {
             Optional<Mouvement> derniereTransaction = transactions.stream()
                     .max(Comparator.comparing(Mouvement::getDateOperation));
 
-            // 4. Construire la réponse
-            Map<String, Object> stats = Map.of(
-                    "totalEpargne", totalEpargne,
-                    "totalRetraits", totalRetraits,
-                    "soldeTotal", soldeTotal,
-                    "nombreTransactions", transactions.size(),
-                    "epargneCurrentMois", epargneCurrentMois,
-                    "epargneCurrentSemaine", epargneCurrentSemaine,
-                    "derniereTransaction", derniereTransaction.map(t -> Map.of(
-                            "date", t.getDateOperation(),
-                            "montant", t.getMontant(),
-                            "type", t.getSens()
-                    )).orElse(null),
-                    "moyenneEpargneParTransaction", transactions.size() > 0 ? totalEpargne / transactions.size() : 0
-            );
+            // 4. Construire la réponse avec HashMap pour éviter la limite de Map.of()
+            Map<String, Object> stats = new HashMap<>();
+            stats.put("totalEpargne", totalEpargne);
+            stats.put("totalRetraits", totalRetraits);
+            stats.put("soldeTotal", soldeTotal);
+            stats.put("nombreTransactions", transactions.size());
+            stats.put("epargneCurrentMois", epargneCurrentMois);
+            stats.put("epargneCurrentSemaine", epargneCurrentSemaine);
+            stats.put("derniereTransaction", derniereTransaction.map(t -> Map.of(
+                    "date", t.getDateOperation(),
+                    "montant", t.getMontant(),
+                    "type", t.getSens()
+            )).orElse(null));
+            stats.put("moyenneEpargneParTransaction", transactions.size() > 0 ? totalEpargne / transactions.size() : 0);
+            // Informations de localisation
+            stats.put("hasLocation", client.hasLocation());
+            stats.put("locationSummary", client.hasLocation() ? client.getLocationSummary() : null);
+            stats.put("locationLastUpdate", client.getDateMajCoordonnees());
 
             ApiResponse<Map<String, Object>> response = ApiResponse.success(stats);
             response.addMeta("clientId", id);

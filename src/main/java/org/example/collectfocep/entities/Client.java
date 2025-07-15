@@ -99,33 +99,116 @@ public class Client {
         return collecteur != null ? collecteur.getId() : null;
     }
 
-    // Méthodes de validation
+    // Méthodes lifecycle
     @PrePersist
-    private void validateConstraints() {
-        if (collecteur == null) {
-            throw new IllegalStateException("Un client doit être associé à un collecteur");
+    protected void onCreate() {
+        dateCreation = LocalDateTime.now();
+        dateModification = LocalDateTime.now();
+        if (valide == null) {
+            valide = true;
         }
-        if (agence == null) {
-            throw new IllegalStateException("Un client doit être associé à une agence");
-        }
-        if (dateCreation == null) {
-            dateCreation = LocalDateTime.now();
-        }
-        // Générer le numéro de compte s'il n'existe pas
-        if (numeroCompte == null || numeroCompte.trim().isEmpty()) {
-            numeroCompte = generateNumeroCompte();
+        if (coordonneesSaisieManuelle == null) {
+            coordonneesSaisieManuelle = false;
         }
     }
 
     @PreUpdate
-    private void updateModificationDate() {
+    protected void onUpdate() {
         dateModification = LocalDateTime.now();
     }
 
-    private String generateNumeroCompte() {
-        // Format: CLI-{agenceId}-{timestamp}
-        long timestamp = System.currentTimeMillis();
-        Long agenceId = getAgenceId();
-        return String.format("CLI-%d-%d", agenceId != null ? agenceId : 0, timestamp);
+    /**
+     * Vérifie si le client a une localisation définie
+     */
+    public boolean hasLocation() {
+        return latitude != null && longitude != null;
     }
+
+    /**
+     * Vérifie si la localisation a été saisie manuellement
+     */
+    public boolean isManualLocation() {
+        return coordonneesSaisieManuelle != null && coordonneesSaisieManuelle;
+    }
+
+
+    /**
+     * Obtient un résumé de la localisation
+     */
+    public String getLocationSummary() {
+        if (!hasLocation()) {
+            return "Pas de localisation";
+        }
+
+        String source = isManualLocation() ? "Saisie manuelle" : "GPS";
+        return String.format("%.6f, %.6f (%s)",
+                latitude.doubleValue(),
+                longitude.doubleValue(),
+                source);
+    }
+
+    /**
+     * Obtient l'adresse complète ou construite
+     */
+    public String getFullAddress() {
+        if (adresseComplete != null && !adresseComplete.trim().isEmpty()) {
+            return adresseComplete;
+        }
+
+        if (ville != null && quartier != null) {
+            return String.format("%s, %s", quartier, ville);
+        }
+
+        return ville != null ? ville : "Adresse non renseignée";
+    }
+
+    /**
+     * Met à jour la localisation
+     */
+    public void updateLocation(BigDecimal newLatitude, BigDecimal newLongitude,
+                               Boolean manualEntry, String fullAddress) {
+        this.latitude = newLatitude;
+        this.longitude = newLongitude;
+        this.coordonneesSaisieManuelle = manualEntry != null ? manualEntry : false;
+        this.adresseComplete = fullAddress;
+        this.dateMajCoordonnees = LocalDateTime.now();
+    }
+
+    /**
+     * Vérifie si la localisation nécessite une mise à jour
+     */
+    public boolean needsLocationUpdate() {
+        return !hasLocation() ||
+                (dateMajCoordonnees == null) ||
+                (dateModification != null && dateModification.isAfter(dateMajCoordonnees));
+    }
+
+    /**
+     * Obtient la dernière activité (création, modification ou mise à jour localisation)
+     */
+    public LocalDateTime getLastActivity() {
+        LocalDateTime latest = dateCreation;
+
+        if (dateModification != null && dateModification.isAfter(latest)) {
+            latest = dateModification;
+        }
+
+        if (dateMajCoordonnees != null && dateMajCoordonnees.isAfter(latest)) {
+            latest = dateMajCoordonnees;
+        }
+
+        return latest;
+    }
+
+    // Méthodes utilitaires existantes
+    public String getNomComplet() {
+        return String.format("%s %s",
+                prenom != null ? prenom : "",
+                nom != null ? nom : "").trim();
+    }
+
+    public boolean isActive() {
+        return valide != null && valide;
+    }
+
 }

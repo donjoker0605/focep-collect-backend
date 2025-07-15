@@ -16,7 +16,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -30,7 +29,7 @@ public class GeolocationService {
     private final ClientRepository clientRepository;
     private final AuditService auditService;
 
-    // Constantes pour la validation des coordonnées
+    // Constantes pour la validation des coordonnées (Cameroun)
     private static final double CAMEROON_MIN_LAT = 1.5;
     private static final double CAMEROON_MAX_LAT = 13.0;
     private static final double CAMEROON_MIN_LNG = 8.0;
@@ -43,28 +42,34 @@ public class GeolocationService {
     public ClientLocationDTO updateClientLocation(Long clientId, LocationUpdateRequest request) {
         log.info("📍 Mise à jour localisation client: {}", clientId);
 
+        // Validation des données d'entrée
+        if (request.getLatitude() == null || request.getLongitude() == null) {
+            throw new BusinessException("Les coordonnées latitude et longitude sont requises", "MISSING_COORDINATES");
+        }
+
         Client client = clientRepository.findById(clientId)
-                .orElseThrow(() -> new ResourceNotFoundException("Client non trouvé"));
+                .orElseThrow(() -> new ResourceNotFoundException("Client non trouvé avec l'ID: " + clientId));
 
         // Validation des coordonnées AVANT sauvegarde
-        validateCoordinatesStrict(request.getLatitude().doubleValue(), request.getLongitude().doubleValue());
+        validateCoordinatesStrict(request.getLatitude(), request.getLongitude());
 
         // Sauvegarder l'ancienne localisation pour l'audit
-        String oldLocation = client.getLatitude() != null && client.getLongitude() != null
+        String oldLocation = client.hasLocation()
                 ? String.format("lat: %s, lng: %s", client.getLatitude(), client.getLongitude())
                 : "Aucune localisation";
 
         // Mettre à jour la localisation
-        client.setLatitude(request.getLatitude());
-        client.setLongitude(request.getLongitude());
-        client.setCoordonneesSaisieManuelle(request.getSaisieManuelle());
-        client.setAdresseComplete(request.getAdresseComplete());
-        client.setDateMajCoordonnees(LocalDateTime.now());
+        client.updateLocation(
+                request.getLatitude(),
+                request.getLongitude(),
+                request.getSaisieManuelle(),
+                request.getAdresseComplete()
+        );
 
         Client savedClient = clientRepository.save(client);
         log.info("✅ Localisation mise à jour: {}", savedClient.getId());
 
-        // Enregistrer l'activité
+        // Enregistrer l'activité d'audit
         auditLocationUpdate(clientId, oldLocation, request, client.getAgence().getId());
 
         return toLocationDTO(savedClient);
@@ -77,7 +82,7 @@ public class GeolocationService {
         log.info("📍 Récupération localisation client: {}", clientId);
 
         Client client = clientRepository.findById(clientId)
-                .orElseThrow(() -> new ResourceNotFoundException("Client non trouvé"));
+                .orElseThrow(() -> new ResourceNotFoundException("Client non trouvé avec l'ID: " + clientId));
 
         return toLocationDTO(client);
     }
@@ -89,14 +94,14 @@ public class GeolocationService {
         log.info("📍 Recherche clients proches: lat={}, lng={}, radius={}km", latitude, longitude, radiusKm);
 
         // Validation des paramètres
-        validateCoordinatesStrict(latitude, longitude);
+        validateCoordinatesStrict(BigDecimal.valueOf(latitude), BigDecimal.valueOf(longitude));
         if (radiusKm <= 0 || radiusKm > 100) {
             throw new BusinessException("Le rayon doit être entre 0 et 100 km", "INVALID_RADIUS");
         }
 
         // Récupérer tous les clients avec localisation
         List<Client> allClientsWithLocation = clientRepository.findAll().stream()
-                .filter(c -> c.getLatitude() != null && c.getLongitude() != null)
+                .filter(c -> c.hasLocation())
                 .collect(Collectors.toList());
 
         // Filtrer par distance avec calcul correct
@@ -114,11 +119,31 @@ public class GeolocationService {
     }
 
     /**
+     * Rechercher des clients dans un rayon géographique (utilise la requête optimisée du repository)
+     */
+    public List<ClientLocationDTO> findClientsInRadius(Double latitude, Double longitude, Double radiusKm) {
+        log.info("📍 Recherche optimisée clients dans rayon: lat={}, lng={}, radius={}km", latitude, longitude, radiusKm);
+
+        // Validation des paramètres
+        validateCoordinatesStrict(BigDecimal.valueOf(latitude), BigDecimal.valueOf(longitude));
+        if (radiusKm <= 0 || radiusKm > 100) {
+            throw new BusinessException("Le rayon doit être entre 0 et 100 km", "INVALID_RADIUS");
+        }
+
+        // Utiliser la requête optimisée du repository
+        List<Client> nearbyClients = clientRepository.findClientsInRadius(latitude, longitude, radiusKm);
+
+        return nearbyClients.stream()
+                .map(this::toLocationDTO)
+                .collect(Collectors.toList());
+    }
+
+    /**
      * Validation stricte des coordonnées
      */
     public boolean validateCoordinates(Double latitude, Double longitude) {
         try {
-            validateCoordinatesStrict(latitude, longitude);
+            validateCoordinatesStrict(BigDecimal.valueOf(latitude), BigDecimal.valueOf(longitude));
             return true;
         } catch (Exception e) {
             log.warn("❌ Coordonnées invalides: {}", e.getMessage());
@@ -129,32 +154,40 @@ public class GeolocationService {
     /**
      * Validation stricte avec exceptions
      */
-    private void validateCoordinatesStrict(Double latitude, Double longitude) {
+    private void validateCoordinatesStrict(BigDecimal latitude, BigDecimal longitude) {
         if (latitude == null || longitude == null) {
             throw new BusinessException("Les coordonnées ne peuvent pas être nulles", "NULL_COORDINATES");
         }
 
+        double lat = latitude.doubleValue();
+        double lng = longitude.doubleValue();
+
         // Validation globale
-        if (latitude < -90 || latitude > 90) {
+        if (lat < -90 || lat > 90) {
             throw new BusinessException("Latitude invalide (doit être entre -90 et 90)", "INVALID_LATITUDE");
         }
 
-        if (longitude < -180 || longitude > 180) {
+        if (lng < -180 || lng > 180) {
             throw new BusinessException("Longitude invalide (doit être entre -180 et 180)", "INVALID_LONGITUDE");
         }
 
-        // Validation spécifique au Cameroun (avec tolérance)
-        if (latitude < CAMEROON_MIN_LAT - 1 || latitude > CAMEROON_MAX_LAT + 1) {
-            log.warn("⚠️ Latitude {} semble être en dehors du Cameroun", latitude);
+        // Validation spécifique au Cameroun (avec tolérance pour les tests)
+        if (lat < CAMEROON_MIN_LAT - 2 || lat > CAMEROON_MAX_LAT + 2) {
+            log.warn("⚠️ Latitude {} semble être en dehors du Cameroun", lat);
         }
 
-        if (longitude < CAMEROON_MIN_LNG - 1 || longitude > CAMEROON_MAX_LNG + 1) {
-            log.warn("⚠️ Longitude {} semble être en dehors du Cameroun", longitude);
+        if (lng < CAMEROON_MIN_LNG - 2 || lng > CAMEROON_MAX_LNG + 2) {
+            log.warn("⚠️ Longitude {} semble être en dehors du Cameroun", lng);
         }
 
-        // Validation contre les coordonnées nulles exactes (0,0)
-        if (Math.abs(latitude) < 0.001 && Math.abs(longitude) < 0.001) {
+        // Validation contre les coordonnées nulles exactes (0,0) - Golfe de Guinée
+        if (Math.abs(lat) < 0.001 && Math.abs(lng) < 0.001) {
             throw new BusinessException("Coordonnées (0,0) non autorisées", "NULL_ISLAND_COORDINATES");
+        }
+
+        // Détection coordonnées émulateur (Mountain View, CA) - acceptées en mode développement
+        if (Math.abs(lat - 37.4219983) < 0.001 && Math.abs(lng - (-122.084)) < 0.001) {
+            log.info("🔧 Coordonnées émulateur détectées (Mountain View, CA) - Mode développement");
         }
     }
 
@@ -180,13 +213,13 @@ public class GeolocationService {
     private ClientLocationDTO toLocationDTO(Client client) {
         return ClientLocationDTO.builder()
                 .clientId(client.getId())
-                .nomComplet(client.getPrenom() + " " + client.getNom())
+                .nomComplet(client.getNomComplet())
                 .latitude(client.getLatitude() != null ? client.getLatitude().doubleValue() : null)
                 .longitude(client.getLongitude() != null ? client.getLongitude().doubleValue() : null)
                 .coordonneesSaisieManuelle(client.getCoordonneesSaisieManuelle())
                 .adresseComplete(client.getAdresseComplete())
                 .dateMajCoordonnees(client.getDateMajCoordonnees())
-                .source(client.getCoordonneesSaisieManuelle() != null && client.getCoordonneesSaisieManuelle() ? "MANUAL" : "GPS")
+                .source(client.isManualLocation() ? "MANUAL" : "GPS")
                 .ville(client.getVille())
                 .quartier(client.getQuartier())
                 .collecteurId(client.getCollecteur().getId())
@@ -230,8 +263,8 @@ public class GeolocationService {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth != null && auth.getPrincipal() != null) {
             try {
-                // TODO: Implémenter la récupération correcte de l'ID utilisateur
-                return 1L; // Temporaire
+                // TODO: Implémenter la récupération correcte de l'ID utilisateur depuis le JWT
+                return 1L; // Temporaire - À remplacer par l'extraction du JWT
             } catch (Exception e) {
                 log.error("Erreur récupération ID utilisateur", e);
                 return null;
@@ -253,5 +286,42 @@ public class GeolocationService {
             return authority;
         }
         return "UNKNOWN";
+    }
+
+    /**
+     * Statistiques de géolocalisation
+     */
+    public LocationStatisticsDTO getLocationStatistics() {
+        long totalClients = clientRepository.count();
+        long clientsWithLocation = clientRepository.findAll().stream()
+                .mapToLong(c -> c.hasLocation() ? 1 : 0)
+                .sum();
+
+        long manualEntries = clientRepository.findAll().stream()
+                .mapToLong(c -> c.isManualLocation() ? 1 : 0)
+                .sum();
+
+        return LocationStatisticsDTO.builder()
+                .totalClients(totalClients)
+                .clientsWithLocation(clientsWithLocation)
+                .clientsWithoutLocation(totalClients - clientsWithLocation)
+                .manualEntries(manualEntries)
+                .gpsEntries(clientsWithLocation - manualEntries)
+                .coveragePercentage(totalClients > 0 ? (double) clientsWithLocation / totalClients * 100 : 0)
+                .build();
+    }
+
+    /**
+     * DTO interne pour les statistiques de localisation
+     */
+    @lombok.Data
+    @lombok.Builder
+    public static class LocationStatisticsDTO {
+        private long totalClients;
+        private long clientsWithLocation;
+        private long clientsWithoutLocation;
+        private long manualEntries;
+        private long gpsEntries;
+        private double coveragePercentage;
     }
 }

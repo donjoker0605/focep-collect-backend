@@ -22,6 +22,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -106,9 +108,23 @@ public class ClientServiceImpl implements ClientService {
             );
         }
 
+        // 🔥 NOUVEAU : Validation et traitement de la géolocalisation
+        validateAndProcessGeolocation(client);
+
+        // 🔥 NOUVEAU : Génération du numéro de compte si nouveau client
+        if (client.getId() == null && (client.getNumeroCompte() == null || client.getNumeroCompte().trim().isEmpty())) {
+            client.setNumeroCompte(generateAccountNumber(agence.getId()));
+        }
+
         try {
             Client savedClient = clientRepository.save(client);
             log.info("Client sauvegardé avec succès, ID: {}", savedClient.getId());
+
+            // 🔥 NOUVEAU : Log des informations de géolocalisation
+            if (savedClient.hasLocation()) {
+                log.info("📍 Client sauvegardé avec localisation: {}", savedClient.getLocationSummary());
+            }
+
             return savedClient;
         } catch (Exception e) {
             log.error("Erreur lors de la sauvegarde du client: {}", e.getMessage(), e);
@@ -150,6 +166,73 @@ public class ClientServiceImpl implements ClientService {
                         }
                     });
         }
+
+        // 🔥 NOUVEAU : Validation du téléphone camerounais
+        if (client.getTelephone() != null && !client.getTelephone().trim().isEmpty()) {
+            if (!isValidCameroonianPhone(client.getTelephone())) {
+                throw new BusinessException("Format de téléphone camerounais invalide", "INVALID_PHONE_FORMAT");
+            }
+        }
+    }
+
+    // 🔥 NOUVEAU : Validation et traitement de la géolocalisation
+    private void validateAndProcessGeolocation(Client client) {
+        // Si des coordonnées sont fournies, les valider
+        if (client.getLatitude() != null || client.getLongitude() != null) {
+            if (client.getLatitude() == null || client.getLongitude() == null) {
+                throw new BusinessException("Latitude et longitude doivent être fournies ensemble", "INCOMPLETE_COORDINATES");
+            }
+
+            double lat = client.getLatitude().doubleValue();
+            double lng = client.getLongitude().doubleValue();
+
+            // Validation des coordonnées
+            if (lat < -90 || lat > 90) {
+                throw new BusinessException("Latitude invalide (doit être entre -90 et 90)", "INVALID_LATITUDE");
+            }
+            if (lng < -180 || lng > 180) {
+                throw new BusinessException("Longitude invalide (doit être entre -180 et 180)", "INVALID_LONGITUDE");
+            }
+
+            // Validation spécifique au Cameroun (avec tolérance)
+            if (lat < -1.5 || lat > 15.0 || lng < 6.0 || lng > 18.5) {
+                log.warn("⚠️ Coordonnées {} {} semblent être en dehors du Cameroun", lat, lng);
+            }
+
+            // Coordonnées nulles exactes (0,0) non autorisées
+            if (Math.abs(lat) < 0.001 && Math.abs(lng) < 0.001) {
+                throw new BusinessException("Coordonnées (0,0) non autorisées", "NULL_ISLAND_COORDINATES");
+            }
+
+            // Mettre à jour la date de modification des coordonnées
+            client.setDateMajCoordonnees(LocalDateTime.now());
+
+            // Valeurs par défaut si non définies
+            if (client.getCoordonneesSaisieManuelle() == null) {
+                client.setCoordonneesSaisieManuelle(false);
+            }
+
+            log.info("📍 Coordonnées validées: lat={}, lng={}, manuel={}",
+                    lat, lng, client.getCoordonneesSaisieManuelle());
+        }
+    }
+
+    // 🔥 NOUVEAU : Validation du format de téléphone camerounais
+    private boolean isValidCameroonianPhone(String phone) {
+        if (phone == null || phone.trim().isEmpty()) {
+            return false;
+        }
+
+        // Format: +237XXXXXXXXX ou 237XXXXXXXXX ou 6XXXXXXXX ou 7XXXXXXXX ou 9XXXXXXXX
+        String cleanPhone = phone.replaceAll("\\s+", "");
+        return cleanPhone.matches("^(\\+237|237)?[679]\\d{8}$");
+    }
+
+    // 🔥 NOUVEAU : Génération d'un numéro de compte unique
+    private String generateAccountNumber(Long agenceId) {
+        String prefix = "CLI-" + agenceId + "-";
+        String timestamp = String.valueOf(System.currentTimeMillis());
+        return prefix + timestamp;
     }
 
     @Override
@@ -161,8 +244,14 @@ public class ClientServiceImpl implements ClientService {
         }
 
         try {
-            clientRepository.deleteById(id);
-            log.info("Client supprimé avec succès, ID: {}", id);
+            // 🔥 MODIFICATION : Soft delete au lieu de hard delete
+            Client client = clientRepository.findById(id)
+                    .orElseThrow(() -> new ResourceNotFoundException("Client", "id", id));
+
+            client.setValide(false);
+            clientRepository.save(client);
+
+            log.info("Client marqué comme supprimé (soft delete), ID: {}", id);
         } catch (Exception e) {
             log.error("Erreur lors de la suppression du client: {}", e.getMessage(), e);
             throw new BusinessException("Impossible de supprimer le client", "CLIENT_DELETE_ERROR",
@@ -215,6 +304,112 @@ public class ClientServiceImpl implements ClientService {
             throw new ResourceNotFoundException("Client", "id", client.getId());
         }
 
+        // 🔥 MODIFICATION : Pour les mises à jour, préserver certains champs
+        Client existingClient = clientRepository.findById(client.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Client", "id", client.getId()));
+
+        // Préserver les champs qui ne doivent pas être modifiés par le collecteur
+        if (client.getNom() == null || client.getNom().trim().isEmpty()) {
+            client.setNom(existingClient.getNom());
+        }
+        if (client.getPrenom() == null || client.getPrenom().trim().isEmpty()) {
+            client.setPrenom(existingClient.getPrenom());
+        }
+
+        // Préserver les relations si non définies
+        if (client.getCollecteur() == null) {
+            client.setCollecteur(existingClient.getCollecteur());
+        }
+        if (client.getAgence() == null) {
+            client.setAgence(existingClient.getAgence());
+        }
+
+        // Préserver les dates de création
+        client.setDateCreation(existingClient.getDateCreation());
+        client.setNumeroCompte(existingClient.getNumeroCompte());
+
         return saveClient(client);
+    }
+
+    // 🔥 NOUVEAU : Méthode pour mettre à jour seulement la localisation
+    @Transactional
+    public Client updateClientLocation(Long clientId, BigDecimal latitude, BigDecimal longitude,
+                                       Boolean saisieManuelle, String adresseComplete) {
+        log.info("📍 Mise à jour localisation client: {}", clientId);
+
+        Client client = clientRepository.findById(clientId)
+                .orElseThrow(() -> new ResourceNotFoundException("Client", "id", clientId));
+
+        // Utiliser la méthode utilitaire de l'entité Client
+        client.updateLocation(latitude, longitude, saisieManuelle, adresseComplete);
+
+        Client savedClient = clientRepository.save(client);
+        log.info("✅ Localisation mise à jour: {}", savedClient.getLocationSummary());
+
+        return savedClient;
+    }
+
+    // 🔥 NOUVEAU : Méthode pour obtenir les clients avec localisation
+    public List<Client> getClientsWithLocation() {
+        return clientRepository.findAll().stream()
+                .filter(Client::hasLocation)
+                .toList();
+    }
+
+    // 🔥 NOUVEAU : Méthode pour obtenir les clients sans localisation
+    public List<Client> getClientsWithoutLocation() {
+        return clientRepository.findAll().stream()
+                .filter(client -> !client.hasLocation())
+                .toList();
+    }
+
+    // 🔥 NOUVEAU : Statistiques de géolocalisation
+    public LocationStatistics getLocationStatistics() {
+        List<Client> allClients = clientRepository.findAll();
+
+        long totalClients = allClients.size();
+        long clientsWithLocation = allClients.stream()
+                .mapToLong(client -> client.hasLocation() ? 1 : 0)
+                .sum();
+        long manualEntries = allClients.stream()
+                .mapToLong(client -> client.isManualLocation() ? 1 : 0)
+                .sum();
+
+        return new LocationStatistics(
+                totalClients,
+                clientsWithLocation,
+                totalClients - clientsWithLocation,
+                manualEntries,
+                clientsWithLocation - manualEntries,
+                totalClients > 0 ? (double) clientsWithLocation / totalClients * 100 : 0
+        );
+    }
+
+    // Classe interne pour les statistiques
+    public static class LocationStatistics {
+        private final long totalClients;
+        private final long clientsWithLocation;
+        private final long clientsWithoutLocation;
+        private final long manualEntries;
+        private final long gpsEntries;
+        private final double coveragePercentage;
+
+        public LocationStatistics(long totalClients, long clientsWithLocation, long clientsWithoutLocation,
+                                  long manualEntries, long gpsEntries, double coveragePercentage) {
+            this.totalClients = totalClients;
+            this.clientsWithLocation = clientsWithLocation;
+            this.clientsWithoutLocation = clientsWithoutLocation;
+            this.manualEntries = manualEntries;
+            this.gpsEntries = gpsEntries;
+            this.coveragePercentage = coveragePercentage;
+        }
+
+        // Getters
+        public long getTotalClients() { return totalClients; }
+        public long getClientsWithLocation() { return clientsWithLocation; }
+        public long getClientsWithoutLocation() { return clientsWithoutLocation; }
+        public long getManualEntries() { return manualEntries; }
+        public long getGpsEntries() { return gpsEntries; }
+        public double getCoveragePercentage() { return coveragePercentage; }
     }
 }

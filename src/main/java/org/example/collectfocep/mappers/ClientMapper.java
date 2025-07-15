@@ -6,16 +6,21 @@ import org.example.collectfocep.entities.Client;
 import org.example.collectfocep.entities.Collecteur;
 import org.mapstruct.*;
 
+import java.math.BigDecimal;
+
 @Mapper(componentModel = "spring")
 public interface ClientMapper {
 
     @Mapping(source = "collecteur.id", target = "collecteurId")
     @Mapping(source = "agence.id", target = "agenceId")
-        // Les champs de géolocalisation sont mappés automatiquement car ils ont le même nom
+    @Mapping(source = "latitude", target = "latitude", qualifiedByName = "bigDecimalToDouble")
+    @Mapping(source = "longitude", target = "longitude", qualifiedByName = "bigDecimalToDouble")
     ClientDTO toDTO(Client client);
 
     @Mapping(source = "collecteurId", target = "collecteur", qualifiedByName = "idToCollecteur")
     @Mapping(source = "agenceId", target = "agence", qualifiedByName = "idToAgence")
+    @Mapping(source = "latitude", target = "latitude", qualifiedByName = "doubleToBigDecimal")
+    @Mapping(source = "longitude", target = "longitude", qualifiedByName = "doubleToBigDecimal")
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "dateCreation", ignore = true)
     @Mapping(target = "dateModification", ignore = true)
@@ -23,6 +28,8 @@ public interface ClientMapper {
 
     @Mapping(source = "collecteurId", target = "collecteur", qualifiedByName = "idToCollecteur")
     @Mapping(source = "agenceId", target = "agence", qualifiedByName = "idToAgence")
+    @Mapping(source = "latitude", target = "latitude", qualifiedByName = "doubleToBigDecimal")
+    @Mapping(source = "longitude", target = "longitude", qualifiedByName = "doubleToBigDecimal")
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "dateCreation", ignore = true)
     @Mapping(target = "dateModification", ignore = true)
@@ -43,5 +50,15 @@ public interface ClientMapper {
         Agence agence = new Agence();
         agence.setId(id);
         return agence;
+    }
+
+    @Named("bigDecimalToDouble")
+    default Double bigDecimalToDouble(BigDecimal value) {
+        return value != null ? value.doubleValue() : null;
+    }
+
+    @Named("doubleToBigDecimal")
+    default BigDecimal doubleToBigDecimal(Double value) {
+        return value != null ? BigDecimal.valueOf(value) : null;
     }
 }
