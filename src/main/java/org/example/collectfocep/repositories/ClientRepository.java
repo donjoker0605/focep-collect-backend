@@ -421,4 +421,60 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
             "FROM Client c WHERE c.id = :clientId")
     Boolean hasValidPhone(@Param("clientId") Long clientId);
 
+    /**
+     * Recherche client par numéro de compte
+     */
+    @Query("SELECT c FROM Client c WHERE c.numeroCompte = :numeroCompte")
+    Optional<Client> findByNumeroCompte(@Param("numeroCompte") String numeroCompte);
+
+    /**
+     * Recherche client par numéro de compte et collecteur (sécurisé)
+     */
+    @Query("SELECT c FROM Client c " +
+            "WHERE c.numeroCompte = :numeroCompte " +
+            "AND c.collecteur.id = :collecteurId")
+    Optional<Client> findByNumeroCompteAndCollecteurId(
+            @Param("numeroCompte") String numeroCompte,
+            @Param("collecteurId") Long collecteurId);
+
+    /**
+     * Recherche partielle par numéro de compte (pour autocomplete)
+     */
+    @Query("SELECT c FROM Client c " +
+            "WHERE c.collecteur.id = :collecteurId " +
+            "AND c.numeroCompte LIKE CONCAT('%', :numeroCompte, '%') " +
+            "ORDER BY c.numeroCompte ASC")
+    List<Client> findByPartialNumeroCompteAndCollecteurId(
+            @Param("numeroCompte") String numeroCompte,
+            @Param("collecteurId") Long collecteurId,
+            Pageable pageable);
+
+    /**
+     * Vérifier existence numéro de compte pour un collecteur
+     */
+    @Query("SELECT COUNT(c) > 0 FROM Client c " +
+            "WHERE c.numeroCompte = :numeroCompte " +
+            "AND c.collecteur.id = :collecteurId")
+    Boolean existsByNumeroCompteAndCollecteurId(
+            @Param("numeroCompte") String numeroCompte,
+            @Param("collecteurId") Long collecteurId);
+
+    /**
+     * 🔍 AMÉLIORATION : Recherche optimisée avec nom ET numéro de compte
+     */
+    @Query("SELECT c FROM Client c " +
+            "WHERE c.collecteur.id = :collecteurId " +
+            "AND (:search IS NULL OR :search = '' OR " +
+            "LOWER(c.nom) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+            "LOWER(c.prenom) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+            "c.numeroCompte LIKE CONCAT('%', :search, '%') OR " +
+            "LOWER(c.numeroCni) LIKE LOWER(CONCAT('%', :search, '%'))) " +
+            "ORDER BY " +
+            "CASE WHEN c.numeroCompte LIKE CONCAT(:search, '%') THEN 1 " +
+            "     WHEN LOWER(c.nom) LIKE LOWER(CONCAT(:search, '%')) THEN 2 " +
+            "     ELSE 3 END, c.dateModification DESC")
+    Page<Client> findByCollecteurIdAndSearchOptimized(
+            @Param("collecteurId") Long collecteurId,
+            @Param("search") String search,
+            Pageable pageable);
 }

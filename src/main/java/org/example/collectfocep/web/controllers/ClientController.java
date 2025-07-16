@@ -740,4 +740,187 @@ public class ClientController {
                     .body(ApiResponse.error("SEARCH_ERROR", "Erreur: " + e.getMessage()));
         }
     }
+
+    /**
+     *  Recherche unifiée (nom + numéro de compte)
+     */
+    @GetMapping("/collecteur/{collecteurId}/search-unified")
+    @PreAuthorize("@securityService.canManageCollecteur(authentication, #collecteurId)")
+    public ResponseEntity<ApiResponse<List<ClientSearchDTO>>> searchClientsUnified(
+            @PathVariable Long collecteurId,
+            @RequestParam String query,
+            @RequestParam(defaultValue = "10") int limit) {
+
+        log.info("🔍 Recherche unifiée: collecteur={}, query='{}', limit={}",
+                collecteurId, query, limit);
+
+        try {
+            if (query.trim().length() < 2) {
+                return ResponseEntity.ok(ApiResponse.success(
+                        Collections.emptyList(),
+                        "Requête trop courte"
+                ));
+            }
+
+            // Utiliser la nouvelle méthode optimisée
+            PageRequest pageRequest = PageRequest.of(0, limit);
+            Page<Client> clientsPage = clientRepository.findByCollecteurIdAndSearchOptimized(
+                    collecteurId, query.trim(), pageRequest);
+
+            List<ClientSearchDTO> searchResults = clientsPage.getContent().stream()
+                    .map(this::mapToClientSearchDTO)
+                    .collect(Collectors.toList());
+
+            return ResponseEntity.ok(ApiResponse.success(
+                    searchResults,
+                    String.format("Trouvé %d client(s)", searchResults.size())
+            ));
+
+        } catch (Exception e) {
+            log.error("❌ Erreur recherche unifiée: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("UNIFIED_SEARCH_ERROR", "Erreur: " + e.getMessage()));
+        }
+    }
+
+    /**
+     *  Recherche spécifique par numéro de compte
+     */
+    @GetMapping("/collecteur/{collecteurId}/by-account/{accountNumber}")
+    @PreAuthorize("@securityService.canManageCollecteur(authentication, #collecteurId)")
+    public ResponseEntity<ApiResponse<ClientSearchDTO>> findClientByAccountNumber(
+            @PathVariable Long collecteurId,
+            @PathVariable String accountNumber) {
+
+        log.info("🔍 Recherche par numéro compte exact: collecteur={}, compte='{}'",
+                collecteurId, accountNumber);
+
+        try {
+            Optional<Client> clientOpt = clientRepository.findByNumeroCompteAndCollecteurId(
+                    accountNumber.trim(), collecteurId);
+
+            if (clientOpt.isPresent()) {
+                ClientSearchDTO result = mapToClientSearchDTO(clientOpt.get());
+                return ResponseEntity.ok(ApiResponse.success(result, "Client trouvé"));
+            } else {
+                return ResponseEntity.ok(ApiResponse.success(null, "Aucun client trouvé"));
+            }
+
+        } catch (Exception e) {
+            log.error("❌ Erreur recherche par compte: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("ACCOUNT_SEARCH_ERROR", "Erreur: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Suggestions numéros de compte (pour autocomplete)
+     */
+    @GetMapping("/collecteur/{collecteurId}/accounts/suggest")
+    @PreAuthorize("@securityService.canManageCollecteur(authentication, #collecteurId)")
+    public ResponseEntity<ApiResponse<List<String>>> suggestAccountNumbers(
+            @PathVariable Long collecteurId,
+            @RequestParam String partial,
+            @RequestParam(defaultValue = "5") int limit) {
+
+        log.info("🔍 Suggestions numéros compte: collecteur={}, partial='{}'",
+                collecteurId, partial);
+
+        try {
+            if (partial.trim().length() < 2) {
+                return ResponseEntity.ok(ApiResponse.success(
+                        Collections.emptyList(),
+                        "Requête trop courte"
+                ));
+            }
+
+            PageRequest pageRequest = PageRequest.of(0, limit);
+            List<Client> clients = clientRepository.findByPartialNumeroCompteAndCollecteurId(
+                    partial.trim(), collecteurId, pageRequest);
+
+            List<String> suggestions = clients.stream()
+                    .map(Client::getNumeroCompte)
+                    .filter(Objects::nonNull)
+                    .distinct()
+                    .collect(Collectors.toList());
+
+            return ResponseEntity.ok(ApiResponse.success(
+                    suggestions,
+                    String.format("Trouvé %d suggestion(s)", suggestions.size())
+            ));
+
+        } catch (Exception e) {
+            log.error("❌ Erreur suggestions comptes: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("ACCOUNT_SUGGEST_ERROR", "Erreur: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Validation numéro de compte + téléphone
+     */
+    @PostMapping("/validate-client-data")
+    @PreAuthorize("hasAnyRole('COLLECTEUR', 'ADMIN', 'SUPER_ADMIN')")
+    public ResponseEntity<ApiResponse<ClientValidationDTO>> validateClientData(
+            @Valid @RequestBody ClientValidationRequest request) {
+
+        log.info("📋 Validation données client: collecteur={}, compte={}",
+                request.getCollecteurId(), request.getAccountNumber());
+
+        try {
+            ClientValidationDTO validation = new ClientValidationDTO();
+
+            // 1. Rechercher le client
+            Optional<Client> clientOpt = clientRepository.findByNumeroCompteAndCollecteurId(
+                    request.getAccountNumber(), request.getCollecteurId());
+
+            if (clientOpt.isPresent()) {
+                Client client = clientOpt.get();
+                validation.setClientFound(true);
+                validation.setClientId(client.getId());
+                validation.setClientName(String.format("%s %s", client.getPrenom(), client.getNom()));
+                validation.setAccountNumber(client.getNumeroCompte());
+
+                // 2. Vérifier le téléphone
+                boolean hasPhone = client.getTelephone() != null &&
+                        !client.getTelephone().trim().isEmpty();
+                validation.setHasValidPhone(hasPhone);
+
+                if (!hasPhone) {
+                    validation.setPhoneWarning("Ce client n'a pas de numéro de téléphone renseigné");
+                }
+
+            } else {
+                validation.setClientFound(false);
+                validation.setErrorMessage("Aucun client trouvé avec ce numéro de compte");
+            }
+
+            return ResponseEntity.ok(ApiResponse.success(validation, "Validation effectuée"));
+
+        } catch (Exception e) {
+            log.error("❌ Erreur validation client: {}", e.getMessage(), e);
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("VALIDATION_ERROR", "Erreur: " + e.getMessage()));
+        }
+    }
+
+// ========================================
+// 🔧 MÉTHODES UTILITAIRES PRIVÉES
+// ========================================
+
+    /**
+     * Mapper Client vers ClientSearchDTO
+     */
+    private ClientSearchDTO mapToClientSearchDTO(Client client) {
+        return ClientSearchDTO.builder()
+                .id(client.getId())
+                .nom(client.getNom())
+                .prenom(client.getPrenom())
+                .numeroCompte(client.getNumeroCompte())
+                .numeroCni(client.getNumeroCni())
+                .telephone(client.getTelephone())
+                .displayName(String.format("%s %s", client.getPrenom(), client.getNom()))
+                .hasPhone(client.getTelephone() != null && !client.getTelephone().trim().isEmpty())
+                .build();
+    }
 }
