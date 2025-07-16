@@ -50,6 +50,7 @@ public class CollecteurController {
         log.info("   - GET /api/collecteurs - Liste filtrée par agence");
         log.info("   - POST /api/collecteurs - Création sécurisée");
         log.info("   - PATCH /api/collecteurs/{id}/toggle-status");
+        log.info("   - POST /api/collecteurs/{id}/reset-password - NOUVEAU");
     }
 
     private final CollecteurService collecteurService;
@@ -78,6 +79,13 @@ public class CollecteurController {
             dto.setAgenceId(agenceIdFromAuth);
             log.info("✅ Agence {} assignée automatiquement au collecteur", agenceIdFromAuth);
 
+            // 🔥 VÉRIFICATION DU MOT DE PASSE
+            if (dto.getPassword() == null || dto.getPassword().trim().isEmpty()) {
+                log.warn("⚠️ Aucun mot de passe fourni pour le collecteur {}", dto.getAdresseMail());
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(ApiResponse.error("Le mot de passe est obligatoire"));
+            }
+
             // Créer le collecteur
             Collecteur collecteur = collecteurService.saveCollecteur(dto);
             CollecteurDTO collecteurDTO = collecteurService.convertToDTO(collecteur);
@@ -98,7 +106,49 @@ public class CollecteurController {
     }
 
     /**
-     * MISE À JOUR D'UN COLLECTEUR - Sans possibilité de changer l'agence
+     * ENDPOINT POUR RÉINITIALISER LE MOT DE PASSE PAR L'ADMIN
+     */
+    @PostMapping("/{id}/reset-password")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
+    @Audited(action = "RESET_PASSWORD", entityType = "Collecteur")
+    public ResponseEntity<ApiResponse<Map<String, String>>> resetCollecteurPassword(
+            @PathVariable Long id,
+            @Valid @RequestBody PasswordResetRequestDTO request) {
+
+        log.info("🔑 Réinitialisation du mot de passe pour le collecteur: {}", id);
+
+        try {
+            // Vérifier l'accès
+            if (!securityService.hasPermissionForCollecteur(id)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(ApiResponse.error("Accès non autorisé à ce collecteur"));
+            }
+
+            // Utiliser le service pour réinitialiser
+            collecteurService.resetCollecteurPassword(id, request.getNewPassword());
+
+            // Réponse avec le nouveau mot de passe (pour que l'admin puisse le communiquer)
+            Map<String, String> response = new HashMap<>();
+            response.put("message", "Mot de passe réinitialisé avec succès");
+            response.put("newPassword", request.getNewPassword());
+            response.put("collecteurId", id.toString());
+
+            log.info("✅ Mot de passe réinitialisé avec succès pour le collecteur: {}", id);
+
+            return ResponseEntity.ok(ApiResponse.success(
+                    response,
+                    "Mot de passe réinitialisé avec succès"
+            ));
+
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la réinitialisation du mot de passe", e);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(ApiResponse.error("Erreur: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * MISE À JOUR D'UN COLLECTEUR - AVEC CHANGEMENT DE MOT DE PASSE
      */
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
@@ -118,6 +168,11 @@ public class CollecteurController {
             // NE JAMAIS permettre la modification de l'agence
             dto.setAgenceId(null);
 
+            // 🔥 LOG POUR LE CHANGEMENT DE MOT DE PASSE
+            if (dto.hasNewPassword()) {
+                log.info("🔑 Changement de mot de passe demandé pour le collecteur: {}", id);
+            }
+
             Collecteur updated = collecteurService.updateCollecteur(id, dto);
             CollecteurDTO collecteurDTO = collecteurService.convertToDTO(updated);
 
@@ -125,7 +180,9 @@ public class CollecteurController {
 
             return ResponseEntity.ok(ApiResponse.success(
                     collecteurDTO,
-                    "Collecteur mis à jour avec succès"
+                    dto.hasNewPassword() ?
+                            "Collecteur et mot de passe mis à jour avec succès" :
+                            "Collecteur mis à jour avec succès"
             ));
 
         } catch (Exception e) {
@@ -213,62 +270,6 @@ public class CollecteurController {
                     .body(ApiResponse.error("Erreur: " + e.getMessage()));
         }
     }
-
-    // ✅ TON CODE EXISTANT - CONSERVÉ INTÉGRALEMENT
-    @PostMapping("/{id}/reset-password")
-    @PreAuthorize("@securityService.canResetPassword(authentication, #id)")
-    @Audited(action = "RESET_PASSWORD", entityType = "Collecteur")
-    public ResponseEntity<ApiResponse<Void>> resetPassword(
-            @PathVariable Long id,
-            @Valid @RequestBody PasswordResetRequest request) {
-        log.info("Réinitialisation du mot de passe pour le collecteur: {}", id);
-
-        try {
-            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-            passwordService.resetPassword(id, request.getNewPassword(), auth);
-
-            return ResponseEntity.ok(
-                    ApiResponse.success(
-                            null,
-                            "Mot de passe réinitialisé avec succès"
-                    )
-            );
-        } catch (Exception e) {
-            log.error("Erreur lors de la réinitialisation du mot de passe", e);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(ApiResponse.error("Erreur: " + e.getMessage()));
-        }
-    }
-
-    // ✅ TON CODE EXISTANT - CONSERVÉ INTÉGRALEMENT
-//    @DeleteMapping("/{id}")
-//    @PreAuthorize("hasRole('SUPER_ADMIN') or @securityService.isAdminOfCollecteur(authentication, #id)")
-//    @Audited(action = "DELETE", entityType = "Collecteur")
-//    public ResponseEntity<ApiResponse<Void>> deleteCollecteur(@PathVariable Long id) {
-//        log.info("Suppression du collecteur: {}", id);
-//
-//        try {
-//            Collecteur collecteur = collecteurService.getCollecteurById(id)
-//                    .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
-//
-//            if (collecteurService.hasActiveOperations(collecteur)) {
-//                throw new InvalidOperationException("Impossible de supprimer un collecteur ayant des opérations actives");
-//            }
-//
-//            collecteurService.deactivateCollecteur(id);
-//
-//            return ResponseEntity.ok(
-//                    ApiResponse.success(
-//                            null,
-//                            "Collecteur supprimé avec succès"
-//                    )
-//            );
-//        } catch (Exception e) {
-//            log.error("Erreur lors de la suppression", e);
-//            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-//                    .body(ApiResponse.error("Erreur: " + e.getMessage()));
-//        }
-//    }
 
     /**
      * DÉSACTIVER UN COLLECTEUR (soft delete)

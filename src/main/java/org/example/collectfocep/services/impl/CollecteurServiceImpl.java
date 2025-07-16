@@ -55,14 +55,14 @@ public class CollecteurServiceImpl implements CollecteurService {
     private final JournalService journalService;
     private final MouvementMapperV2 mouvementMapper;
 
-    // ✅ MÉTHODE PRINCIPALE DE CRÉATION - SÉCURISÉE ET INTÉGRÉE
+    // MÉTHODE PRINCIPALE DE CRÉATION
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Collecteur saveCollecteur(CollecteurCreateDTO dto) {
         try {
             log.info("Début de création du collecteur pour l'agence: {}", dto.getAgenceId());
 
-            // ✅ SÉCURITÉ CRITIQUE: FORCER L'AGENCE DE L'ADMIN CONNECTÉ
+            // SÉCURITÉ CRITIQUE: FORCER L'AGENCE DE L'ADMIN CONNECTÉ
             Long agenceIdFromAuth = securityService.getCurrentUserAgenceId();
 
             if (agenceIdFromAuth == null) {
@@ -70,7 +70,7 @@ public class CollecteurServiceImpl implements CollecteurService {
                 throw new UnauthorizedException("Accès non autorisé - agence non déterminée");
             }
 
-            // ✅ FORCER L'AGENCE DE L'ADMIN - IGNORER CELLE ENVOYÉE PAR LE CLIENT
+            // FORCER L'AGENCE DE L'ADMIN - IGNORER CELLE ENVOYÉE PAR LE CLIENT
             dto.setAgenceId(agenceIdFromAuth);
 
             log.info("✅ Création d'un collecteur pour l'agence auto-assignée: {} par l'admin: {}",
@@ -80,7 +80,7 @@ public class CollecteurServiceImpl implements CollecteurService {
             Agence agence = agenceRepository.findById(dto.getAgenceId())
                     .orElseThrow(() -> new ResourceNotFoundException("Agence non trouvée avec l'ID: " + dto.getAgenceId()));
 
-            // ✅ VÉRIFICATION UNICITÉ EMAIL
+            // VÉRIFICATION UNICITÉ EMAIL
             if (collecteurRepository.existsByAdresseMail(dto.getAdresseMail())) {
                 throw new BusinessException("Un collecteur avec cet email existe déjà: " + dto.getAdresseMail());
             }
@@ -91,10 +91,17 @@ public class CollecteurServiceImpl implements CollecteurService {
             // Définir l'agence managée
             collecteur.setAgence(agence);
 
-            // Définir le mot de passe par défaut sécurisé
-            collecteur.setPassword(passwordEncoder.encode("ChangeMe123!"));
+            // 🔥 CORRECTION CRITIQUE: UTILISER LE MOT DE PASSE DU DTO
+            if (dto.getPassword() != null && !dto.getPassword().trim().isEmpty()) {
+                log.info("✅ Utilisation du mot de passe fourni pour le collecteur");
+                collecteur.setPassword(passwordEncoder.encode(dto.getPassword()));
+            } else {
+                log.warn("⚠️ Aucun mot de passe fourni, utilisation d'un mot de passe temporaire");
+                String tempPassword = generateTemporaryPassword();
+                collecteur.setPassword(passwordEncoder.encode(tempPassword));
+                log.info("🔑 Mot de passe temporaire généré: {}", tempPassword);
+            }
 
-            // ✅ DÉFINIR LES VALEURS PAR DÉFAUT SÉCURISÉES
             collecteur.setActive(true);
             collecteur.setRole("COLLECTEUR");
             collecteur.setAncienneteEnMois(0);
@@ -109,7 +116,6 @@ public class CollecteurServiceImpl implements CollecteurService {
             Collecteur savedCollecteur = collecteurRepository.saveAndFlush(collecteur);
             entityManager.refresh(savedCollecteur);
 
-            // ✅ CONSERVER TA LOGIQUE DE CRÉATION DES COMPTES
             log.info("Création des comptes pour le nouveau collecteur: {}", savedCollecteur.getId());
             compteService.createCollecteurAccounts(savedCollecteur);
 
@@ -123,15 +129,85 @@ public class CollecteurServiceImpl implements CollecteurService {
         }
     }
 
-    // ✅ NOUVELLES MÉTHODES SÉCURISÉES POUR L'API ADMIN
+    // Générer un mot de passe temporaire
+    private String generateTemporaryPassword() {
+        String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        StringBuilder password = new StringBuilder();
+
+        // Assurer au moins une majuscule, une minuscule et un chiffre
+        password.append("C"); // Majuscule
+        password.append("p"); // Minuscule
+        password.append("1"); // Chiffre
+
+        // Ajouter 5 caractères aléatoires
+        for (int i = 0; i < 5; i++) {
+            password.append(chars.charAt((int) (Math.random() * chars.length())));
+        }
+
+        return password.toString();
+    }
+
+    //  Réinitialiser le mot de passe par l'admin
+    @Override
+    @Transactional
+    public void resetCollecteurPassword(Long collecteurId, String newPassword) {
+        log.info("🔑 Réinitialisation du mot de passe pour le collecteur: {}", collecteurId);
+
+        try {
+            Collecteur collecteur = collecteurRepository.findById(collecteurId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
+
+            // ✅ VÉRIFICATION DE SÉCURITÉ
+            if (!securityService.hasPermissionForCollecteur(collecteur.getId())) {
+                throw new UnauthorizedException("Accès non autorisé à ce collecteur");
+            }
+
+            // Valider le nouveau mot de passe
+            validatePassword(newPassword);
+
+            // Encoder et sauvegarder
+            collecteur.setPassword(passwordEncoder.encode(newPassword));
+            collecteur.setDateModificationMontantMax(LocalDateTime.now()); // Pour tracer la modification
+            collecteur.setModifiePar(securityService.getCurrentUsername());
+
+            collecteurRepository.saveAndFlush(collecteur);
+
+            log.info("✅ Mot de passe réinitialisé avec succès pour le collecteur: {}", collecteurId);
+
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la réinitialisation du mot de passe", e);
+            throw new CollecteurServiceException("Erreur lors de la réinitialisation: " + e.getMessage(), e);
+        }
+    }
+
+    // Valider un mot de passe
+    private void validatePassword(String password) {
+        if (password == null || password.trim().isEmpty()) {
+            throw new IllegalArgumentException("Le mot de passe ne peut pas être vide");
+        }
+
+        if (password.length() < 6) {
+            throw new IllegalArgumentException("Le mot de passe doit avoir au moins 6 caractères");
+        }
+
+        if (password.length() > 128) {
+            throw new IllegalArgumentException("Le mot de passe ne peut pas dépasser 128 caractères");
+        }
+
+        // Vérifier qu'il contient au moins une lettre
+        if (!password.matches(".*[a-zA-Z].*")) {
+            throw new IllegalArgumentException("Le mot de passe doit contenir au moins une lettre");
+        }
+    }
+
 
     /**
-     * ✅ RÉCUPÉRER LES COLLECTEURS FILTRÉS PAR AGENCE DE L'ADMIN CONNECTÉ
+     * RÉCUPÉRER LES COLLECTEURS FILTRÉS PAR AGENCE DE L'ADMIN CONNECTÉ
      */
     public Page<Collecteur> getCollecteursByAgence(Long agenceId, Pageable pageable) {
         log.info("👥 Récupération des collecteurs pour l'agence: {}", agenceId);
 
-        // ✅ VÉRIFICATION DE SÉCURITÉ
+        // VÉRIFICATION DE SÉCURITÉ
         if (!securityService.isUserFromAgence(agenceId)) {
             throw new UnauthorizedException("Accès non autorisé à cette agence");
         }
@@ -140,12 +216,12 @@ public class CollecteurServiceImpl implements CollecteurService {
     }
 
     /**
-     * ✅ RECHERCHER LES COLLECTEURS PAR AGENCE AVEC TERME DE RECHERCHE
+     * RECHERCHER LES COLLECTEURS PAR AGENCE AVEC TERME DE RECHERCHE
      */
     public Page<Collecteur> searchCollecteursByAgence(Long agenceId, String search, Pageable pageable) {
         log.info("🔍 Recherche de collecteurs dans l'agence {}: '{}'", agenceId, search);
 
-        // ✅ VÉRIFICATION DE SÉCURITÉ
+        // VÉRIFICATION DE SÉCURITÉ
         if (!securityService.isUserFromAgence(agenceId)) {
             throw new UnauthorizedException("Accès non autorisé à cette agence");
         }
@@ -154,7 +230,7 @@ public class CollecteurServiceImpl implements CollecteurService {
     }
 
     /**
-     * ✅ BASCULER LE STATUT D'UN COLLECTEUR AVEC SÉCURITÉ
+     * BASCULER LE STATUT D'UN COLLECTEUR AVEC SÉCURITÉ
      */
     @Transactional
     public Collecteur toggleCollecteurStatus(Long collecteurId) {
@@ -187,7 +263,7 @@ public class CollecteurServiceImpl implements CollecteurService {
     }
 
     /**
-     * ✅ RÉCUPÉRER LES STATISTIQUES D'UN COLLECTEUR
+     * RÉCUPÉRER LES STATISTIQUES D'UN COLLECTEUR
      */
     public CollecteurStatisticsDTO getCollecteurStatistics(Long collecteurId) {
         log.info("📈 Récupération des statistiques pour le collecteur: {}", collecteurId);
@@ -221,7 +297,6 @@ public class CollecteurServiceImpl implements CollecteurService {
                     .totalRetraits(volumeRetraits != null ? volumeRetraits : 0.0)
                     .soldeNet((volumeEpargne != null ? volumeEpargne : 0.0) -
                             (volumeRetraits != null ? volumeRetraits : 0.0))
-                    //.nombreOperationsMois(operationsCeMois != null ? operationsCeMois : 0L)
                     .dateCalcul(LocalDateTime.now())
                     .build();
 
@@ -232,7 +307,7 @@ public class CollecteurServiceImpl implements CollecteurService {
     }
 
     /**
-     * ✅ MISE À JOUR SÉCURISÉE D'UN COLLECTEUR
+     * MISE À JOUR SÉCURISÉE D'UN COLLECTEUR
      */
     @Override
     @Transactional
@@ -241,24 +316,34 @@ public class CollecteurServiceImpl implements CollecteurService {
             Collecteur collecteur = collecteurRepository.findById(id)
                     .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé avec l'ID: " + id));
 
-            // ✅ VÉRIFICATION DES DROITS D'ACCÈS
+            // VÉRIFICATION DES DROITS D'ACCÈS
             if (!securityService.hasPermissionForCollecteur(collecteur.getId())) {
                 throw new UnauthorizedException("Non autorisé à modifier ce collecteur");
             }
 
-            // ✅ EMPÊCHER LE CHANGEMENT D'AGENCE (SÉCURITÉ)
+            // EMPÊCHER LE CHANGEMENT D'AGENCE (SÉCURITÉ)
             Long currentAgenceId = collecteur.getAgence().getId();
 
-            // ✅ VÉRIFIER L'UNICITÉ DE L'EMAIL (SAUF POUR LE COLLECTEUR ACTUEL)
+            // VÉRIFIER L'UNICITÉ DE L'EMAIL (SAUF POUR LE COLLECTEUR ACTUEL)
             if (dto.getAdresseMail() != null &&
                     !collecteur.getAdresseMail().equals(dto.getAdresseMail()) &&
                     collecteurRepository.existsByAdresseMail(dto.getAdresseMail())) {
                 throw new BusinessException("Un collecteur avec cet email existe déjà");
             }
+
+            // 🔥 GESTION DU CHANGEMENT DE MOT DE PASSE
+            if (dto.getNewPassword() != null && !dto.getNewPassword().trim().isEmpty()) {
+                log.info("🔑 Changement de mot de passe demandé pour le collecteur: {}", id);
+                validatePassword(dto.getNewPassword());
+                collecteur.setPassword(passwordEncoder.encode(dto.getNewPassword()));
+                collecteur.setDateModificationMontantMax(LocalDateTime.now());
+                collecteur.setModifiePar(securityService.getCurrentUsername());
+            }
+
             // Mise à jour via mapper
             collecteurMapper.updateEntityFromDTO(dto, collecteur);
 
-            // ✅ RESTAURER L'AGENCE ORIGINALE (SÉCURITÉ)
+            // RESTAURER L'AGENCE ORIGINALE (SÉCURITÉ)
             collecteur.setAgence(agenceRepository.findById(currentAgenceId).orElse(collecteur.getAgence()));
 
             // Validation
@@ -354,7 +439,6 @@ public class CollecteurServiceImpl implements CollecteurService {
         historiqueRepository.save(historique);
     }
 
-    // ✅ CONSERVER TA MÉTHODE getDashboardStats INTACTE
     @Override
     public CollecteurDashboardDTO getDashboardStats(Long collecteurId) {
         log.info("Calcul des statistiques dashboard pour collecteur: {}", collecteurId);
@@ -380,7 +464,7 @@ public class CollecteurServiceImpl implements CollecteurService {
             Double soldeTotal = (totalEpargne != null ? totalEpargne : 0.0) -
                     (totalRetraits != null ? totalRetraits : 0.0);
 
-            // ✅ CORRECTION: Utiliser le bon type DTO
+            // Utiliser le bon type DTO
             List<CollecteurDashboardDTO.MouvementDTO> transactionsRecentes = List.of();
 
             try {
@@ -389,7 +473,7 @@ public class CollecteurServiceImpl implements CollecteurService {
                 Page<Mouvement> recentMovements = mouvementRepository
                         .findByCollecteurId(collecteurId, lastTransactions);
 
-                // ✅ MAPPER CORRECTEMENT VERS LE BON TYPE
+                // MAPPER CORRECTEMENT VERS LE BON TYPE
                 transactionsRecentes = recentMovements.getContent()
                         .stream()
                         .map(this::mapToCollecteurDashboardMouvementDTO)
@@ -445,7 +529,7 @@ public class CollecteurServiceImpl implements CollecteurService {
         }
     }
 
-    // ✅ CONSERVER TES MÉTHODES HELPER INTACTES
+    // CONSERVER TES MÉTHODES HELPER INTACTES
     private CollecteurDashboardDTO.MouvementDTO mapToCollecteurDashboardMouvementDTO(Mouvement mouvement) {
         return CollecteurDashboardDTO.MouvementDTO.builder()
                 .id(mouvement.getId())
@@ -502,7 +586,7 @@ public class CollecteurServiceImpl implements CollecteurService {
         return (montantMois / objectif) * 100;
     }
 
-    // ✅ CONSERVER TES MÉTHODES DEPRECATED POUR COMPATIBILITÉ
+    // CONSERVER TES MÉTHODES DEPRECATED POUR COMPATIBILITÉ
     @Override
     @Deprecated
     public Collecteur saveCollecteur(CollecteurDTO dto, Long agenceId) {
@@ -571,7 +655,7 @@ public class CollecteurServiceImpl implements CollecteurService {
     }
 
     /**
-     * 🔥 NOUVELLE MÉTHODE: Statistiques avec plage de dates
+     * Statistiques avec plage de dates
      */
     @Override
     public Map<String, Object> getCollecteurStatisticsWithDateRange(Long collecteurId, LocalDate dateDebut, LocalDate dateFin) {
@@ -601,7 +685,7 @@ public class CollecteurServiceImpl implements CollecteurService {
         Double objectifMensuel = collecteur.getMontantMaxRetrait() != null ? collecteur.getMontantMaxRetrait() : 100000.0;
         Double tauxRealisation = objectifMensuel > 0 ? (totalEpargne != null ? totalEpargne : 0.0) / objectifMensuel * 100 : 0.0;
 
-        // ✅ SOLUTION: Utiliser HashMap au lieu de Map.of()
+        // Utiliser HashMap au lieu de Map.of()
         Map<String, Object> statistics = new HashMap<>();
         statistics.put("collecteurId", collecteurId);
         statistics.put("collecteurNom", collecteur.getNom());
