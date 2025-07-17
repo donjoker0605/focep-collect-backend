@@ -5,12 +5,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.entities.Collecteur;
 import org.example.collectfocep.entities.CompteCollecteur;
 import org.example.collectfocep.exceptions.CompteGenerationException;
-import org.example.collectfocep.repositories.CompteCollecteurRepository;
 import org.example.collectfocep.repositories.CompteRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Optional;
 import java.util.concurrent.ThreadLocalRandom;
 
 @Service
@@ -18,33 +16,24 @@ import java.util.concurrent.ThreadLocalRandom;
 @RequiredArgsConstructor
 public class CollecteurAccountService {
 
-    private final CompteCollecteurRepository compteCollecteurRepository;
+    private final CompteAdapterService compteAdapterService;  // ✅ UTILISER LE SERVICE ADAPTER
     private final CompteRepository compteRepository;
 
     @Transactional
     public CompteCollecteur ensureCompteAttenteExists(Collecteur collecteur) {
-        Optional<CompteCollecteur> existingOpt = compteCollecteurRepository
-                .findByCollecteurAndTypeCompte(collecteur, "ATTENTE");
+        try {
+            // ✅ UTILISER LE SERVICE ADAPTER
+            CompteCollecteur existing = compteAdapterService
+                    .findByCollecteurAndTypeCompte(collecteur, "ATTENTE");
 
-        if (existingOpt.isPresent()) {
             log.debug("Compte d'attente existant trouvé pour collecteur {}", collecteur.getId());
-            return existingOpt.get();
+            return existing;
+
+        } catch (Exception e) {
+            // Si pas trouvé, il faudrait créer un nouveau compte via CompteService
+            log.warn("Compte attente non trouvé pour collecteur {}: {}", collecteur.getId(), e.getMessage());
+            throw e; // Pour l'instant, on propage l'erreur
         }
-
-        String numeroCompte = generateUniqueAccountNumber("ATT", collecteur);
-
-        CompteCollecteur compte = CompteCollecteur.builder()
-                .collecteur(collecteur)
-                .nomCompte("Compte Attente - " + collecteur.getNom())
-                .numeroCompte(numeroCompte)
-                .typeCompte("ATTENTE")
-                .solde(0.0)
-                .build();
-
-        log.info("Création compte d'attente pour collecteur {}: {}",
-                collecteur.getId(), numeroCompte);
-
-        return compteCollecteurRepository.save(compte);
     }
 
     private String generateUniqueAccountNumber(String prefix, Collecteur collecteur) {

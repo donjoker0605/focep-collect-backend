@@ -5,7 +5,7 @@ import lombok.*;
 import lombok.experimental.SuperBuilder;
 
 @Entity
-@Table(name = "comptes_collecteur")
+@Table(name = "compte_collecteur")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -14,47 +14,28 @@ import lombok.experimental.SuperBuilder;
 public class CompteCollecteur extends Compte {
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "collecteur_id", nullable = false)
+    @JoinColumn(name = "id_collecteur", nullable = false)
     private Collecteur collecteur;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "type_compte_collecteur", nullable = false)
-    private TypeCompteCollecteur typeCompteCollecteur;
 
-    // ENUM pour les types de comptes
-    public enum TypeCompteCollecteur {
-        SERVICE("Compte de service"),
-        MANQUANT("Compte manquant"),
-        ATTENTE("Compte attente"),
-        REMUNERATION("Compte rémunération"),
-        CHARGE("Compte charge");
-
-        private final String libelle;
-
-        TypeCompteCollecteur(String libelle) {
-            this.libelle = libelle;
-        }
-
-        public String getLibelle() {
-            return libelle;
-        }
-    }
-
-    // Méthodes utilitaires
+    // Méthodes utilitaires pour l'Option A
     public boolean isService() {
-        return TypeCompteCollecteur.SERVICE.equals(typeCompteCollecteur);
+        return "SERVICE".equals(getTypeCompte());
     }
 
     public boolean isManquant() {
-        return TypeCompteCollecteur.MANQUANT.equals(typeCompteCollecteur);
+        return "MANQUANT".equals(getTypeCompte());
     }
 
     public boolean isAttente() {
-        return TypeCompteCollecteur.ATTENTE.equals(typeCompteCollecteur);
+        return "ATTENTE".equals(getTypeCompte());
     }
 
-    public boolean allowsNegativeBalance() {
-        return TypeCompteCollecteur.MANQUANT.equals(typeCompteCollecteur) ||
-                TypeCompteCollecteur.CHARGE.equals(typeCompteCollecteur);
+    public boolean isRemuneration() {
+        return "REMUNERATION".equals(getTypeCompte());
+    }
+
+    public boolean isCharge() {
+        return "CHARGE".equals(getTypeCompte());
     }
 }

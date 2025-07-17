@@ -160,8 +160,7 @@ public class CompteServiceImpl implements CompteService {
     public CompteCollecteur findServiceAccount(Collecteur collecteur) {
         log.debug("Recherche du compte service pour collecteur ID={}", collecteur.getId());
 
-        // 1. Utiliser la méthode correcte du repository
-        // Chercher d'abord dans CompteServiceEntity
+        // Chercher directement dans CompteServiceEntity
         Optional<CompteServiceEntity> compteService = compteServiceRepository
                 .findFirstByCollecteur(collecteur);
 
@@ -170,9 +169,6 @@ public class CompteServiceImpl implements CompteService {
             return createCompteCollecteurFromService(compteService.get(), collecteur);
         }
 
-        // 2. Si pas trouvé, essayer CompteCollecteur (si vous gardez l'architecture hybride)
-        // Note: Cette méthode nécessiterait d'ajouter une méthode dans CompteCollecteurRepository
-        // Pour l'instant, on lève une exception
         log.error("Aucun compte service trouvé pour collecteur ID={}", collecteur.getId());
         throw new ResourceNotFoundException("Compte service non trouvé pour le collecteur: " + collecteur.getId());
     }
@@ -190,6 +186,7 @@ public class CompteServiceImpl implements CompteService {
         compteCollecteur.setSolde(serviceEntity.getSolde());
         compteCollecteur.setTypeCompte("SERVICE");
         compteCollecteur.setVersion(serviceEntity.getVersion());
+
         return compteCollecteur;
     }
 
@@ -695,6 +692,140 @@ public class CompteServiceImpl implements CompteService {
         Compte compte = compteRepository.findById(compteId)
                 .orElseThrow(() -> new ResourceNotFoundException("Compte non trouvé: " + compteId));
         return compte.getSolde();
+    }
+
+    // MÉTHODE POUR OBTENIR SOLDE PAR TYPE (Option A)
+    public Double getSoldeCompteByType(Collecteur collecteur, String typeCompte) {
+        log.debug("Récupération solde {} pour collecteur {}", typeCompte, collecteur.getId());
+
+        try {
+            switch (typeCompte.toUpperCase()) {
+                case "SERVICE":
+                    return compteServiceRepository.findFirstByCollecteur(collecteur)
+                            .map(CompteServiceEntity::getSolde)
+                            .orElse(0.0);
+                case "MANQUANT":
+                    return compteManquantRepository.findFirstByCollecteur(collecteur)
+                            .map(CompteManquant::getSolde)
+                            .orElse(0.0);
+                case "ATTENTE":
+                    return compteAttenteRepository.findFirstByCollecteur(collecteur)
+                            .map(CompteAttente::getSolde)
+                            .orElse(0.0);
+                case "REMUNERATION":
+                    return compteRemunerationRepository.findFirstByCollecteur(collecteur)
+                            .map(CompteRemuneration::getSolde)
+                            .orElse(0.0);
+                case "CHARGE":
+                    return compteChargeRepository.findFirstByCollecteur(collecteur)
+                            .map(CompteCharge::getSolde)
+                            .orElse(0.0);
+                default:
+                    throw new IllegalArgumentException("Type de compte non supporté: " + typeCompte);
+            }
+        } catch (Exception e) {
+            log.error("Erreur récupération solde {} pour collecteur {}: {}",
+                    typeCompte, collecteur.getId(), e.getMessage());
+            return 0.0;
+        }
+    }
+
+    // MÉTHODE POUR METTRE À JOUR SOLDE PAR TYPE (Option A)
+    @Transactional
+    public void updateSoldeByType(Collecteur collecteur, String typeCompte, Double nouveauSolde) {
+        log.info("Mise à jour solde {} pour collecteur {} -> {}",
+                typeCompte, collecteur.getId(), nouveauSolde);
+
+        try {
+            switch (typeCompte.toUpperCase()) {
+                case "SERVICE":
+                    CompteServiceEntity compteService = compteServiceRepository.findFirstByCollecteur(collecteur)
+                            .orElseThrow(() -> new ResourceNotFoundException("Compte service non trouvé"));
+                    compteService.setSolde(nouveauSolde);
+                    compteServiceRepository.save(compteService);
+                    break;
+
+                case "MANQUANT":
+                    CompteManquant compteManquant = compteManquantRepository.findFirstByCollecteur(collecteur)
+                            .orElseThrow(() -> new ResourceNotFoundException("Compte manquant non trouvé"));
+                    compteManquant.setSolde(nouveauSolde);
+                    compteManquantRepository.save(compteManquant);
+                    break;
+
+                case "ATTENTE":
+                    CompteAttente compteAttente = compteAttenteRepository.findFirstByCollecteur(collecteur)
+                            .orElseThrow(() -> new ResourceNotFoundException("Compte attente non trouvé"));
+                    compteAttente.setSolde(nouveauSolde);
+                    compteAttenteRepository.save(compteAttente);
+                    break;
+
+                case "REMUNERATION":
+                    CompteRemuneration compteRemuneration = compteRemunerationRepository.findFirstByCollecteur(collecteur)
+                            .orElseThrow(() -> new ResourceNotFoundException("Compte rémunération non trouvé"));
+                    compteRemuneration.setSolde(nouveauSolde);
+                    compteRemunerationRepository.save(compteRemuneration);
+                    break;
+
+                case "CHARGE":
+                    CompteCharge compteCharge = compteChargeRepository.findFirstByCollecteur(collecteur)
+                            .orElseThrow(() -> new ResourceNotFoundException("Compte charge non trouvé"));
+                    compteCharge.setSolde(nouveauSolde);
+                    compteChargeRepository.save(compteCharge);
+                    break;
+
+                default:
+                    throw new IllegalArgumentException("Type de compte non supporté: " + typeCompte);
+            }
+
+            log.info("✅ Solde {} mis à jour pour collecteur {}", typeCompte, collecteur.getId());
+
+        } catch (Exception e) {
+            log.error("❌ Erreur mise à jour solde {}: {}", typeCompte, e.getMessage(), e);
+            throw new RuntimeException("Erreur mise à jour solde: " + e.getMessage(), e);
+        }
+    }
+
+    // MÉTHODE POUR TRANSFÉRER ENTRE TYPES DE COMPTES (Option A)
+    @Transactional
+    public void transfererEntreTypesComptes(Collecteur collecteur,
+                                            String typeSource,
+                                            String typeDestination,
+                                            Double montant,
+                                            String motif) {
+
+        if (montant <= 0) {
+            throw new IllegalArgumentException("Le montant doit être positif");
+        }
+
+        log.info("💰 Transfert {} FCFA de {} vers {} pour collecteur {} - Motif: {}",
+                montant, typeSource, typeDestination, collecteur.getId(), motif);
+
+        try {
+            // Récupérer soldes actuels
+            Double soldeSource = getSoldeCompteByType(collecteur, typeSource);
+            Double soldeDestination = getSoldeCompteByType(collecteur, typeDestination);
+
+            // Vérifier solde suffisant (sauf pour comptes autorisant négatif)
+            if (soldeSource - montant < 0 && !isNegativeBalanceAllowedForType(typeSource)) {
+                throw new IllegalArgumentException("Solde insuffisant dans compte " + typeSource);
+            }
+
+            // Effectuer le transfert
+            updateSoldeByType(collecteur, typeSource, soldeSource - montant);
+            updateSoldeByType(collecteur, typeDestination, soldeDestination + montant);
+
+            log.info("✅ Transfert réussi: {} FCFA de {} vers {}", montant, typeSource, typeDestination);
+
+        } catch (Exception e) {
+            log.error("❌ Erreur transfert: {}", e.getMessage(), e);
+            throw new RuntimeException("Erreur lors du transfert: " + e.getMessage(), e);
+        }
+    }
+
+    // Vérifier si solde négatif autorisé par type
+    private boolean isNegativeBalanceAllowedForType(String typeCompte) {
+        return "MANQUANT".equals(typeCompte.toUpperCase()) ||
+                "CHARGE".equals(typeCompte.toUpperCase());
     }
 
 }

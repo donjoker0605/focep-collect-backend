@@ -6,8 +6,8 @@ import org.example.collectfocep.entities.Collecteur;
 import org.example.collectfocep.entities.CompteCollecteur;
 import org.example.collectfocep.exceptions.ResourceNotFoundException;
 import org.example.collectfocep.repositories.CollecteurRepository;
-import org.example.collectfocep.repositories.CompteCollecteurRepository;
 import org.example.collectfocep.repositories.CompteServiceRepository;
+import org.example.collectfocep.services.impl.CompteAdapterService;  // ✅ UTILISER LE SERVICE ADAPTER
 import org.example.collectfocep.services.interfaces.CompteService;
 import org.example.collectfocep.util.ApiResponse;
 import org.springframework.http.ResponseEntity;
@@ -16,7 +16,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/admin/compte-health")
@@ -26,7 +25,7 @@ import java.util.Optional;
 public class CompteHealthController {
 
     private final CollecteurRepository collecteurRepository;
-    private final CompteCollecteurRepository compteCollecteurRepository;
+    private final CompteAdapterService compteAdapterService;  // ✅ UTILISER LE SERVICE ADAPTER
     private final CompteServiceRepository compteServiceRepository;
     private final CompteService compteService;
 
@@ -68,10 +67,14 @@ public class CompteHealthController {
         status.setCollecteurId(collecteur.getId());
         status.setCollecteurNom(collecteur.getNom() + " " + collecteur.getPrenom());
 
-        // Vérifier CompteCollecteur de type SERVICE
-        Optional<CompteCollecteur> compteCollecteur = compteCollecteurRepository
-                .findByCollecteurAndTypeCompte(collecteur, "SERVICE");
-        status.setHasCompteCollecteur(compteCollecteur.isPresent());
+        // ✅ UTILISER LE SERVICE ADAPTER
+        try {
+            CompteCollecteur compteCollecteur = compteAdapterService
+                    .findByCollecteurAndTypeCompte(collecteur, "SERVICE");
+            status.setHasCompteCollecteur(true);
+        } catch (Exception e) {
+            status.setHasCompteCollecteur(false);
+        }
 
         // Vérifier CompteServiceEntity
         boolean hasCompteService = compteServiceRepository.existsByCollecteur(collecteur);
@@ -89,7 +92,7 @@ public class CompteHealthController {
         return status;
     }
 
-    // Classes internes pour le rapport
+    // Classes internes pour le rapport (inchangées)
     static class CompteHealthReport {
         private List<CollecteurCompteStatus> collecteurStatuses = new ArrayList<>();
         private int totalCollecteurs;
@@ -121,7 +124,7 @@ public class CompteHealthController {
             return canFindServiceAccount;
         }
 
-        // Getters/Setters
+        // Getters/Setters (inchangés)
         public Long getCollecteurId() { return collecteurId; }
         public void setCollecteurId(Long collecteurId) { this.collecteurId = collecteurId; }
         public String getCollecteurNom() { return collecteurNom; }

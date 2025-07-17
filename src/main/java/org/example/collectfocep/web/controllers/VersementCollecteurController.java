@@ -98,7 +98,7 @@ public class VersementCollecteurController {
     }
 
     /**
-     * 📈 Statistiques des manquants d'un collecteur
+     * 📈 Statistiques des manquants d'un collecteur - ✅ CORRIGÉ
      */
     @GetMapping("/collecteur/{collecteurId}/manquants")
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
@@ -110,7 +110,7 @@ public class VersementCollecteurController {
         try {
             CollecteurComptesDTO comptes = versementService.getCollecteurComptes(collecteurId);
 
-            // ✅ CORRECTION: Utiliser le DTO dédié au lieu d'une classe anonyme
+            // ✅ UTILISER LE DTO DÉDIÉ AU LIEU D'UNE CLASSE ANONYME
             ManquantsStatsDTO stats = ManquantsStatsDTO.builder()
                     .collecteurId(comptes.getCollecteurId())
                     .collecteurNom(comptes.getCollecteurNom())
@@ -131,7 +131,7 @@ public class VersementCollecteurController {
     }
 
     /**
-     * 🔍 Vérifier si une clôture est possible
+     * 🔍 Vérifier si une clôture est possible - ✅ CORRIGÉ
      */
     @GetMapping("/can-close")
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
@@ -144,24 +144,8 @@ public class VersementCollecteurController {
         try {
             ClotureJournalPreviewDTO preview = versementService.getCloturePreview(collecteurId, date);
 
-            boolean canCloseJournal = preview.getJournalExiste() && !preview.getDejaClôture();
-            String reasonText = "";
-
-            if (!preview.getJournalExiste()) {
-                reasonText = "Aucun journal trouvé pour cette date";
-            } else if (preview.getDejaClôture()) {
-                reasonText = "Le journal est déjà clôturé";
-            }
-
-            // ✅ CORRECTION: Utiliser le DTO dédié au lieu d'une classe anonyme
-            ClotureCheckDTO result = ClotureCheckDTO.builder()
-                    .canClose(canCloseJournal)
-                    .reason(reasonText)
-                    .montantAVerser(preview.getSoldeCompteService())
-                    .nombreOperations(preview.getNombreOperations())
-                    .journalExiste(preview.getJournalExiste())
-                    .dejaClôture(preview.getDejaClôture())
-                    .build();
+            // ✅ UTILISER LE DTO DÉDIÉ AU LIEU D'UNE CLASSE ANONYME
+            ClotureCheckDTO result = ClotureCheckDTO.fromPreview(preview);
 
             return ResponseEntity.ok(ApiResponse.success(result, "Vérification effectuée"));
 
