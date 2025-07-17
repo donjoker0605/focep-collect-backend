@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Propagation;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -426,5 +427,210 @@ public class CompteServiceImpl implements CompteService {
         comptes.addAll(compteClientRepository.findAllByClient(client));
 
         return comptes;
+    }
+
+    @Override
+    public CompteManquant findManquantAccount(Collecteur collecteur) {
+        log.debug("Recherche du compte manquant pour collecteur ID={}", collecteur.getId());
+
+        return compteManquantRepository.findFirstByCollecteur(collecteur)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Compte manquant non trouvé pour le collecteur: " + collecteur.getId()));
+    }
+
+    @Override
+    public CompteAttente findAttenteAccount(Collecteur collecteur) {
+        log.debug("Recherche du compte attente pour collecteur ID={}", collecteur.getId());
+
+        return compteAttenteRepository.findFirstByCollecteur(collecteur)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Compte attente non trouvé pour le collecteur: " + collecteur.getId()));
+    }
+
+    @Override
+    public CompteRemuneration findRemunerationAccount(Collecteur collecteur) {
+        log.debug("Recherche du compte rémunération pour collecteur ID={}", collecteur.getId());
+
+        return compteRemunerationRepository.findFirstByCollecteur(collecteur)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Compte rémunération non trouvé pour le collecteur: " + collecteur.getId()));
+    }
+
+    @Override
+    @Transactional
+    public void updateSoldeCompte(Long compteId, Double nouveauSolde) {
+        log.info("Mise à jour solde compte {} vers {}", compteId, nouveauSolde);
+
+        Compte compte = compteRepository.findById(compteId)
+                .orElseThrow(() -> new ResourceNotFoundException("Compte non trouvé: " + compteId));
+
+        Double ancienSolde = compte.getSolde();
+        compte.setSolde(nouveauSolde);
+        compteRepository.save(compte);
+
+        log.info("✅ Solde mis à jour: {} → {} pour compte {}", ancienSolde, nouveauSolde, compteId);
+    }
+
+    @Override
+    @Transactional
+    public void ajouterAuSolde(Long compteId, Double montant) {
+        log.info("Ajout de {} au solde du compte {}", montant, compteId);
+
+        Compte compte = compteRepository.findById(compteId)
+                .orElseThrow(() -> new ResourceNotFoundException("Compte non trouvé: " + compteId));
+
+        Double nouveauSolde = compte.getSolde() + montant;
+        compte.setSolde(nouveauSolde);
+        compteRepository.save(compte);
+
+        log.info("✅ Montant ajouté: nouveau solde {} pour compte {}", nouveauSolde, compteId);
+    }
+
+    @Override
+    @Transactional
+    public void retirerDuSolde(Long compteId, Double montant) {
+        log.info("Retrait de {} du solde du compte {}", montant, compteId);
+
+        Compte compte = compteRepository.findById(compteId)
+                .orElseThrow(() -> new ResourceNotFoundException("Compte non trouvé: " + compteId));
+
+        Double nouveauSolde = compte.getSolde() - montant;
+
+        // Vérification optionnelle du solde négatif selon le type de compte
+        if (nouveauSolde < 0 && !isNegativeBalanceAllowed(compte.getTypeCompte())) {
+            throw new IllegalArgumentException("Solde insuffisant pour le compte: " + compteId);
+        }
+
+        compte.setSolde(nouveauSolde);
+        compteRepository.save(compte);
+
+        log.info("✅ Montant retiré: nouveau solde {} pour compte {}", nouveauSolde, compteId);
+    }
+
+    @Override
+    @Transactional
+    public void transfererEntreComptes(Long compteSourceId, Long compteDestinationId,
+                                       Double montant, String motif) {
+        log.info("Transfert de {} de compte {} vers compte {} - Motif: {}",
+                montant, compteSourceId, compteDestinationId, motif);
+
+        if (montant <= 0) {
+            throw new IllegalArgumentException("Le montant doit être positif");
+        }
+
+        try {
+            // Débiter le compte source
+            retirerDuSolde(compteSourceId, montant);
+
+            // Créditer le compte destination
+            ajouterAuSolde(compteDestinationId, montant);
+
+            log.info("✅ Transfert réussi: {} de {} vers {}", montant, compteSourceId, compteDestinationId);
+
+        } catch (Exception e) {
+            log.error("❌ Erreur lors du transfert: {}", e.getMessage(), e);
+            throw new RuntimeException("Erreur lors du transfert: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    @Transactional
+    public void remettreAZero(Long compteId) {
+        log.info("Remise à zéro du compte {}", compteId);
+        updateSoldeCompte(compteId, 0.0);
+    }
+
+    @Override
+    public boolean hasCompteService(Collecteur collecteur) {
+        return compteServiceRepository.existsByCollecteur(collecteur);
+    }
+
+    @Override
+    public boolean hasCompteManquant(Collecteur collecteur) {
+        return compteManquantRepository.existsByCollecteur(collecteur);
+    }
+
+    @Override
+    public boolean hasCompteAttente(Collecteur collecteur) {
+        return compteAttenteRepository.existsByCollecteur(collecteur);
+    }
+
+    @Override
+    public boolean hasCompteRemuneration(Collecteur collecteur) {
+        return compteRemunerationRepository.existsByCollecteur(collecteur);
+    }
+
+    @Override
+    public List<Compte> getAllComptesByCollecteur(Collecteur collecteur) {
+        log.debug("Récupération de tous les comptes pour collecteur ID={}", collecteur.getId());
+
+        List<Compte> comptes = new ArrayList<>();
+
+        // Ajouter tous les types de comptes
+        compteServiceRepository.findAllByCollecteur(collecteur).forEach(comptes::add);
+        compteManquantRepository.findAllByCollecteur(collecteur).forEach(comptes::add);
+        compteAttenteRepository.findAllByCollecteur(collecteur).forEach(comptes::add);
+        compteRemunerationRepository.findAllByCollecteur(collecteur).forEach(comptes::add);
+        compteChargeRepository.findAllByCollecteur(collecteur).forEach(comptes::add);
+
+        return comptes;
+    }
+
+    @Override
+    public Double calculateTotalSoldeByTypeAndAgence(String typeCompte, Long agenceId) {
+        log.debug("Calcul total solde type {} pour agence {}", typeCompte, agenceId);
+
+        // Cette méthode nécessiterait une requête personnalisée
+        // Pour l'instant, retourner 0.0 ou implémenter selon vos besoins
+        return 0.0;
+    }
+
+    @Override
+    public List<Collecteur> getCollecteursWithNonZeroBalance(String typeCompte, Long agenceId) {
+        log.debug("Recherche collecteurs avec solde non nul type {} agence {}", typeCompte, agenceId);
+
+        // Implémentation selon le type de compte
+        switch (typeCompte.toUpperCase()) {
+            case "MANQUANT":
+                return collecteurRepository.findByAgenceId(agenceId).stream()
+                        .filter(c -> {
+                            try {
+                                CompteManquant compte = findManquantAccount(c);
+                                return compte.getSolde() != 0;
+                            } catch (Exception e) {
+                                return false;
+                            }
+                        })
+                        .collect(Collectors.toList());
+
+            case "ATTENTE":
+                return collecteurRepository.findByAgenceId(agenceId).stream()
+                        .filter(c -> {
+                            try {
+                                CompteAttente compte = findAttenteAccount(c);
+                                return compte.getSolde() != 0;
+                            } catch (Exception e) {
+                                return false;
+                            }
+                        })
+                        .collect(Collectors.toList());
+
+            default:
+                return new ArrayList<>();
+        }
+    }
+
+    @Override
+    @Transactional
+    public void archiverAnciensMouvements(int nombreJours) {
+        log.info("Archivage des mouvements de plus de {} jours", nombreJours);
+        // Implémentation selon vos besoins d'archivage
+        // Cette méthode pourrait déplacer les anciens mouvements vers une table d'archive
+    }
+
+    // Méthode utilitaire
+    private boolean isNegativeBalanceAllowed(String typeCompte) {
+        // Certains types de comptes peuvent avoir des soldes négatifs
+        return "MANQUANT".equals(typeCompte) || "CHARGE".equals(typeCompte);
     }
 }
