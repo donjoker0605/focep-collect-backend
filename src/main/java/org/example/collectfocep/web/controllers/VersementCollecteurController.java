@@ -110,6 +110,7 @@ public class VersementCollecteurController {
         try {
             CollecteurComptesDTO comptes = versementService.getCollecteurComptes(collecteurId);
 
+            // ✅ CORRECTION: Utiliser le DTO dédié au lieu d'une classe anonyme
             ManquantsStatsDTO stats = ManquantsStatsDTO.builder()
                     .collecteurId(comptes.getCollecteurId())
                     .collecteurNom(comptes.getCollecteurNom())
@@ -134,7 +135,7 @@ public class VersementCollecteurController {
      */
     @GetMapping("/can-close")
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
-    public ResponseEntity<ApiResponse<Object>> canCloseJournal(
+    public ResponseEntity<ApiResponse<ClotureCheckDTO>> canCloseJournal(
             @RequestParam Long collecteurId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
 
@@ -143,23 +144,24 @@ public class VersementCollecteurController {
         try {
             ClotureJournalPreviewDTO preview = versementService.getCloturePreview(collecteurId, date);
 
-            boolean canClose = preview.getJournalExiste() && !preview.getDejaClôture();
-            String reason = "";
+            boolean canCloseJournal = preview.getJournalExiste() && !preview.getDejaClôture();
+            String reasonText = "";
 
             if (!preview.getJournalExiste()) {
-                reason = "Aucun journal trouvé pour cette date";
+                reasonText = "Aucun journal trouvé pour cette date";
             } else if (preview.getDejaClôture()) {
-                reason = "Le journal est déjà clôturé";
+                reasonText = "Le journal est déjà clôturé";
             }
 
-            Object result = new Object() {
-                public final boolean canClose = canClose;
-                public final String reason = reason;
-                public final Double montantAVerser = preview.getSoldeCompteService();
-                public final Integer nombreOperations = preview.getNombreOperations();
-                public final Boolean journalExiste = preview.getJournalExiste();
-                public final Boolean dejaClôture = preview.getDejaClôture();
-            };
+            // ✅ CORRECTION: Utiliser le DTO dédié au lieu d'une classe anonyme
+            ClotureCheckDTO result = ClotureCheckDTO.builder()
+                    .canClose(canCloseJournal)
+                    .reason(reasonText)
+                    .montantAVerser(preview.getSoldeCompteService())
+                    .nombreOperations(preview.getNombreOperations())
+                    .journalExiste(preview.getJournalExiste())
+                    .dejaClôture(preview.getDejaClôture())
+                    .build();
 
             return ResponseEntity.ok(ApiResponse.success(result, "Vérification effectuée"));
 

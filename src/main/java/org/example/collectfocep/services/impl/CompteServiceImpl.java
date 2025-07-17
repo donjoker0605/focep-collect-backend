@@ -160,16 +160,8 @@ public class CompteServiceImpl implements CompteService {
     public CompteCollecteur findServiceAccount(Collecteur collecteur) {
         log.debug("Recherche du compte service pour collecteur ID={}", collecteur.getId());
 
-        // 1. Essayer d'abord de trouver un CompteCollecteur de type SERVICE
-        Optional<CompteCollecteur> compteCollecteur = compteCollecteurRepository
-                .findByCollecteurAndTypeCompte(collecteur, "SERVICE");
-
-        if (compteCollecteur.isPresent()) {
-            log.debug("CompteCollecteur de type SERVICE trouvé: ID={}", compteCollecteur.get().getId());
-            return compteCollecteur.get();
-        }
-
-        // 2. Sinon, chercher un CompteServiceEntity
+        // 1. Utiliser la méthode correcte du repository
+        // Chercher d'abord dans CompteServiceEntity
         Optional<CompteServiceEntity> compteService = compteServiceRepository
                 .findFirstByCollecteur(collecteur);
 
@@ -178,6 +170,9 @@ public class CompteServiceImpl implements CompteService {
             return createCompteCollecteurFromService(compteService.get(), collecteur);
         }
 
+        // 2. Si pas trouvé, essayer CompteCollecteur (si vous gardez l'architecture hybride)
+        // Note: Cette méthode nécessiterait d'ajouter une méthode dans CompteCollecteurRepository
+        // Pour l'instant, on lève une exception
         log.error("Aucun compte service trouvé pour collecteur ID={}", collecteur.getId());
         throw new ResourceNotFoundException("Compte service non trouvé pour le collecteur: " + collecteur.getId());
     }
@@ -195,12 +190,9 @@ public class CompteServiceImpl implements CompteService {
         compteCollecteur.setSolde(serviceEntity.getSolde());
         compteCollecteur.setTypeCompte("SERVICE");
         compteCollecteur.setVersion(serviceEntity.getVersion());
-
         return compteCollecteur;
     }
 
-    // Reste des méthodes existantes avec améliorations mineures...
-    // (Je conserve le reste de votre code existant pour éviter de tout réécrire)
 
     @Override
     public Page<Compte> getAllComptes(Pageable pageable) {
@@ -216,12 +208,7 @@ public class CompteServiceImpl implements CompteService {
 
     @Override
     public CompteCollecteur findWaitingAccount(Collecteur collecteur) {
-        Optional<CompteCollecteur> compteCollecteur = compteCollecteurRepository.findByCollecteurAndTypeCompte(collecteur, "ATTENTE");
-
-        if (compteCollecteur.isPresent()) {
-            return compteCollecteur.get();
-        }
-
+        // Utiliser CompteAttenteRepository directement
         Optional<CompteAttente> compteAttente = compteAttenteRepository.findFirstByCollecteur(collecteur);
 
         if (compteAttente.isPresent()) {
@@ -233,12 +220,7 @@ public class CompteServiceImpl implements CompteService {
 
     @Override
     public CompteCollecteur findSalaryAccount(Collecteur collecteur) {
-        Optional<CompteCollecteur> compteCollecteur = compteCollecteurRepository.findByCollecteurAndTypeCompte(collecteur, "SALAIRE");
-
-        if (compteCollecteur.isPresent()) {
-            return compteCollecteur.get();
-        }
-
+        // Utiliser CompteRemunerationRepository directement
         Optional<CompteRemuneration> compteRemuneration = compteRemunerationRepository.findFirstByCollecteur(collecteur);
 
         if (compteRemuneration.isPresent()) {
@@ -281,13 +263,6 @@ public class CompteServiceImpl implements CompteService {
     @Override
     public Optional<Compte> findByTypeCompte(String typeCompte) {
         return compteRepository.findByTypeCompte(typeCompte);
-    }
-
-    @Override
-    public double getSolde(Long compteId) {
-        Compte compte = compteRepository.findById(compteId)
-                .orElseThrow(() -> new ResourceNotFoundException("Compte non trouvé: " + compteId));
-        return compte.getSolde();
     }
 
     @Override
@@ -358,7 +333,6 @@ public class CompteServiceImpl implements CompteService {
         compteCollecteur.setSolde(compte.getSolde());
         compteCollecteur.setTypeCompte(compte.getTypeCompte());
         compteCollecteur.setVersion(compte.getVersion());
-
         return compteCollecteur;
     }
 
@@ -456,32 +430,16 @@ public class CompteServiceImpl implements CompteService {
                         "Compte rémunération non trouvé pour le collecteur: " + collecteur.getId()));
     }
 
-    @Override
-    @Transactional
-    public void updateSoldeCompte(Long compteId, Double nouveauSolde) {
-        log.info("Mise à jour solde compte {} vers {}", compteId, nouveauSolde);
-
-        Compte compte = compteRepository.findById(compteId)
-                .orElseThrow(() -> new ResourceNotFoundException("Compte non trouvé: " + compteId));
-
-        Double ancienSolde = compte.getSolde();
-        compte.setSolde(nouveauSolde);
-        compteRepository.save(compte);
-
-        log.info("✅ Solde mis à jour: {} → {} pour compte {}", ancienSolde, nouveauSolde, compteId);
-    }
 
     @Override
     @Transactional
     public void ajouterAuSolde(Long compteId, Double montant) {
         log.info("Ajout de {} au solde du compte {}", montant, compteId);
 
-        Compte compte = compteRepository.findById(compteId)
-                .orElseThrow(() -> new ResourceNotFoundException("Compte non trouvé: " + compteId));
-
-        Double nouveauSolde = compte.getSolde() + montant;
-        compte.setSolde(nouveauSolde);
-        compteRepository.save(compte);
+        // Récupérer le solde actuel et calculer le nouveau
+        Double soldeActuel = getSolde(compteId);
+        Double nouveauSolde = soldeActuel + montant;
+        updateSoldeCompte(compteId, nouveauSolde);
 
         log.info("✅ Montant ajouté: nouveau solde {} pour compte {}", nouveauSolde, compteId);
     }
@@ -491,21 +449,35 @@ public class CompteServiceImpl implements CompteService {
     public void retirerDuSolde(Long compteId, Double montant) {
         log.info("Retrait de {} du solde du compte {}", montant, compteId);
 
-        Compte compte = compteRepository.findById(compteId)
-                .orElseThrow(() -> new ResourceNotFoundException("Compte non trouvé: " + compteId));
+        // Récupérer le solde actuel et calculer le nouveau
+        Double soldeActuel = getSolde(compteId);
+        Double nouveauSolde = soldeActuel - montant;
 
-        Double nouveauSolde = compte.getSolde() - montant;
-
-        // Vérification optionnelle du solde négatif selon le type de compte
-        if (nouveauSolde < 0 && !isNegativeBalanceAllowed(compte.getTypeCompte())) {
+        // Vérification du solde négatif selon le type de compte
+        if (nouveauSolde < 0 && !isNegativeBalanceAllowedForId(compteId)) {
             throw new IllegalArgumentException("Solde insuffisant pour le compte: " + compteId);
         }
 
-        compte.setSolde(nouveauSolde);
-        compteRepository.save(compte);
-
+        updateSoldeCompte(compteId, nouveauSolde);
         log.info("✅ Montant retiré: nouveau solde {} pour compte {}", nouveauSolde, compteId);
     }
+
+    private boolean isNegativeBalanceAllowedForId(Long compteId) {
+        // Vérifier dans CompteManquant (autorise négatif)
+        if (compteManquantRepository.findById(compteId).isPresent()) {
+            return true;
+        }
+
+        // Vérifier dans CompteCharge (autorise négatif)
+        if (compteChargeRepository.findById(compteId).isPresent()) {
+            return true;
+        }
+
+        // Par défaut, pas de solde négatif autorisé
+        return false;
+    }
+
+
 
     @Override
     @Transactional
@@ -633,4 +605,96 @@ public class CompteServiceImpl implements CompteService {
         // Certains types de comptes peuvent avoir des soldes négatifs
         return "MANQUANT".equals(typeCompte) || "CHARGE".equals(typeCompte);
     }
+
+    public CompteServiceEntity findServiceEntityAccount(Collecteur collecteur) {
+        return compteServiceRepository.findFirstByCollecteur(collecteur)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Compte service non trouvé pour le collecteur: " + collecteur.getId()));
+    }
+
+    @Override
+    @Transactional
+    public void updateSoldeCompte(Long compteId, Double nouveauSolde) {
+        log.info("Mise à jour solde compte {} vers {}", compteId, nouveauSolde);
+
+        // Essayer de trouver le compte dans tous les repositories
+        Optional<CompteServiceEntity> compteService = compteServiceRepository.findById(compteId);
+        if (compteService.isPresent()) {
+            CompteServiceEntity compte = compteService.get();
+            Double ancienSolde = compte.getSolde();
+            compte.setSolde(nouveauSolde);
+            compteServiceRepository.save(compte);
+            log.info("✅ Solde CompteService mis à jour: {} → {} pour compte {}", ancienSolde, nouveauSolde, compteId);
+            return;
+        }
+
+        Optional<CompteManquant> compteManquant = compteManquantRepository.findById(compteId);
+        if (compteManquant.isPresent()) {
+            CompteManquant compte = compteManquant.get();
+            Double ancienSolde = compte.getSolde();
+            compte.setSolde(nouveauSolde);
+            compteManquantRepository.save(compte);
+            log.info("✅ Solde CompteManquant mis à jour: {} → {} pour compte {}", ancienSolde, nouveauSolde, compteId);
+            return;
+        }
+
+        Optional<CompteAttente> compteAttente = compteAttenteRepository.findById(compteId);
+        if (compteAttente.isPresent()) {
+            CompteAttente compte = compteAttente.get();
+            Double ancienSolde = compte.getSolde();
+            compte.setSolde(nouveauSolde);
+            compteAttenteRepository.save(compte);
+            log.info("✅ Solde CompteAttente mis à jour: {} → {} pour compte {}", ancienSolde, nouveauSolde, compteId);
+            return;
+        }
+
+        Optional<CompteRemuneration> compteRemuneration = compteRemunerationRepository.findById(compteId);
+        if (compteRemuneration.isPresent()) {
+            CompteRemuneration compte = compteRemuneration.get();
+            Double ancienSolde = compte.getSolde();
+            compte.setSolde(nouveauSolde);
+            compteRemunerationRepository.save(compte);
+            log.info("✅ Solde CompteRemuneration mis à jour: {} → {} pour compte {}", ancienSolde, nouveauSolde, compteId);
+            return;
+        }
+
+        // Fallback: Utiliser le repository général
+        Compte compte = compteRepository.findById(compteId)
+                .orElseThrow(() -> new ResourceNotFoundException("Compte non trouvé: " + compteId));
+
+        Double ancienSolde = compte.getSolde();
+        compte.setSolde(nouveauSolde);
+        compteRepository.save(compte);
+        log.info("✅ Solde mis à jour (fallback): {} → {} pour compte {}", ancienSolde, nouveauSolde, compteId);
+    }
+
+    @Override
+    public double getSolde(Long compteId) {
+        // Essayer de trouver le compte dans tous les repositories
+        Optional<CompteServiceEntity> compteService = compteServiceRepository.findById(compteId);
+        if (compteService.isPresent()) {
+            return compteService.get().getSolde();
+        }
+
+        Optional<CompteManquant> compteManquant = compteManquantRepository.findById(compteId);
+        if (compteManquant.isPresent()) {
+            return compteManquant.get().getSolde();
+        }
+
+        Optional<CompteAttente> compteAttente = compteAttenteRepository.findById(compteId);
+        if (compteAttente.isPresent()) {
+            return compteAttente.get().getSolde();
+        }
+
+        Optional<CompteRemuneration> compteRemuneration = compteRemunerationRepository.findById(compteId);
+        if (compteRemuneration.isPresent()) {
+            return compteRemuneration.get().getSolde();
+        }
+
+        // Fallback: Utiliser le repository général
+        Compte compte = compteRepository.findById(compteId)
+                .orElseThrow(() -> new ResourceNotFoundException("Compte non trouvé: " + compteId));
+        return compte.getSolde();
+    }
+
 }
