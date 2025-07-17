@@ -102,7 +102,7 @@ public class VersementCollecteurController {
      */
     @GetMapping("/collecteur/{collecteurId}/manquants")
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
-    public ResponseEntity<ApiResponse<Object>> getManquantsStats(
+    public ResponseEntity<ApiResponse<ManquantsStatsDTO>> getManquantsStats(
             @PathVariable Long collecteurId) {
 
         log.info("📈 API: GET /admin/versements/collecteur/{}/manquants", collecteurId);
@@ -110,16 +110,15 @@ public class VersementCollecteurController {
         try {
             CollecteurComptesDTO comptes = versementService.getCollecteurComptes(collecteurId);
 
-            // Construire les statistiques des manquants
-            Object stats = new Object() {
-                public final Long collecteurId = comptes.getCollecteurId();
-                public final String collecteurNom = comptes.getCollecteurNom();
-                public final Double totalManquant = comptes.getCompteManquantSolde();
-                public final Double totalAttente = comptes.getCompteAttenteSolde();
-                public final Double soldeNet = comptes.getSoldeNet();
-                public final Boolean hasManquant = comptes.getCompteManquantSolde() > 0;
-                public final Boolean hasAttente = comptes.getCompteAttenteSolde() > 0;
-            };
+            ManquantsStatsDTO stats = ManquantsStatsDTO.builder()
+                    .collecteurId(comptes.getCollecteurId())
+                    .collecteurNom(comptes.getCollecteurNom())
+                    .totalManquant(comptes.getCompteManquantSolde())
+                    .totalAttente(comptes.getCompteAttenteSolde())
+                    .soldeNet(comptes.getSoldeNet())
+                    .hasManquant(comptes.getCompteManquantSolde() > 0)
+                    .hasAttente(comptes.getCompteAttenteSolde() > 0)
+                    .build();
 
             return ResponseEntity.ok(ApiResponse.success(stats, "Statistiques manquants récupérées"));
 
