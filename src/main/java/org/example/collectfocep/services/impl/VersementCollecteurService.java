@@ -19,12 +19,17 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * 💰 Service de versement collecteur avec logique métier corrigée
+ * 💰 Service de versement collecteur avec logique métier CORRIGÉE ET FINALISÉE
  *
  * PROCESSUS MÉTIER IMPLÉMENTÉ :
  * 1. Normal : montant versé = solde compte service
  * 2. Excédent : montant versé > solde compte service
  * 3. Manquant : montant versé < solde compte service
+ *
+ * NOUVEAUTÉS :
+ * - ✅ Traçabilité via TraceabiliteCollecteQuotidienne
+ * - ✅ Notifications intégrées
+ * - ✅ Correction des appels JournalService
  */
 @Service
 @RequiredArgsConstructor
@@ -37,10 +42,12 @@ public class VersementCollecteurService {
     private final CompteManquantRepository compteManquantRepository;
     private final CompteAgenceRepository compteAgenceRepository;
     private final MouvementRepository mouvementRepository;
+    private final TraceabiliteCollecteQuotidienneRepository traceabiliteRepository;
     private final JournalService journalService;
     private final SecurityService securityService;
     private final DateTimeService dateTimeService;
     private final CompteAgenceService compteAgenceService;
+    private final NotificationVersementService notificationService;
 
     /**
      * 📋 Génère un aperçu avant clôture
@@ -58,11 +65,11 @@ public class VersementCollecteurService {
                 throw new BusinessException("Accès non autorisé à ce collecteur");
             }
 
-            // Récupérer le journal
+            // 🔧 CORRECTION: Utiliser getOrCreateJournalDuJour au lieu de getJournalDuJour
             Journal journal = null;
             boolean journalExiste = false;
             try {
-                journal = journalService.getJournalDuJour(collecteurId, date);
+                journal = journalService.getOrCreateJournalDuJour(collecteurId, date);
                 journalExiste = true;
             } catch (Exception e) {
                 log.debug("Aucun journal trouvé pour la date: {}", date);
@@ -153,7 +160,7 @@ public class VersementCollecteurService {
                 throw new BusinessException("Un versement a déjà été effectué pour cette date");
             }
 
-            // 2. RÉCUPÉRATION DES ENTITÉS
+            // 2. RÉCUPÉRATION DES ENTITÉS avec CORRECTION
             Journal journal = journalService.getOrCreateJournalDuJour(
                     request.getCollecteurId(), request.getDate());
 
@@ -172,16 +179,24 @@ public class VersementCollecteurService {
             Double montantCollecte = compteService.getSolde();
             Double montantVerse = request.getMontantVerse();
 
-            // 3. ANALYSE DU CAS ET EXÉCUTION DE LA LOGIQUE MÉTIER
+            // 🆕 3. CRÉER LA TRACE DE TRAÇABILITÉ AVANT REMISE À ZÉRO
+            TraceabiliteCollecteQuotidienne trace = creerTraceAvantCloture(
+                    journal, compteService, compteManquant, request.getDate());
+
+            // 4. ANALYSE DU CAS ET EXÉCUTION DE LA LOGIQUE MÉTIER
             VersementCollecteur versement = executerLogiqueMtier(
                     collecteur, journal, compteService, compteManquant, compteAgence,
                     montantCollecte, montantVerse, request);
 
-            // 4. CLÔTURER LE JOURNAL
+            // 5. CLÔTURER LE JOURNAL
             journal = journalService.cloturerJournalDuJour(request.getCollecteurId(), request.getDate());
 
-            // 5. NOTIFICATION AU COLLECTEUR (TODO: implémenter)
-            // notifierCollecteur(collecteur, versement);
+            // 🆕 6. FINALISER LA TRACE
+            trace.marquerCommeClôturee();
+            traceabiliteRepository.save(trace);
+
+            // 🆕 7. ENVOYER NOTIFICATION AU COLLECTEUR
+            envoyerNotificationCollecteur(collecteur, versement);
 
             log.info("✅ VERSEMENT TERMINÉ - ID: {}, Cas: {}",
                     versement.getId(), determinerCasVersement(montantCollecte, montantVerse));
@@ -191,6 +206,64 @@ public class VersementCollecteurService {
         } catch (Exception e) {
             log.error("❌ Erreur lors du versement: {}", e.getMessage(), e);
             throw new BusinessException("Erreur lors du versement: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 🆕 NOUVELLE MÉTHODE: Créer la trace de traçabilité avant clôture
+     */
+    private TraceabiliteCollecteQuotidienne creerTraceAvantCloture(
+            Journal journal,
+            CompteServiceEntity compteService,
+            CompteManquant compteManquant,
+            LocalDate date) {
+
+        log.info("📊 Création trace traçabilité pour journal: {}", journal.getId());
+
+        try {
+            // Calculer les totaux du jour
+            LocalDateTime startOfDay = dateTimeService.toStartOfDay(date);
+            LocalDateTime endOfDay = dateTimeService.toEndOfDay(date);
+
+            List<Mouvement> mouvements = mouvementRepository.findByCollecteurAndDay(
+                    journal.getCollecteur().getId(), startOfDay, endOfDay);
+
+            Double totalEpargne = mouvements.stream()
+                    .filter(m -> "epargne".equalsIgnoreCase(m.getSens()) || "EPARGNE".equalsIgnoreCase(m.getTypeMouvement()))
+                    .mapToDouble(Mouvement::getMontant)
+                    .sum();
+
+            Double totalRetraits = mouvements.stream()
+                    .filter(m -> "retrait".equalsIgnoreCase(m.getSens()) || "RETRAIT".equalsIgnoreCase(m.getTypeMouvement()))
+                    .mapToDouble(Mouvement::getMontant)
+                    .sum();
+
+            Integer nombreOperations = mouvements.size();
+
+            // Compter les clients uniques servis
+            Integer nombreClients = (int) mouvements.stream()
+                    .filter(m -> m.getClient() != null)
+                    .map(m -> m.getClient().getId())
+                    .distinct()
+                    .count();
+
+            // Créer la trace
+            TraceabiliteCollecteQuotidienne trace = TraceabiliteCollecteQuotidienne.creerDepuisJournal(
+                    journal,
+                    compteService.getSolde(),
+                    compteManquant.getSolde(),
+                    totalEpargne,
+                    totalRetraits,
+                    nombreOperations,
+                    nombreClients,
+                    securityService.getCurrentUsername()
+            );
+
+            return traceabiliteRepository.save(trace);
+
+        } catch (Exception e) {
+            log.error("❌ Erreur création trace: {}", e.getMessage(), e);
+            throw new BusinessException("Erreur création trace traçabilité: " + e.getMessage());
         }
     }
 
@@ -339,8 +412,35 @@ public class VersementCollecteurService {
         log.info("✅ CAS MANQUANT terminé - Manquant: {} prélevé du compte manquant", constatManquant);
     }
 
+    /**
+     * 🆕 NOTIFICATION AU COLLECTEUR
+     */
+    private void envoyerNotificationCollecteur(Collecteur collecteur, VersementCollecteur versement) {
+        try {
+            String cas = determinerCasVersement(versement.getMontantCollecte(), versement.getMontantVerse());
+
+            switch (cas) {
+                case "NORMAL":
+                    notificationService.notifierCollecteurApresClotureOK(collecteur, versement);
+                    break;
+                case "EXCEDENT":
+                    notificationService.notifierExcedent(collecteur, versement);
+                    break;
+                case "MANQUANT":
+                    notificationService.notifierManquantImportant(collecteur, versement);
+                    break;
+            }
+
+            log.info("📲 Notification envoyée au collecteur: {}", collecteur.getId());
+
+        } catch (Exception e) {
+            log.error("❌ Erreur envoi notification: {}", e.getMessage(), e);
+            // Ne pas faire échouer la transaction pour une erreur de notification
+        }
+    }
+
     // =====================================
-    // MÉTHODES UTILITAIRES
+    // MÉTHODES UTILITAIRES (inchangées)
     // =====================================
 
     private String determinerCasVersement(Double montantCollecte, Double montantVerse) {
@@ -396,6 +496,23 @@ public class VersementCollecteurService {
                 .build();
     }
 
-    // TODO: Implémenter la notification au collecteur
-    // private void notifierCollecteur(Collecteur collecteur, VersementCollecteur versement) { ... }
+    // =====================================
+    // 🆕 MÉTHODES DE TRAÇABILITÉ
+    // =====================================
+
+    /**
+     * 📊 Récupère l'historique des collectes d'un collecteur
+     */
+    @Transactional(readOnly = true)
+    public List<TraceabiliteCollecteQuotidienne> getHistoriqueCollectes(Long collecteurId, LocalDate dateDebut, LocalDate dateFin) {
+        return traceabiliteRepository.findByCollecteurAndDateRange(collecteurId, dateDebut, dateFin);
+    }
+
+    /**
+     * 📈 Statistiques de collecte pour un collecteur
+     */
+    @Transactional(readOnly = true)
+    public Object[] getStatistiquesCollecte(Long collecteurId, int annee, int mois) {
+        return traceabiliteRepository.getStatistiquesMensuelles(collecteurId, annee, mois);
+    }
 }
