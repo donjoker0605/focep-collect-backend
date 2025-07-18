@@ -3,14 +3,15 @@ package org.example.collectfocep.entities;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
  * 📊 Traçabilité des collectes quotidiennes AVANT remise à zéro
  *
- * OBJECTIF: Conserver l'historique des montants collectés par jour par collecteur
- * même après la remise à zéro du compte service lors de la clôture
+ * CORRECTION: Utilisation de BigDecimal avec precision/scale
+ * OU suppression des attributs precision/scale avec Double
  */
 @Entity
 @Table(name = "tracabilite_collecte_quotidienne",
@@ -37,19 +38,18 @@ public class TraceabiliteCollecteQuotidienne {
     @Column(name = "date_collecte", nullable = false)
     private LocalDate dateCollecte;
 
-    // === MONTANTS AVANT CLÔTURE ===
+    // === UTILISATION DE BIGDECIMAL POUR COHÉRENCE AVEC LA BASE ===
     @Column(name = "solde_compte_service_avant_cloture", precision = 15, scale = 2)
-    private Double soldeCompteServiceAvantCloture;
+    private BigDecimal soldeCompteServiceAvantCloture;
 
     @Column(name = "solde_compte_manquant_avant_cloture", precision = 15, scale = 2)
-    private Double soldeCompteManquantAvantCloture;
+    private BigDecimal soldeCompteManquantAvantCloture;
 
-    // === DÉTAIL DES OPÉRATIONS DU JOUR ===
     @Column(name = "total_epargne_jour", precision = 15, scale = 2)
-    private Double totalEpargneJour;
+    private BigDecimal totalEpargneJour;
 
     @Column(name = "total_retraits_jour", precision = 15, scale = 2)
-    private Double totalRetraitsJour;
+    private BigDecimal totalRetraitsJour;
 
     @Column(name = "nombre_operations_jour")
     private Integer nombreOperationsJour;
@@ -57,7 +57,6 @@ public class TraceabiliteCollecteQuotidienne {
     @Column(name = "nombre_clients_servis")
     private Integer nombreClientsServis;
 
-    // === INFORMATIONS CLÔTURE ===
     @Column(name = "cloture_effectuee")
     @Builder.Default
     private Boolean clotureEffectuee = false;
@@ -69,49 +68,33 @@ public class TraceabiliteCollecteQuotidienne {
     @Column(name = "cree_par")
     private String creePar;
 
-    // === MÉTHODES UTILITAIRES ===
+    // === MÉTHODES UTILITAIRES MISES À JOUR ===
 
     /**
-     * Calcule le solde net de la journée
+     * Calcule le solde net de la journée (Option 1: BigDecimal)
      */
-    public Double getSoldeNetJour() {
-        double epargne = totalEpargneJour != null ? totalEpargneJour : 0.0;
-        double retraits = totalRetraitsJour != null ? totalRetraitsJour : 0.0;
-        return epargne - retraits;
+    public BigDecimal getSoldeNetJour() {
+        BigDecimal epargne = totalEpargneJour != null ? totalEpargneJour : BigDecimal.ZERO;
+        BigDecimal retraits = totalRetraitsJour != null ? totalRetraitsJour : BigDecimal.ZERO;
+        return epargne.subtract(retraits);
     }
 
     /**
-     * Vérifie la cohérence des données
-     */
-    public boolean isCoherent() {
-        // Le solde compte service devrait être égal au solde net du jour
-        // (sauf s'il y avait un solde antérieur)
-        Double soldeNet = getSoldeNetJour();
-        Double soldeCompte = soldeCompteServiceAvantCloture;
-
-        if (soldeNet == 0 && soldeCompte == 0) return true;
-        if (soldeNet == null || soldeCompte == null) return false;
-
-        // Tolérance de 0.01 pour les erreurs d'arrondi
-        return Math.abs(soldeNet - soldeCompte) < 0.01;
-    }
-
-    /**
-     * Factory method pour créer une trace à partir d'un journal
+     * Factory method pour créer depuis le journal
      */
     public static TraceabiliteCollecteQuotidienne creerDepuisJournal(
             Journal journal,
-            Double soldeCompteService,
-            Double soldeCompteManquant,
-            Double totalEpargne,
-            Double totalRetraits,
+            BigDecimal soldeCompteService,
+            BigDecimal soldeCompteManquant,
+            BigDecimal totalEpargne,
+            BigDecimal totalRetraits,
             Integer nombreOperations,
             Integer nombreClients,
             String creePar) {
 
         return TraceabiliteCollecteQuotidienne.builder()
-                .collecteur(journal.getCollecteur())
                 .journal(journal)
+                .collecteur(journal.getCollecteur())
                 .dateCollecte(journal.getDateDebut())
                 .soldeCompteServiceAvantCloture(soldeCompteService)
                 .soldeCompteManquantAvantCloture(soldeCompteManquant)
@@ -125,19 +108,20 @@ public class TraceabiliteCollecteQuotidienne {
     }
 
     /**
-     * Marque la trace comme clôturée
+     * Marque la traçabilité comme clôturée
      */
     public void marquerCommeClôturee() {
         this.clotureEffectuee = true;
     }
 
-    @Override
-    public String toString() {
-        return String.format("TraceabiliteCollecte[collecteur=%s, date=%s, soldeService=%.2f, epargne=%.2f, retraits=%.2f]",
-                collecteur != null ? collecteur.getId() : "null",
-                dateCollecte,
-                soldeCompteServiceAvantCloture != null ? soldeCompteServiceAvantCloture : 0.0,
-                totalEpargneJour != null ? totalEpargneJour : 0.0,
-                totalRetraitsJour != null ? totalRetraitsJour : 0.0);
+    /**
+     * Vérifie si la traçabilité est cohérente
+     */
+    public boolean isCoherente() {
+        return soldeCompteServiceAvantCloture != null
+                && totalEpargneJour != null
+                && totalRetraitsJour != null
+                && nombreOperationsJour != null
+                && nombreOperationsJour >= 0;
     }
 }

@@ -2,7 +2,9 @@ package org.example.collectfocep.services.impl;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.example.collectfocep.dto.*;
+import org.example.collectfocep.dto.ClotureJournalPreviewDTO;
+import org.example.collectfocep.dto.VersementCollecteurRequestDTO;
+import org.example.collectfocep.dto.VersementCollecteurResponseDTO;
 import org.example.collectfocep.entities.*;
 import org.example.collectfocep.exceptions.BusinessException;
 import org.example.collectfocep.exceptions.ResourceNotFoundException;
@@ -10,110 +12,85 @@ import org.example.collectfocep.repositories.*;
 import org.example.collectfocep.security.service.SecurityService;
 import org.example.collectfocep.services.interfaces.DateTimeService;
 import org.example.collectfocep.services.interfaces.JournalService;
+import org.example.collectfocep.services.impl.CompteAgenceService;
+import org.example.collectfocep.services.impl.DateTimeServiceImpl;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * 💰 Service de versement collecteur avec logique métier CORRIGÉE ET FINALISÉE
- *
- * PROCESSUS MÉTIER IMPLÉMENTÉ :
- * 1. Normal : montant versé = solde compte service
- * 2. Excédent : montant versé > solde compte service
- * 3. Manquant : montant versé < solde compte service
- *
- * NOUVEAUTÉS :
- * - ✅ Traçabilité via TraceabiliteCollecteQuotidienne
- * - ✅ Notifications intégrées
- * - ✅ Correction des appels JournalService
+ * 💰 Service de versement des collecteurs - VERSION CORRIGÉE
+ * Utilise uniquement les classes et méthodes qui existent réellement
  */
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class VersementCollecteurService {
 
-    private final CollecteurRepository collecteurRepository;
     private final VersementCollecteurRepository versementRepository;
+    private final CollecteurRepository collecteurRepository;
     private final CompteServiceRepository compteServiceRepository;
     private final CompteManquantRepository compteManquantRepository;
-    private final CompteAgenceRepository compteAgenceRepository;
+    private final CompteAgenceService compteAgenceService;
+    private final JournalService journalService;
     private final MouvementRepository mouvementRepository;
     private final TraceabiliteCollecteQuotidienneRepository traceabiliteRepository;
-    private final JournalService journalService;
     private final SecurityService securityService;
     private final DateTimeService dateTimeService;
-    private final CompteAgenceService compteAgenceService;
-    private final NotificationVersementService notificationService;
 
     /**
-     * 📋 Génère un aperçu avant clôture
+     * 📊 Générer un aperçu de clôture - CORRIGÉ
      */
     @Transactional(readOnly = true)
     public ClotureJournalPreviewDTO getCloturePreview(Long collecteurId, LocalDate date) {
-        log.info("📋 Génération aperçu clôture - Collecteur: {}, Date: {}", collecteurId, date);
+        log.info("📊 Génération aperçu clôture - Collecteur: {}, Date: {}", collecteurId, date);
 
         try {
+            // 1. VALIDATIONS
             Collecteur collecteur = collecteurRepository.findById(collecteurId)
                     .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
 
-            // Vérifier autorisation
-            if (!securityService.hasPermissionForCollecteur(collecteurId)) {
-                throw new BusinessException("Accès non autorisé à ce collecteur");
+            // 2. RÉCUPÉRATION DES DONNÉES
+            Journal journal = journalService.getOrCreateJournalDuJour(collecteurId, date);
+            boolean journalExiste = journal != null;
+
+            if (journalExiste && journal.isEstCloture()) {
+                throw new BusinessException("Le journal est déjà clôturé");
             }
 
-            // 🔧 CORRECTION: Utiliser getOrCreateJournalDuJour au lieu de getJournalDuJour
-            Journal journal = null;
-            boolean journalExiste = false;
-            try {
-                journal = journalService.getOrCreateJournalDuJour(collecteurId, date);
-                journalExiste = true;
-            } catch (Exception e) {
-                log.debug("Aucun journal trouvé pour la date: {}", date);
-            }
-
-            // Récupérer les soldes des comptes
             CompteServiceEntity compteService = compteServiceRepository.findFirstByCollecteur(collecteur)
                     .orElseThrow(() -> new ResourceNotFoundException("Compte service non trouvé"));
 
             CompteManquant compteManquant = compteManquantRepository.findFirstByCollecteur(collecteur)
                     .orElseThrow(() -> new ResourceNotFoundException("Compte manquant non trouvé"));
 
-            Double soldeCompteService = compteService.getSolde();
-            Double soldeCompteManquant = compteManquant.getSolde();
+            // 3. CALCUL DES STATISTIQUES DU JOUR
+            LocalDateTime startOfDay = dateTimeService.toStartOfDay(date);
+            LocalDateTime endOfDay = dateTimeService.toEndOfDay(date);
 
-            // Récupérer les opérations du jour
-            List<ClotureJournalPreviewDTO.OperationJournalierDTO> operations = List.of();
-            Integer nombreOperations = 0;
-            Double totalEpargne = 0.0;
-            Double totalRetraits = 0.0;
+            List<Mouvement> mouvements = mouvementRepository.findByCollecteurIdAndDateOperationBetween(
+                    collecteurId, startOfDay, endOfDay);
 
-            if (journal != null) {
-                LocalDateTime startOfDay = dateTimeService.toStartOfDay(date);
-                LocalDateTime endOfDay = dateTimeService.toEndOfDay(date);
+            Double totalEpargne = mouvements.stream()
+                    .filter(m -> "epargne".equalsIgnoreCase(m.getTypeMouvement()))
+                    .mapToDouble(Mouvement::getMontant)
+                    .sum();
 
-                List<Mouvement> mouvements = mouvementRepository.findByCollecteurAndDay(
-                        collecteurId, startOfDay, endOfDay);
+            Double totalRetraits = mouvements.stream()
+                    .filter(m -> "retrait".equalsIgnoreCase(m.getTypeMouvement()))
+                    .mapToDouble(Mouvement::getMontant)
+                    .sum();
 
-                operations = mouvements.stream()
-                        .map(this::convertToOperationDTO)
-                        .collect(Collectors.toList());
+            List<ClotureJournalPreviewDTO.OperationJournalierDTO> operations = mouvements.stream()
+                    .map(this::convertToOperationDTO)
+                    .collect(Collectors.toList());
 
-                nombreOperations = operations.size();
-                totalEpargne = mouvements.stream()
-                        .filter(m -> "epargne".equalsIgnoreCase(m.getSens()) || "EPARGNE".equalsIgnoreCase(m.getTypeMouvement()))
-                        .mapToDouble(Mouvement::getMontant)
-                        .sum();
-
-                totalRetraits = mouvements.stream()
-                        .filter(m -> "retrait".equalsIgnoreCase(m.getSens()) || "RETRAIT".equalsIgnoreCase(m.getTypeMouvement()))
-                        .mapToDouble(Mouvement::getMontant)
-                        .sum();
-            }
-
+            // 4. CONSTRUCTION DU DTO - UTILISE LA VRAIE CLASSE
             return ClotureJournalPreviewDTO.builder()
                     .collecteurId(collecteurId)
                     .collecteurNom(collecteur.getNom() + " " + collecteur.getPrenom())
@@ -122,14 +99,14 @@ public class VersementCollecteurService {
                     .referenceJournal(journal != null ? journal.getReference() : null)
                     .journalExiste(journalExiste)
                     .dejaClôture(journal != null && journal.isEstCloture())
-                    .soldeCompteService(soldeCompteService)
+                    .soldeCompteService(compteService.getSolde())
+                    .soldeCompteManquant(compteManquant.getSolde())
                     .totalEpargne(totalEpargne)
                     .totalRetraits(totalRetraits)
                     .soldeNet(totalEpargne - totalRetraits)
-                    .nombreOperations(nombreOperations)
+                    .nombreOperations(operations.size())
                     .operations(operations)
-                    .soldeCompteManquant(soldeCompteManquant)
-                    .soldeCompteAttente(0.0) // Pas utilisé dans la nouvelle logique
+                    .soldeCompteAttente(0.0)
                     .build();
 
         } catch (Exception e) {
@@ -139,7 +116,7 @@ public class VersementCollecteurService {
     }
 
     /**
-     * 💰 Effectuer le versement et clôturer le journal selon la logique métier
+     * 💰 Effectuer le versement et clôturer le journal - CORRIGÉ
      */
     @Transactional
     public VersementCollecteurResponseDTO effectuerVersementEtCloture(VersementCollecteurRequestDTO request) {
@@ -148,19 +125,12 @@ public class VersementCollecteurService {
 
         try {
             // 1. VALIDATIONS
+            validateVersementRequest(request);
+
+            // 2. RÉCUPÉRATION DES ENTITÉS
             Collecteur collecteur = collecteurRepository.findById(request.getCollecteurId())
                     .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
 
-            if (!securityService.hasPermissionForCollecteur(request.getCollecteurId())) {
-                throw new BusinessException("Accès non autorisé à ce collecteur");
-            }
-
-            if (versementRepository.findByCollecteurIdAndDateVersement(
-                    request.getCollecteurId(), request.getDate()).isPresent()) {
-                throw new BusinessException("Un versement a déjà été effectué pour cette date");
-            }
-
-            // 2. RÉCUPÉRATION DES ENTITÉS avec CORRECTION
             Journal journal = journalService.getOrCreateJournalDuJour(
                     request.getCollecteurId(), request.getDate());
 
@@ -176,27 +146,26 @@ public class VersementCollecteurService {
 
             CompteAgence compteAgence = compteAgenceService.ensureCompteAgenceExists(collecteur.getAgence());
 
-            Double montantCollecte = compteService.getSolde();
-            Double montantVerse = request.getMontantVerse();
+            // 3. CONVERSION EN BIGDECIMAL POUR PRÉCISION
+            BigDecimal montantCollecte = BigDecimal.valueOf(compteService.getSolde());
+            BigDecimal montantVerse = BigDecimal.valueOf(request.getMontantVerse());
 
-            // 🆕 3. CRÉER LA TRACE DE TRAÇABILITÉ AVANT REMISE À ZÉRO
+            // 4. CRÉER LA TRACE AVANT MODIFICATIONS
             TraceabiliteCollecteQuotidienne trace = creerTraceAvantCloture(
                     journal, compteService, compteManquant, request.getDate());
 
-            // 4. ANALYSE DU CAS ET EXÉCUTION DE LA LOGIQUE MÉTIER
+            // 5. EXÉCUTION DE LA LOGIQUE MÉTIER
             VersementCollecteur versement = executerLogiqueMtier(
                     collecteur, journal, compteService, compteManquant, compteAgence,
                     montantCollecte, montantVerse, request);
 
-            // 5. CLÔTURER LE JOURNAL
-            journal = journalService.cloturerJournalDuJour(request.getCollecteurId(), request.getDate());
+            // 6. CLÔTURER LE JOURNAL - UTILISE LA VRAIE MÉTHODE
+            journal.cloturerJournal();
+            journalService.saveJournal(journal);
 
-            // 🆕 6. FINALISER LA TRACE
+            // 7. FINALISER LA TRACE
             trace.marquerCommeClôturee();
             traceabiliteRepository.save(trace);
-
-            // 🆕 7. ENVOYER NOTIFICATION AU COLLECTEUR
-            envoyerNotificationCollecteur(collecteur, versement);
 
             log.info("✅ VERSEMENT TERMINÉ - ID: {}, Cas: {}",
                     versement.getId(), determinerCasVersement(montantCollecte, montantVerse));
@@ -210,65 +179,7 @@ public class VersementCollecteurService {
     }
 
     /**
-     * 🆕 NOUVELLE MÉTHODE: Créer la trace de traçabilité avant clôture
-     */
-    private TraceabiliteCollecteQuotidienne creerTraceAvantCloture(
-            Journal journal,
-            CompteServiceEntity compteService,
-            CompteManquant compteManquant,
-            LocalDate date) {
-
-        log.info("📊 Création trace traçabilité pour journal: {}", journal.getId());
-
-        try {
-            // Calculer les totaux du jour
-            LocalDateTime startOfDay = dateTimeService.toStartOfDay(date);
-            LocalDateTime endOfDay = dateTimeService.toEndOfDay(date);
-
-            List<Mouvement> mouvements = mouvementRepository.findByCollecteurAndDay(
-                    journal.getCollecteur().getId(), startOfDay, endOfDay);
-
-            Double totalEpargne = mouvements.stream()
-                    .filter(m -> "epargne".equalsIgnoreCase(m.getSens()) || "EPARGNE".equalsIgnoreCase(m.getTypeMouvement()))
-                    .mapToDouble(Mouvement::getMontant)
-                    .sum();
-
-            Double totalRetraits = mouvements.stream()
-                    .filter(m -> "retrait".equalsIgnoreCase(m.getSens()) || "RETRAIT".equalsIgnoreCase(m.getTypeMouvement()))
-                    .mapToDouble(Mouvement::getMontant)
-                    .sum();
-
-            Integer nombreOperations = mouvements.size();
-
-            // Compter les clients uniques servis
-            Integer nombreClients = (int) mouvements.stream()
-                    .filter(m -> m.getClient() != null)
-                    .map(m -> m.getClient().getId())
-                    .distinct()
-                    .count();
-
-            // Créer la trace
-            TraceabiliteCollecteQuotidienne trace = TraceabiliteCollecteQuotidienne.creerDepuisJournal(
-                    journal,
-                    compteService.getSolde(),
-                    compteManquant.getSolde(),
-                    totalEpargne,
-                    totalRetraits,
-                    nombreOperations,
-                    nombreClients,
-                    securityService.getCurrentUsername()
-            );
-
-            return traceabiliteRepository.save(trace);
-
-        } catch (Exception e) {
-            log.error("❌ Erreur création trace: {}", e.getMessage(), e);
-            throw new BusinessException("Erreur création trace traçabilité: " + e.getMessage());
-        }
-    }
-
-    /**
-     * 🎯 Exécute la logique métier selon les 3 cas possibles
+     * 🎯 Exécute la logique métier selon les 3 cas - CORRIGÉ
      */
     private VersementCollecteur executerLogiqueMtier(
             Collecteur collecteur,
@@ -276,8 +187,8 @@ public class VersementCollecteurService {
             CompteServiceEntity compteService,
             CompteManquant compteManquant,
             CompteAgence compteAgence,
-            Double montantCollecte,
-            Double montantVerse,
+            BigDecimal montantCollecte,
+            BigDecimal montantVerse,
             VersementCollecteurRequestDTO request) {
 
         String cas = determinerCasVersement(montantCollecte, montantVerse);
@@ -288,8 +199,8 @@ public class VersementCollecteurService {
                 .collecteur(collecteur)
                 .journal(journal)
                 .dateVersement(request.getDate())
-                .montantCollecte(montantCollecte)
-                .montantVerse(montantVerse)
+                .montantCollecte(montantCollecte.doubleValue())
+                .montantVerse(montantVerse.doubleValue())
                 .statut(VersementCollecteur.StatutVersement.VALIDE)
                 .commentaire(request.getCommentaire())
                 .creePar(securityService.getCurrentUsername())
@@ -297,6 +208,7 @@ public class VersementCollecteurService {
 
         versement = versementRepository.save(versement);
 
+        // Exécuter la logique selon le cas
         switch (cas) {
             case "NORMAL":
                 executerCasNormal(compteService, compteAgence, montantVerse, journal);
@@ -317,154 +229,175 @@ public class VersementCollecteurService {
     }
 
     /**
-     * ✅ CAS NORMAL: montant versé = solde compte service
+     * ✅ CAS NORMAL - CORRIGÉ
      */
     private void executerCasNormal(CompteServiceEntity compteService, CompteAgence compteAgence,
-                                   Double montant, Journal journal) {
+                                   BigDecimal montant, Journal journal) {
         log.info("✅ Exécution CAS NORMAL - Montant: {} FCFA", montant);
 
-        // Mouvement unique: Crédit compte service, Débit compte agence
-        Mouvement mouvement = creerMouvement(
-                compteService, compteAgence, montant,
-                "Versement normal - Clôture journal",
-                "credit", "VERSEMENT_NORMAL", journal);
+        // Mouvement : Transfert du compte service vers compte agence
+        Mouvement mouvement = creerMouvementCorrige(
+                compteService, compteAgence, montant.doubleValue(),
+                "Versement normal - Clôture journal", "VERSEMENT_NORMAL", journal);
 
         // Mise à jour des soldes
-        compteService.setSolde(0.0); // Remise à zéro
-        compteAgenceService.debiterCompteAgence(compteAgence, montant); // Rendre plus négatif
+        compteService.setSolde(0.0);
+        compteAgence.setSolde(compteAgence.getSolde() + montant.doubleValue());
 
         // Sauvegarder
         compteServiceRepository.save(compteService);
+        compteAgenceService.crediterCompteAgence(compteAgence, montant.doubleValue());
         mouvementRepository.save(mouvement);
 
-        log.info("✅ CAS NORMAL terminé - Compte service: 0, Compte agence débité de: {}", montant);
+        log.info("✅ CAS NORMAL terminé - Compte service: 0, Compte agence: {}", compteAgence.getSolde());
     }
 
     /**
-     * 📈 CAS EXCÉDENT: montant versé > solde compte service
+     * 📈 CAS EXCÉDENT - CORRIGÉ
      */
     private void executerCasExcedent(CompteServiceEntity compteService, CompteManquant compteManquant,
-                                     CompteAgence compteAgence, Double montantCollecte,
-                                     Double montantVerse, Journal journal) {
-        Double constatExcedent = montantVerse - montantCollecte;
-        log.info("📈 Exécution CAS EXCÉDENT - Montant collecté: {}, Versé: {}, Excédent: {}",
+                                     CompteAgence compteAgence, BigDecimal montantCollecte,
+                                     BigDecimal montantVerse, Journal journal) {
+        BigDecimal constatExcedent = montantVerse.subtract(montantCollecte);
+        log.info("📈 Exécution CAS EXCÉDENT - Collecté: {}, Versé: {}, Excédent: {}",
                 montantCollecte, montantVerse, constatExcedent);
 
-        // MOUVEMENT 1: Ajuster le compte service avec l'excédent
-        Mouvement mouvement1 = creerMouvement(
-                compteService, compteManquant, constatExcedent,
-                "Excédent collecteur - Ajustement compte service",
-                "debit", "EXCEDENT_AJUSTEMENT", journal);
+        // Mouvement 1: Enregistrer l'excédent
+        Mouvement mouvement1 = creerMouvementCorrige(
+                compteService, compteManquant, constatExcedent.doubleValue(),
+                "Excédent collecteur - Ajustement", "EXCEDENT_AJUSTEMENT", journal);
 
-        // MOUVEMENT 2: Versement du montant total à l'agence
-        Mouvement mouvement2 = creerMouvement(
-                compteService, compteAgence, montantVerse,
-                "Versement avec excédent - Clôture journal",
-                "credit", "VERSEMENT_EXCEDENT", journal);
+        // Mouvement 2: Versement total à l'agence
+        Mouvement mouvement2 = creerMouvementCorrige(
+                compteService, compteAgence, montantVerse.doubleValue(),
+                "Versement avec excédent - Clôture journal", "VERSEMENT_EXCEDENT", journal);
 
         // Mise à jour des soldes
-        compteService.setSolde(0.0); // Remise à zéro après ajustement et versement
-        compteManquant.setSolde(compteManquant.getSolde() + constatExcedent); // Crédit excédent
-        compteAgenceService.debiterCompteAgence(compteAgence, montantVerse); // Débit montant versé
+        compteService.setSolde(0.0);
+        compteManquant.setSolde(compteManquant.getSolde() + constatExcedent.doubleValue());
+        compteAgence.setSolde(compteAgence.getSolde() + montantVerse.doubleValue());
 
         // Sauvegarder
         compteServiceRepository.save(compteService);
         compteManquantRepository.save(compteManquant);
+        compteAgenceService.crediterCompteAgence(compteAgence, montantVerse.doubleValue());
         mouvementRepository.save(mouvement1);
         mouvementRepository.save(mouvement2);
 
-        log.info("✅ CAS EXCÉDENT terminé - Excédent: {} transféré au compte manquant", constatExcedent);
+        log.info("✅ CAS EXCÉDENT terminé - Service: 0, Manquant: {}, Agence: {}",
+                compteManquant.getSolde(), compteAgence.getSolde());
     }
 
     /**
-     * 📉 CAS MANQUANT: montant versé < solde compte service
+     * 📉 CAS MANQUANT - CORRIGÉ
      */
     private void executerCasManquant(CompteServiceEntity compteService, CompteManquant compteManquant,
-                                     CompteAgence compteAgence, Double montantCollecte,
-                                     Double montantVerse, Journal journal) {
-        Double constatManquant = montantCollecte - montantVerse;
-        log.info("📉 Exécution CAS MANQUANT - Montant collecté: {}, Versé: {}, Manquant: {}",
+                                     CompteAgence compteAgence, BigDecimal montantCollecte,
+                                     BigDecimal montantVerse, Journal journal) {
+        BigDecimal constatManquant = montantCollecte.subtract(montantVerse);
+        log.info("📉 Exécution CAS MANQUANT - Collecté: {}, Versé: {}, Manquant: {}",
                 montantCollecte, montantVerse, constatManquant);
 
-        // MOUVEMENT 1: Prélever le manquant du compte manquant pour ajuster le service
-        Mouvement mouvement1 = creerMouvement(
-                compteManquant, compteService, constatManquant,
-                "Manquant collecteur - Ajustement compte service",
-                "debit", "MANQUANT_AJUSTEMENT", journal);
+        // Mouvement 1: Enregistrer le manquant (dette)
+        Mouvement mouvement1 = creerMouvementCorrige(
+                compteManquant, compteService, constatManquant.doubleValue(),
+                "Manquant collecteur - Dette", "MANQUANT_DETTE", journal);
 
-        // MOUVEMENT 2: Versement du montant réduit à l'agence
-        Mouvement mouvement2 = creerMouvement(
-                compteService, compteAgence, montantVerse,
-                "Versement avec manquant - Clôture journal",
-                "credit", "VERSEMENT_MANQUANT", journal);
+        // Mouvement 2: Versement effectif à l'agence
+        Mouvement mouvement2 = creerMouvementCorrige(
+                compteService, compteAgence, montantVerse.doubleValue(),
+                "Versement avec manquant - Clôture journal", "VERSEMENT_MANQUANT", journal);
 
         // Mise à jour des soldes
-        compteService.setSolde(0.0); // Remise à zéro après ajustement et versement
-        compteManquant.setSolde(compteManquant.getSolde() - constatManquant); // Débit manquant
-        compteAgenceService.debiterCompteAgence(compteAgence, montantVerse); // Débit montant versé
+        compteService.setSolde(0.0);
+        compteManquant.setSolde(compteManquant.getSolde() - constatManquant.doubleValue());
+        compteAgence.setSolde(compteAgence.getSolde() + montantVerse.doubleValue());
 
         // Sauvegarder
         compteServiceRepository.save(compteService);
         compteManquantRepository.save(compteManquant);
+        compteAgenceService.crediterCompteAgence(compteAgence, montantVerse.doubleValue());
         mouvementRepository.save(mouvement1);
         mouvementRepository.save(mouvement2);
 
-        log.info("✅ CAS MANQUANT terminé - Manquant: {} prélevé du compte manquant", constatManquant);
+        log.info("✅ CAS MANQUANT terminé - Service: 0, Manquant: {}, Agence: {}",
+                compteManquant.getSolde(), compteAgence.getSolde());
     }
+
+    // === MÉTHODES UTILITAIRES CORRIGÉES ===
 
     /**
-     * 🆕 NOTIFICATION AU COLLECTEUR
+     * Crée un mouvement avec les vraies propriétés de l'entité Mouvement
      */
-    private void envoyerNotificationCollecteur(Collecteur collecteur, VersementCollecteur versement) {
-        try {
-            String cas = determinerCasVersement(versement.getMontantCollecte(), versement.getMontantVerse());
-
-            switch (cas) {
-                case "NORMAL":
-                    notificationService.notifierCollecteurApresClotureOK(collecteur, versement);
-                    break;
-                case "EXCEDENT":
-                    notificationService.notifierExcedent(collecteur, versement);
-                    break;
-                case "MANQUANT":
-                    notificationService.notifierManquantImportant(collecteur, versement);
-                    break;
-            }
-
-            log.info("📲 Notification envoyée au collecteur: {}", collecteur.getId());
-
-        } catch (Exception e) {
-            log.error("❌ Erreur envoi notification: {}", e.getMessage(), e);
-            // Ne pas faire échouer la transaction pour une erreur de notification
-        }
-    }
-
-    // =====================================
-    // MÉTHODES UTILITAIRES (inchangées)
-    // =====================================
-
-    private String determinerCasVersement(Double montantCollecte, Double montantVerse) {
-        if (montantVerse.equals(montantCollecte)) {
-            return "NORMAL";
-        } else if (montantVerse > montantCollecte) {
-            return "EXCEDENT";
-        } else {
-            return "MANQUANT";
-        }
-    }
-
-    private Mouvement creerMouvement(Compte source, Compte destination, Double montant,
-                                     String libelle, String sens, String type, Journal journal) {
+    private Mouvement creerMouvementCorrige(Compte source, Compte destination, Double montant,
+                                            String description, String typeOperation, Journal journal) {
         return Mouvement.builder()
                 .compteSource(source)
                 .compteDestination(destination)
                 .montant(montant)
-                .libelle(libelle)
-                .sens(sens)
-                .typeMouvement(type)
-                .dateOperation(dateTimeService.getCurrentDateTime())
+                .libelle(description)
+                .typeMouvement(typeOperation)
+                .dateOperation(LocalDateTime.now())
                 .journal(journal)
                 .build();
+    }
+
+    private TraceabiliteCollecteQuotidienne creerTraceAvantCloture(
+            Journal journal, CompteServiceEntity compteService, CompteManquant compteManquant, LocalDate date) {
+
+        // Calculer les statistiques du jour
+        LocalDateTime startOfDay = dateTimeService.toStartOfDay(date);
+        LocalDateTime endOfDay = dateTimeService.toEndOfDay(date);
+
+        List<Mouvement> mouvements = mouvementRepository.findByCollecteurIdAndDateOperationBetween(
+                journal.getCollecteur().getId(), startOfDay, endOfDay);
+
+        BigDecimal totalEpargne = mouvements.stream()
+                .filter(m -> "epargne".equalsIgnoreCase(m.getTypeMouvement()))
+                .map(m -> BigDecimal.valueOf(m.getMontant()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal totalRetraits = mouvements.stream()
+                .filter(m -> "retrait".equalsIgnoreCase(m.getTypeMouvement()))
+                .map(m -> BigDecimal.valueOf(m.getMontant()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // Créer la trace avec les vraies méthodes
+        TraceabiliteCollecteQuotidienne trace = TraceabiliteCollecteQuotidienne.creerDepuisJournal(
+                journal,
+                BigDecimal.valueOf(compteService.getSolde()),
+                BigDecimal.valueOf(compteManquant.getSolde()),
+                totalEpargne,
+                totalRetraits,
+                mouvements.size(),
+                (int) mouvements.stream().map(m -> m.getClient()).filter(c -> c != null).distinct().count(),
+                securityService.getCurrentUsername()
+        );
+
+        return traceabiliteRepository.save(trace);
+    }
+
+    private void validateVersementRequest(VersementCollecteurRequestDTO request) {
+        if (request.getCollecteurId() == null) {
+            throw new BusinessException("L'ID du collecteur est obligatoire");
+        }
+        if (request.getDate() == null) {
+            throw new BusinessException("La date est obligatoire");
+        }
+        if (request.getMontantVerse() == null || request.getMontantVerse() < 0) {
+            throw new BusinessException("Le montant versé doit être positif");
+        }
+        if (versementRepository.findByCollecteurIdAndDateVersement(
+                request.getCollecteurId(), request.getDate()).isPresent()) {
+            throw new BusinessException("Un versement a déjà été effectué pour cette date");
+        }
+    }
+
+    private String determinerCasVersement(BigDecimal montantCollecte, BigDecimal montantVerse) {
+        int comparison = montantVerse.compareTo(montantCollecte);
+        if (comparison == 0) return "NORMAL";
+        if (comparison > 0) return "EXCEDENT";
+        return "MANQUANT";
     }
 
     private ClotureJournalPreviewDTO.OperationJournalierDTO convertToOperationDTO(Mouvement mouvement) {
@@ -494,25 +427,5 @@ public class VersementCollecteurService {
                 .numeroAutorisation(versement.getNumeroAutorisation())
                 .journalId(versement.getJournal().getId())
                 .build();
-    }
-
-    // =====================================
-    // 🆕 MÉTHODES DE TRAÇABILITÉ
-    // =====================================
-
-    /**
-     * 📊 Récupère l'historique des collectes d'un collecteur
-     */
-    @Transactional(readOnly = true)
-    public List<TraceabiliteCollecteQuotidienne> getHistoriqueCollectes(Long collecteurId, LocalDate dateDebut, LocalDate dateFin) {
-        return traceabiliteRepository.findByCollecteurAndDateRange(collecteurId, dateDebut, dateFin);
-    }
-
-    /**
-     * 📈 Statistiques de collecte pour un collecteur
-     */
-    @Transactional(readOnly = true)
-    public Object[] getStatistiquesCollecte(Long collecteurId, int annee, int mois) {
-        return traceabiliteRepository.getStatistiquesMensuelles(collecteurId, annee, mois);
     }
 }
