@@ -27,4 +27,24 @@ public class VersementCollecteurResponseDTO {
     private LocalDateTime dateVersement;
     private String numeroAutorisation;
     private Long journalId;
+
+    // Méthodes utilitaires
+    public boolean hasExcedent() {
+        return excedent != null && excedent > 0;
+    }
+
+    public boolean hasManquant() {
+        return manquant != null && manquant > 0;
+    }
+
+    public boolean isEquilibre() {
+        return !hasExcedent() && !hasManquant();
+    }
+
+    public String getCasVersement() {
+        if (isEquilibre()) return "NORMAL";
+        if (hasExcedent()) return "EXCEDENT";
+        if (hasManquant()) return "MANQUANT";
+        return "INDETERMINE";
+    }
 }

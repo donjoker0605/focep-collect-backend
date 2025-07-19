@@ -10,6 +10,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ManquantsStatsDTO {
+
     private Long collecteurId;
     private String collecteurNom;
     private Double totalManquant;
@@ -17,25 +18,34 @@ public class ManquantsStatsDTO {
     private Double soldeNet;
     private Boolean hasManquant;
     private Boolean hasAttente;
+    private Integer nombreVersementsAvecManquant;
+    private Integer nombreVersementsAvecExcedent;
 
     // Méthodes utilitaires
-    public Boolean isInDebt() {
-        return totalManquant != null && totalManquant > 0;
-    }
-
-    public Boolean hasExcess() {
-        return totalAttente != null && totalAttente > 0;
-    }
-
-    public String getStatusSummary() {
-        if (isInDebt() && hasExcess()) {
-            return "Situation mixte";
-        } else if (isInDebt()) {
-            return "Manquants détectés";
-        } else if (hasExcess()) {
-            return "Excédents en attente";
+    public String getStatutFinancier() {
+        if (hasManquant && totalManquant < -10000) {
+            return "CRITIQUE";
+        } else if (hasManquant) {
+            return "ATTENTION";
+        } else if (hasAttente) {
+            return "EXCEDENT";
         } else {
-            return "Situation équilibrée";
+            return "EQUILIBRE";
+        }
+    }
+
+    public String getMessageStatut() {
+        switch (getStatutFinancier()) {
+            case "CRITIQUE":
+                return "Dette importante - Contact agence recommandé";
+            case "ATTENTION":
+                return "Dette détectée - Surveiller les versements";
+            case "EXCEDENT":
+                return "Crédit disponible";
+            case "EQUILIBRE":
+                return "Situation financière équilibrée";
+            default:
+                return "Statut indéterminé";
         }
     }
 }

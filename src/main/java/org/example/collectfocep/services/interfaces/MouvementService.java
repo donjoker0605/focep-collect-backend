@@ -74,4 +74,10 @@ public interface MouvementService {
      * Calcule le montant de commission pour un mouvement
      */
     double calculerMontantCommission(Mouvement mouvement);
+
+    /**
+     * 💰 Effectue un mouvement de versement spécifique (sans vérification de solde standard)
+     * Cette méthode est utilisée pour les versements de collecteurs où les comptes service sont négatifs
+     */
+    Mouvement effectuerMouvementVersement(Mouvement mouvement);
 }

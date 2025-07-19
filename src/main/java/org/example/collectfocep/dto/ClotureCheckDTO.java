@@ -5,35 +5,46 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDate;
+
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class ClotureCheckDTO {
-    private boolean canClose;
-    private String reason;
-    private Double montantAVerser;
+
+    private Long collecteurId;
+    private String collecteurNom;
+    private LocalDate date;
+    private boolean peutCloturer;
+    private String raisonInterdiction;
+    private boolean journalExiste;
+    private boolean dejaClôture;
+    private Double soldeCompteService;
     private Integer nombreOperations;
-    private Boolean journalExiste;
-    private Boolean dejaClôture;
 
     public static ClotureCheckDTO fromPreview(ClotureJournalPreviewDTO preview) {
-        boolean canClose = preview.getJournalExiste() && !preview.getDejaClôture();
-        String reason = "";
-
-        if (!preview.getJournalExiste()) {
-            reason = "Aucun journal trouvé pour cette date";
-        } else if (preview.getDejaClôture()) {
-            reason = "Le journal est déjà clôturé";
-        }
-
         return ClotureCheckDTO.builder()
-                .canClose(canClose)
-                .reason(reason)
-                .montantAVerser(preview.getSoldeCompteService())
+                .collecteurId(preview.getCollecteurId())
+                .collecteurNom(preview.getCollecteurNom())
+                .date(preview.getDate())
+                .journalExiste(preview.getJournalExiste() != null && preview.getJournalExiste())
+                .dejaClôture(preview.getDejaClôture() != null && preview.getDejaClôture())
+                .soldeCompteService(preview.getSoldeCompteService())
                 .nombreOperations(preview.getNombreOperations())
-                .journalExiste(preview.getJournalExiste())
-                .dejaClôture(preview.getDejaClôture())
+                .peutCloturer(preview.getJournalExiste() != null && preview.getJournalExiste()
+                        && (preview.getDejaClôture() == null || !preview.getDejaClôture()))
+                .raisonInterdiction(getRaisonInterdiction(preview))
                 .build();
+    }
+
+    private static String getRaisonInterdiction(ClotureJournalPreviewDTO preview) {
+        if (preview.getJournalExiste() == null || !preview.getJournalExiste()) {
+            return "Aucun journal trouvé pour cette date";
+        }
+        if (preview.getDejaClôture() != null && preview.getDejaClôture()) {
+            return "Le journal est déjà clôturé";
+        }
+        return null;
     }
 }

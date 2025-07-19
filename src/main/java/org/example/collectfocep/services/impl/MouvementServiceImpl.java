@@ -930,4 +930,121 @@ public class MouvementServiceImpl implements MouvementService {
             throw new BusinessException("Erreur lors de la vérification du solde: " + e.getMessage());
         }
     }
+
+    /**
+     * 💰 Effectue un mouvement de versement spécifique (sans vérification de solde standard)
+     * Cette méthode est utilisée pour les versements de collecteurs où les comptes service sont négatifs
+     */
+    @Override
+    @Transactional(
+            propagation = Propagation.REQUIRED,
+            isolation = Isolation.READ_COMMITTED,
+            rollbackFor = {BusinessException.class, Exception.class},
+            timeout = 30
+    )
+    public Mouvement effectuerMouvementVersement(Mouvement mouvement) {
+        log.info("DÉBUT TRANSACTION VERSEMENT [{}]: Source={}, Destination={}, Montant={}, Sens={}",
+                UUID.randomUUID().toString().substring(0, 8),
+                mouvement.getCompteSource() != null ? mouvement.getCompteSource().getNumeroCompte() : "null",
+                mouvement.getCompteDestination() != null ? mouvement.getCompteDestination().getNumeroCompte() : "null",
+                mouvement.getMontant(),
+                mouvement.getSens());
+
+        return transactionService.executeInTransaction(status -> {
+            try {
+                log.debug("Démarrage de la transaction pour le mouvement de versement");
+
+                // Validation des comptes (sans vérification de solde)
+                Compte compteSource = validateAndGetCompte(mouvement.getCompteSource().getId());
+                Compte compteDestination = validateAndGetCompte(mouvement.getCompteDestination().getId());
+
+                log.debug("Comptes validés pour versement - Source: {}, Destination: {}",
+                        compteSource.getNumeroCompte(), compteDestination.getNumeroCompte());
+
+                // Enregistrer l'état avant modification pour journalisation
+                double soldeSourceAvant = compteSource.getSolde();
+                double soldeDestinationAvant = compteDestination.getSolde();
+
+                // ✅ MISE À JOUR DES SOLDES SANS VÉRIFICATION (spécifique aux versements)
+                mettreAJourSoldesVersement(compteSource, compteDestination, mouvement.getMontant(), mouvement.getSens());
+
+                log.debug("Mise à jour des soldes versement - Source: {} ({} → {}), Destination: {} ({} → {})",
+                        compteSource.getNumeroCompte(), soldeSourceAvant, compteSource.getSolde(),
+                        compteDestination.getNumeroCompte(), soldeDestinationAvant, compteDestination.getSolde());
+
+                // Sauvegarde des modifications
+                compteRepository.save(compteSource);
+                compteRepository.save(compteDestination);
+
+                mouvement.setDateOperation(dateTimeService.getCurrentDateTime());
+                Mouvement mouvementSauvegarde = mouvementRepository.save(mouvement);
+
+                log.info("Mouvement de versement réussi: ID={}, Montant={}, Source={} (Solde={}), Destination={} (Solde={})",
+                        mouvementSauvegarde.getId(), mouvementSauvegarde.getMontant(),
+                        compteSource.getNumeroCompte(), compteSource.getSolde(),
+                        compteDestination.getNumeroCompte(), compteDestination.getSolde());
+
+                return mouvementSauvegarde;
+
+            } catch (Exception e) {
+                log.error("Erreur lors de l'exécution du mouvement de versement - Cause: {}", e.getMessage(), e);
+                status.setRollbackOnly();
+                throw new BusinessException("Erreur lors de l'exécution du mouvement de versement: " + e.getMessage(),
+                        "MOUVEMENT_VERSEMENT_ERROR", e.getMessage());
+            }
+        });
+    }
+
+    /**
+     * Met à jour les soldes spécifiquement pour les versements (sans vérification de solde)
+     */
+    private void mettreAJourSoldesVersement(Compte compteSource, Compte compteDestination, double montant, String sens) {
+        log.debug("Mise à jour des soldes versement: Source={} (Solde={}), Destination={} (Solde={}), Montant={}, Sens={}",
+                compteSource.getNumeroCompte(), compteSource.getSolde(),
+                compteDestination.getNumeroCompte(), compteDestination.getSolde(),
+                montant, sens);
+
+        switch(sens.toLowerCase()) {
+            case "debit":
+                compteSource.setSolde(compteSource.getSolde() - montant);
+                compteDestination.setSolde(compteDestination.getSolde() + montant);
+                break;
+            case "credit":
+                compteSource.setSolde(compteSource.getSolde() + montant);
+                compteDestination.setSolde(compteDestination.getSolde() - montant);
+                break;
+            case "versement_normal":
+                // Pour les versements normaux: compte service → 0, compte agence débité
+                compteSource.setSolde(0.0);
+                compteDestination.setSolde(compteDestination.getSolde() - montant);
+                break;
+            case "versement_excedent":
+                // Pour les versements avec excédent: compte service → 0, compte agence débité
+                compteSource.setSolde(0.0);
+                compteDestination.setSolde(compteDestination.getSolde() - montant);
+                break;
+            case "versement_manquant":
+                // Pour les versements avec manquant: compte service → 0, compte agence débité
+                compteSource.setSolde(0.0);
+                compteDestination.setSolde(compteDestination.getSolde() - montant);
+                break;
+            case "ajustement_excedent":
+                // Pour l'ajustement d'excédent: compte service → compte manquant
+                compteSource.setSolde(compteSource.getSolde() - montant);
+                compteDestination.setSolde(compteDestination.getSolde() + montant);
+                break;
+            case "ajustement_manquant":
+                // Pour l'ajustement de manquant: compte manquant → compte service
+                compteSource.setSolde(compteSource.getSolde() - montant);
+                compteDestination.setSolde(compteDestination.getSolde() + montant);
+                break;
+            default:
+                log.error("Type d'opération de versement non reconnu: {}", sens);
+                throw new IllegalArgumentException("Sens d'opération de versement non reconnu: " + sens);
+        }
+
+        log.debug("Soldes mis à jour pour versement - Source: {} (Nouveau solde={}), Destination: {} (Nouveau solde={})",
+                compteSource.getNumeroCompte(), compteSource.getSolde(),
+                compteDestination.getNumeroCompte(), compteDestination.getSolde());
+    }
 }
