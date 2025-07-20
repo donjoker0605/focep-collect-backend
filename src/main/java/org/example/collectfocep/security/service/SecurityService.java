@@ -281,38 +281,56 @@ public class SecurityService {
 
     private Long extractUserIdFromAuthentication(Authentication auth) {
         try {
-            // Méthode 1: Depuis le Principal personnalisé
-            if (auth.getPrincipal() instanceof JwtAuthenticationFilter.JwtUserPrincipal) {
+            // Méthode 1: Depuis JwtUserPrincipal (prioritaire)
+            if (auth != null && auth.getPrincipal() instanceof JwtAuthenticationFilter.JwtUserPrincipal) {
                 JwtAuthenticationFilter.JwtUserPrincipal principal =
                         (JwtAuthenticationFilter.JwtUserPrincipal) auth.getPrincipal();
                 Long userId = principal.getUserId();
-                log.debug("✅ UserId extrait du Principal: {}", userId);
-                return userId;
+                if (userId != null) {
+                    log.debug("✅ UserId extrait du JwtUserPrincipal: {}", userId);
+                    return userId;
+                }
             }
 
             // Méthode 2: Depuis les détails de l'Authentication
-            if (auth.getDetails() instanceof Map) {
+            if (auth != null && auth.getDetails() instanceof Map) {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> details = (Map<String, Object>) auth.getDetails();
-                Object userId = details.get("userId");
-                if (userId instanceof Number) {
-                    Long extractedId = ((Number) userId).longValue();
-                    log.debug("✅ UserId extrait des détails: {}", extractedId);
-                    return extractedId;
+
+                // Essayer plusieurs clés possibles
+                String[] possibleKeys = {"userId", "user_id", "id", "collecteurId"};
+                for (String key : possibleKeys) {
+                    Object userId = details.get(key);
+                    if (userId instanceof Number) {
+                        Long extractedId = ((Number) userId).longValue();
+                        log.debug("✅ UserId extrait des détails ({}): {}", key, extractedId);
+                        return extractedId;
+                    }
                 }
             }
 
             // Méthode 3: Fallback - rechercher dans la DB par email
-            String email = auth.getName();
-            log.debug("⚠️ Fallback: recherche collecteur par email: {}", email);
-            Optional<Collecteur> collecteur = collecteurRepository.findByAdresseMail(email);
-            if (collecteur.isPresent()) {
-                Long fallbackId = collecteur.get().getId();
-                log.debug("✅ UserId trouvé via fallback: {}", fallbackId);
-                return fallbackId;
+            if (auth != null) {
+                String email = auth.getName();
+                log.debug("⚠️ Fallback: recherche collecteur par email: {}", email);
+
+                Optional<Collecteur> collecteur = collecteurRepository.findByAdresseMail(email);
+                if (collecteur.isPresent()) {
+                    Long fallbackId = collecteur.get().getId();
+                    log.debug("✅ UserId trouvé via fallback: {}", fallbackId);
+                    return fallbackId;
+                }
+
+                // Fallback admin
+                Optional<Admin> admin = adminRepository.findByAdresseMail(email);
+                if (admin.isPresent()) {
+                    Long fallbackId = admin.get().getId();
+                    log.debug("✅ UserId admin trouvé via fallback: {}", fallbackId);
+                    return fallbackId;
+                }
             }
 
-            log.warn("❌ Impossible d'extraire userId pour: {}", email);
+            log.warn("❌ Impossible d'extraire userId pour: {}", auth != null ? auth.getName() : "null");
             return null;
 
         } catch (Exception e) {
@@ -320,7 +338,6 @@ public class SecurityService {
             return null;
         }
     }
-
     private String getRoleFromAuthentication(Authentication auth) {
         try {
             if (auth.getAuthorities() != null && !auth.getAuthorities().isEmpty()) {
@@ -665,19 +682,53 @@ public class SecurityService {
         return extractUserIdFromAuthentication(authentication);
     }
     private String getCurrentUserRole(Authentication authentication) {
-        return authentication.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .filter(role -> role.startsWith("ROLE_"))
-                .map(role -> role.substring(5)) // Enlever "ROLE_"
-                .findFirst()
-                .orElse(null);
+        try {
+            // Méthode 1: Depuis JwtUserPrincipal (prioritaire)
+            if (authentication != null && authentication.getPrincipal() instanceof JwtAuthenticationFilter.JwtUserPrincipal) {
+                JwtAuthenticationFilter.JwtUserPrincipal principal =
+                        (JwtAuthenticationFilter.JwtUserPrincipal) authentication.getPrincipal();
+                String role = principal.getRole();
+                if (role != null) {
+                    log.debug("✅ Role extrait du JwtUserPrincipal: {}", role);
+                    return role.startsWith("ROLE_") ? role : "ROLE_" + role;
+                }
+            }
+
+            // Méthode 2: Depuis les authorities
+            if (authentication != null && authentication.getAuthorities() != null && !authentication.getAuthorities().isEmpty()) {
+                String role = authentication.getAuthorities().iterator().next().getAuthority();
+                log.debug("✅ Role extrait des authorities: {}", role);
+                return role;
+            }
+
+            log.warn("❌ Aucun rôle trouvé dans l'authentication");
+            return null;
+        } catch (Exception e) {
+            log.error("❌ Erreur extraction rôle: {}", e.getMessage());
+            return null;
+        }
     }
 
     public Long getCurrentUserAgenceId(Authentication authentication) {
-        if (authentication.getPrincipal() instanceof JwtAuthenticationFilter.JwtUserPrincipal) {
-            return ((JwtAuthenticationFilter.JwtUserPrincipal) authentication.getPrincipal()).getAgenceId();
+        try {
+            // Méthode 1: Depuis JwtUserPrincipal (prioritaire)
+            if (authentication != null && authentication.getPrincipal() instanceof JwtAuthenticationFilter.JwtUserPrincipal) {
+                JwtAuthenticationFilter.JwtUserPrincipal principal =
+                        (JwtAuthenticationFilter.JwtUserPrincipal) authentication.getPrincipal();
+                Long agenceId = principal.getAgenceId();
+                if (agenceId != null) {
+                    log.debug("✅ AgenceId extrait du JwtUserPrincipal: {}", agenceId);
+                    return agenceId;
+                }
+            }
+
+            // Méthode 2: Fallback vers ta méthode existante par email
+            return getCurrentUserAgenceId(); // Appel à ta méthode sans paramètre existante
+
+        } catch (Exception e) {
+            log.error("❌ Erreur extraction agenceId: {}", e.getMessage());
+            return null;
         }
-        return null;
     }
 
 
@@ -931,6 +982,142 @@ public class SecurityService {
         } catch (Exception e) {
             log.error("Erreur lors de la vérification admin-collecteur: {}", e.getMessage(), e);
             return false;
+        }
+    }
+
+    /**
+     * 🔥 NOUVELLES MÉTHODES SANS PARAMÈTRE (utilisent SecurityContextHolder)
+     * À ajouter à ton SecurityService existant
+     */
+
+    /**
+     * Obtient l'ID utilisateur courant sans paramètre
+     */
+    public Long getCurrentUserId() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return getCurrentUserId(authentication);
+    }
+
+    /**
+     * Obtient le rôle utilisateur courant sans paramètre
+     */
+    public String getCurrentUserRole() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return getCurrentUserRole(authentication);
+    }
+
+    /**
+     * Valide l'intégrité des informations utilisateur dans le JWT
+     */
+    public void validateUserIntegrity() throws SecurityException {
+        Long userId = getCurrentUserId();
+        Long agenceId = getCurrentUserAgenceId();
+        String role = getCurrentUserRole();
+
+        if (userId == null) {
+            throw new SecurityException("ID utilisateur manquant dans le token JWT");
+        }
+
+        if (agenceId == null && !"ROLE_SUPER_ADMIN".equals(role)) {
+            throw new SecurityException("ID agence manquant pour un utilisateur non super admin");
+        }
+
+        if (role == null) {
+            throw new SecurityException("Rôle utilisateur manquant dans le token JWT");
+        }
+
+        log.debug("✅ Intégrité utilisateur validée: userId={}, agenceId={}, role={}",
+                userId, agenceId, role);
+    }
+
+    /**
+     * Informations complètes de l'utilisateur courant
+     */
+    public UserInfo getCurrentUserInfo() {
+        return getCurrentUserInfo(SecurityContextHolder.getContext().getAuthentication());
+    }
+
+    public UserInfo getCurrentUserInfo(Authentication authentication) {
+        try {
+            return UserInfo.builder()
+                    .userId(getCurrentUserId(authentication))
+                    .agenceId(getCurrentUserAgenceId(authentication))
+                    .role(getCurrentUserRole(authentication))
+                    .username(authentication != null ? authentication.getName() : null)
+                    .isAuthenticated(authentication != null && authentication.isAuthenticated())
+                    .build();
+        } catch (Exception e) {
+            log.error("❌ Erreur création UserInfo: {}", e.getMessage());
+            return UserInfo.builder()
+                    .isAuthenticated(false)
+                    .build();
+        }
+    }
+
+    /**
+     * Debug pour diagnostiquer les problèmes d'extraction
+     */
+    public void debugAuthenticationInfo() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+
+        log.info("🔍 DEBUG Authentication Info:");
+        log.info("  - Authentication: {}", auth != null ? "Présent" : "Absent");
+
+        if (auth != null) {
+            log.info("  - Authenticated: {}", auth.isAuthenticated());
+            log.info("  - Name: {}", auth.getName());
+            log.info("  - Principal Type: {}", auth.getPrincipal().getClass().getSimpleName());
+            log.info("  - Authorities: {}", auth.getAuthorities());
+            log.info("  - Details Type: {}", auth.getDetails() != null ? auth.getDetails().getClass().getSimpleName() : "null");
+
+            if (auth.getPrincipal() instanceof JwtAuthenticationFilter.JwtUserPrincipal) {
+                JwtAuthenticationFilter.JwtUserPrincipal principal =
+                        (JwtAuthenticationFilter.JwtUserPrincipal) auth.getPrincipal();
+                log.info("  - JWT UserId: {}", principal.getUserId());
+                log.info("  - JWT AgenceId: {}", principal.getAgenceId());
+                log.info("  - JWT Role: {}", principal.getRole());
+            }
+
+            if (auth.getDetails() instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> details = (Map<String, Object>) auth.getDetails();
+                log.info("  - Details Map: {}", details);
+            }
+        }
+
+        UserInfo userInfo = getCurrentUserInfo();
+        log.info("  - Extracted UserInfo: {}", userInfo);
+    }
+
+    /**
+     * CLASSE INTERNE POUR LES INFORMATIONS UTILISATEUR
+     */
+    @lombok.Data
+    @lombok.Builder
+    public static class UserInfo {
+        private Long userId;
+        private Long agenceId;
+        private String role;
+        private String username;
+        private Boolean isAuthenticated;
+
+        public boolean isCollecteur() {
+            return "ROLE_COLLECTEUR".equals(role) || "COLLECTEUR".equals(role);
+        }
+
+        public boolean isAdmin() {
+            return "ROLE_ADMIN".equals(role) || "ADMIN".equals(role);
+        }
+
+        public boolean isSuperAdmin() {
+            return "ROLE_SUPER_ADMIN".equals(role) || "SUPER_ADMIN".equals(role);
+        }
+
+        public boolean canManageAgence(Long targetAgenceId) {
+            if (isSuperAdmin()) {
+                return true;
+            }
+            return agenceId != null && agenceId.equals(targetAgenceId);
         }
     }
 }

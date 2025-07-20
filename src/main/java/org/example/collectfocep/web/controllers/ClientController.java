@@ -8,6 +8,7 @@ import org.example.collectfocep.entities.Client;
 import org.example.collectfocep.entities.CommissionParameter;
 import org.example.collectfocep.entities.Compte;
 import org.example.collectfocep.entities.Mouvement;
+import org.example.collectfocep.exceptions.BusinessException;
 import org.example.collectfocep.exceptions.ResourceNotFoundException;
 import org.example.collectfocep.mappers.ClientMapper;
 import org.example.collectfocep.mappers.CommissionParameterMapper;
@@ -17,6 +18,7 @@ import org.example.collectfocep.repositories.ClientRepository;
 import org.example.collectfocep.repositories.CommissionParameterRepository;
 import org.example.collectfocep.repositories.MouvementRepository;
 import org.example.collectfocep.security.annotations.Audited;
+import org.example.collectfocep.security.service.SecurityService;
 import org.example.collectfocep.services.interfaces.ClientService;
 import org.example.collectfocep.services.interfaces.CompteService;
 import org.example.collectfocep.services.GeolocationService;
@@ -28,7 +30,10 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.core.env.Environment;
+import java.util.Arrays;
 
 import jakarta.validation.Valid;
 
@@ -55,39 +60,82 @@ public class ClientController {
     private final CommissionParameterMapper commissionParameterMapper;
     private final ClientRepository clientRepository;
     private final GeolocationService geolocationService;
+    private final SecurityService securityService;
+    private final Environment environment;
 
     // Endpoint pour créer un client
     @PostMapping
     @PreAuthorize("@securityService.canManageCollecteur(authentication, #clientDTO.collecteurId)")
     @LogActivity(action = "CREATE_CLIENT", entityType = "CLIENT", description = "Création d'un nouveau client")
-    public ResponseEntity<ApiResponse<ClientDTO>> createClient(@Valid @RequestBody ClientDTO clientDTO) {
+    public ResponseEntity<ApiResponse<ClientDTO>> createClient(
+            @Valid @RequestBody ClientDTO clientDTO,
+            Authentication authentication) {
+
         log.info("Création d'un nouveau client: {}", clientDTO.getNumeroCni());
 
-        // 🔥 NOUVEAU : Log des coordonnées GPS si présentes
-        if (clientDTO.getLatitude() != null && clientDTO.getLongitude() != null) {
-            log.info("📍 Création client avec localisation: lat={}, lng={}, manuel={}",
-                    clientDTO.getLatitude(), clientDTO.getLongitude(), clientDTO.getCoordonneesSaisieManuelle());
+        try {
+            // 🔥 SOLUTION 1: EXTRACTION AUTOMATIQUE DES IDS DEPUIS LE JWT
+            Long currentCollecteurId = securityService.getCurrentUserId();
+            Long currentAgenceId = securityService.getCurrentUserAgenceId();
+
+            if (currentCollecteurId == null || currentAgenceId == null) {
+                log.error("❌ Impossible d'extraire collecteurId={} ou agenceId={} du token",
+                        currentCollecteurId, currentAgenceId);
+
+                // 🔥 DEBUG EN CAS DE PROBLÈME
+                securityService.debugAuthenticationInfo();
+
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(ApiResponse.error("MISSING_AUTH_INFO", "Informations d'authentification incomplètes"));
+            }
+
+            // 🔥 FORCER LES IDS CORRECTS (ignorer ceux envoyés par le client pour sécurité)
+            clientDTO.setCollecteurId(currentCollecteurId);
+            clientDTO.setAgenceId(currentAgenceId);
+
+            log.info("✅ IDs assignés automatiquement: collecteur={}, agence={}",
+                    currentCollecteurId, currentAgenceId);
+
+            // 🔥 SOLUTION 2: VALIDATION INTELLIGENTE DES COORDONNÉES
+            validateAndProcessCoordinates(clientDTO);
+
+            // Conversion DTO vers Entity
+            Client client = clientMapper.toEntity(clientDTO);
+
+            // Sauvegarde
+            Client savedClient = clientService.saveClient(client);
+
+            return ResponseEntity.ok(ApiResponse.success(
+                    clientMapper.toDTO(savedClient),
+                    "Client créé avec succès"
+            ));
+
+        } catch (BusinessException e) {
+            log.error("❌ Erreur métier: {}", e.getMessage());
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error(e.getCode(), e.getMessage())); // ✅ CORRECTION: getCode() au lieu de getErrorCode()
+
+        } catch (Exception e) {
+            log.error("❌ Erreur inattendue lors de la création du client", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("CLIENT_CREATE_ERROR", "Erreur interne: " + e.getMessage()));
         }
+    }
 
-        // Log pour debugging
-        log.debug("DTO reçu - collecteurId: {}, agenceId: {}",
-                clientDTO.getCollecteurId(), clientDTO.getAgenceId());
+    /**
+     * Vérifier si les coordonnées sont dans les limites du Cameroun
+     */
+    private boolean isInCameroonBounds(double lat, double lng) {
+        return lat >= 1.0 && lat <= 13.5 && lng >= 8.0 && lng <= 16.5;
+    }
 
-        // Conversion DTO vers Entity
-        Client client = clientMapper.toEntity(clientDTO);
+    /**
+     * Vérifier si on est en mode développement
+     */
 
-        // Log pour vérifier le mapping
-        log.debug("Entity mappée - collecteur: {}, agence: {}",
-                client.getCollecteur() != null ? client.getCollecteur().getId() : "null",
-                client.getAgence() != null ? client.getAgence().getId() : "null");
-
-        // Sauvegarde
-        Client savedClient = clientService.saveClient(client);
-
-        return ResponseEntity.ok(ApiResponse.success(
-                clientMapper.toDTO(savedClient),
-                "Client créé avec succès"
-        ));
+    private boolean isDevMode() {
+        return Arrays.asList(environment.getActiveProfiles()).contains("dev") ||
+                Boolean.parseBoolean(environment.getProperty("app.development.mode", "false"));
     }
 
     // Endpoint pour récupérer les clients d'un collecteur
@@ -122,26 +170,77 @@ public class ClientController {
     @LogActivity(action = "MODIFY_CLIENT", entityType = "CLIENT", description = "Modification d'un client")
     public ResponseEntity<ApiResponse<ClientDTO>> updateClient(
             @PathVariable Long id,
-            @Valid @RequestBody ClientDTO clientDTO) {
+            @Valid @RequestBody ClientUpdateDTO clientUpdateDTO) {
+
         log.info("Mise à jour du client: {}", id);
 
-        // 🔥 NOUVEAU : Log des coordonnées GPS si présentes
-        if (clientDTO.getLatitude() != null && clientDTO.getLongitude() != null) {
-            log.info("📍 Mise à jour client avec localisation: lat={}, lng={}, manuel={}",
-                    clientDTO.getLatitude(), clientDTO.getLongitude(), clientDTO.getCoordonneesSaisieManuelle());
+        try {
+            // Vérifier que le client existe et appartient au bon collecteur
+            Client existingClient = clientService.getClientById(id)
+                    .orElseThrow(() -> new ResourceNotFoundException("Client non trouvé avec l'ID: " + id));
+
+            Long currentCollecteurId = securityService.getCurrentUserId();
+            if (!existingClient.getCollecteur().getId().equals(currentCollecteurId)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(ApiResponse.error("UNAUTHORIZED", "Vous ne pouvez modifier que vos propres clients"));
+            }
+
+            // 🔥 MISE À JOUR SÉLECTIVE (collecteur ne peut modifier que certains champs)
+            updateAllowedFieldsOnly(existingClient, clientUpdateDTO);
+
+            Client updatedClient = clientService.updateClient(existingClient);
+
+            return ResponseEntity.ok(ApiResponse.success(
+                    clientMapper.toDTO(updatedClient),
+                    "Client mis à jour avec succès"
+            ));
+
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la mise à jour", e);
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error("UPDATE_ERROR", "Erreur: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * MISE À JOUR SÉLECTIVE - Collecteur ne peut modifier que certains champs
+     */
+    private void updateAllowedFieldsOnly(Client existingClient, ClientUpdateDTO updateDTO) {
+        // Champs que le COLLECTEUR peut modifier
+        if (updateDTO.getTelephone() != null) {
+            existingClient.setTelephone(updateDTO.getTelephone());
         }
 
-        Client client = clientService.getClientById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Client non trouvé avec l'ID: " + id));
+        if (updateDTO.getNumeroCni() != null) {
+            existingClient.setNumeroCni(updateDTO.getNumeroCni());
+        }
 
-        clientMapper.updateEntityFromDTO(clientDTO, client);
-        Client updatedClient = clientService.updateClient(client);
+        if (updateDTO.getQuartier() != null) {
+            existingClient.setQuartier(updateDTO.getQuartier());
+        }
 
-        return ResponseEntity.ok(ApiResponse.success(
-                clientMapper.toDTO(updatedClient),
-                "Client mis à jour avec succès"
-        ));
+        if (updateDTO.getVille() != null) {
+            existingClient.setVille(updateDTO.getVille());
+        }
+
+        // GÉOLOCALISATION - Peut être mise à jour
+        if (updateDTO.getLatitude() != null && updateDTO.getLongitude() != null) {
+            existingClient.setLatitude(BigDecimal.valueOf(updateDTO.getLatitude()));
+            existingClient.setLongitude(BigDecimal.valueOf(updateDTO.getLongitude()));
+            existingClient.setCoordonneesSaisieManuelle(updateDTO.getCoordonneesSaisieManuelle());
+            existingClient.setAdresseComplete(updateDTO.getAdresseComplete());
+            existingClient.setDateMajCoordonnees(LocalDateTime.now());
+        }
+
+        // Champs que le collecteur NE PEUT PAS modifier :
+        // - nom, prenom (seulement admin)
+        // - agenceId, collecteurId (sécurité)
+        // - numeroCompte (sécurité)
+        // - dateCreation (immutable)
+
+        log.info("✅ Mise à jour sélective effectuée pour client: {}", existingClient.getId());
     }
+
 
     // Endpoint pour supprimer un client
     @DeleteMapping("/{id}")
@@ -922,5 +1021,67 @@ public class ClientController {
                 .displayName(String.format("%s %s", client.getPrenom(), client.getNom()))
                 .hasPhone(client.getTelephone() != null && !client.getTelephone().trim().isEmpty())
                 .build();
+    }
+
+    /**
+     * VALIDATION INTELLIGENTE DES COORDONNÉES
+     */
+    private void validateAndProcessCoordinates(ClientDTO clientDTO) {
+        if (clientDTO.getLatitude() != null && clientDTO.getLongitude() != null) {
+
+            // Validation des coordonnées
+            double lat = clientDTO.getLatitude();
+            double lng = clientDTO.getLongitude();
+
+            // Vérifications de base
+            if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+                throw new BusinessException("Coordonnées GPS invalides", "INVALID_COORDINATES");
+            }
+
+            // DÉTECTION ÉMULATEUR/COORDONNÉES FICTIVES
+            if (Math.abs(lat - 37.4219983) < 0.001 && Math.abs(lng - (-122.084)) < 0.001) {
+                log.warn("🚨 Coordonnées émulateur détectées (Mountain View, CA)");
+
+                if (!isDevMode()) {
+                    throw new BusinessException(
+                            "Coordonnées émulateur détectées. Utilisez un appareil physique ou saisissez des coordonnées réelles.",
+                            "EMULATOR_COORDINATES"
+                    );
+                } else {
+                    log.info("🔧 Mode développement: coordonnées émulateur acceptées");
+                }
+            }
+
+            // Vérification spécifique Cameroun (avec tolérance)
+            if (!isInCameroonBounds(lat, lng)) {
+                log.warn("⚠️ Coordonnées {} {} semblent être en dehors du Cameroun", lat, lng);
+                // En production, on pourrait ajouter un avertissement mais pas bloquer
+            }
+
+            log.info("📍 Coordonnées validées: lat={}, lng={}, manuel={}",
+                    lat, lng, clientDTO.getCoordonneesSaisieManuelle());
+        } else {
+            // COORDINATION MANQUANTES - POLITIQUE FLEXIBLE
+            log.warn("⚠️ Client créé sans coordonnées GPS");
+            // Ne pas bloquer, mais signaler pour amélioration future
+        }
+    }
+
+    @GetMapping("/debug/auth-info")
+    @PreAuthorize("hasRole('COLLECTEUR')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> debugAuthInfo() {
+        try {
+            securityService.debugAuthenticationInfo();
+
+            Map<String, Object> info = new HashMap<>();
+            info.put("userId", securityService.getCurrentUserId());
+            info.put("agenceId", securityService.getCurrentUserAgenceId());
+            info.put("role", securityService.getCurrentUserRole());
+            info.put("userInfo", securityService.getCurrentUserInfo());
+
+            return ResponseEntity.ok(ApiResponse.success(info, "Informations de debug"));
+        } catch (Exception e) {
+            return ResponseEntity.ok(ApiResponse.error("DEBUG_ERROR", e.getMessage()));
+        }
     }
 }
