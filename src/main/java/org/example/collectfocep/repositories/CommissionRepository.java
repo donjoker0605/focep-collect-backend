@@ -159,12 +159,16 @@ public interface CommissionRepository extends JpaRepository<Commission, Long> {
     /**
      * Volume de commissions par mois
      */
-    @Query("SELECT YEAR(c.dateCalcul) as annee, MONTH(c.dateCalcul) as mois, COALESCE(SUM(c.montant), 0) as volume " +
-            "FROM Commission c " +
-            "WHERE c.dateCalcul BETWEEN :startDate AND :endDate " +
-            "GROUP BY YEAR(c.dateCalcul), MONTH(c.dateCalcul) " +
-            "ORDER BY annee, mois")
-    List<Object[]> getVolumeByMonth(@Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate);
+    @Query(value = "SELECT YEAR(date_calcul) as annee, " +
+            "MONTH(date_calcul) as mois, " +
+            "SUM(montant) as volume " +
+            "FROM commission " +
+            "WHERE date_calcul BETWEEN :startDate AND :endDate " +
+            "GROUP BY YEAR(date_calcul), MONTH(date_calcul) " +
+            "ORDER BY annee, mois",
+            nativeQuery = true)
+    List<Object[]> getVolumeByMonth(@Param("startDate") LocalDateTime startDate,
+                                    @Param("endDate") LocalDateTime endDate);
 
     /**
      * Commissions avec détails complets (avec joins)

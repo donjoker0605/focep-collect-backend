@@ -14,6 +14,7 @@ import org.springframework.stereotype.Repository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Repository
@@ -56,8 +57,46 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
     @Query("SELECT c FROM Client c WHERE c.agence.id = :agenceId")
     Page<Client> findByAgenceId(@Param("agenceId") Long agenceId, Pageable pageable);
 
+    /**
+     * Compte le nombre de clients par agence
+     */
     @Query("SELECT COUNT(c) FROM Client c WHERE c.agence.id = :agenceId")
     Long countByAgenceId(@Param("agenceId") Long agenceId);
+
+    /**
+     * Trouve les clients d'une agence avec recherche textuelle
+     */
+    @Query("SELECT c FROM Client c WHERE c.agence.id = :agenceId AND " +
+            "(LOWER(c.nom) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+            "LOWER(c.prenom) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+            "c.telephone LIKE CONCAT('%', :search, '%') OR " +
+            "c.numeroCni LIKE CONCAT('%', :search, '%') OR " +
+            "c.numeroCompte LIKE CONCAT('%', :search, '%'))")
+    Page<Client> findByAgenceIdAndSearchQuery(@Param("agenceId") Long agenceId,
+                                              @Param("search") String search,
+                                              Pageable pageable);
+
+    /**
+     * Trouve les clients d'une agence par statut
+     */
+    Page<Client> findByAgenceIdAndValide(Long agenceId, Boolean valide, Pageable pageable);
+
+    /**
+     * Trouve les clients d'une agence et d'un collecteur spécifique
+     */
+    Page<Client> findByAgenceIdAndCollecteurId(Long agenceId, Long collecteurId, Pageable pageable);
+
+    /**
+     * Trouve les clients d'une agence, d'un collecteur avec recherche
+     */
+    @Query("SELECT c FROM Client c WHERE c.agence.id = :agenceId AND c.collecteur.id = :collecteurId AND " +
+            "(LOWER(c.nom) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+            "LOWER(c.prenom) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+            "c.telephone LIKE CONCAT('%', :search, '%'))")
+    Page<Client> findByAgenceIdAndCollecteurIdAndSearchQuery(@Param("agenceId") Long agenceId,
+                                                             @Param("collecteurId") Long collecteurId,
+                                                             @Param("search") String search,
+                                                             Pageable pageable);
 
     /**
      * Compte les clients validés par agence
@@ -174,6 +213,22 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
     Long findAgenceIdByClientId(@Param("clientId") Long clientId);
 
     /**
+     * Vérifie si un client appartient à une agence
+     */
+    @Query("SELECT COUNT(c) > 0 FROM Client c WHERE c.id = :clientId AND c.agence.id = :agenceId")
+    boolean existsByIdAndAgenceId(@Param("clientId") Long clientId, @Param("agenceId") Long agenceId);
+
+    /**
+     * Trouve les clients d'une agence avec leurs collecteurs
+     */
+    @Query("SELECT c FROM Client c " +
+            "LEFT JOIN FETCH c.collecteur " +
+            "LEFT JOIN FETCH c.agence " +
+            "WHERE c.agence.id = :agenceId")
+    List<Client> findByAgenceIdWithCollecteur(@Param("agenceId") Long agenceId);
+
+
+    /**
      * Code agence d'un client
      */
     @Query("SELECT a.codeAgence FROM Client c JOIN c.agence a WHERE c.id = :clientId")
@@ -184,9 +239,31 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
     // =====================================
 
     /**
-     * Clients actifs (valides)
+     * Trouve les clients d'un collecteur avec recherche
      */
-    List<Client> findByValideTrue();
+    @Query("SELECT c FROM Client c WHERE c.collecteur.id = :collecteurId AND " +
+            "(LOWER(c.nom) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+            "LOWER(c.prenom) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+            "c.telephone LIKE CONCAT('%', :search, '%'))")
+    Page<Client> findByCollecteurIdAndSearchQuery(@Param("collecteurId") Long collecteurId,
+                                                  @Param("search") String search,
+                                                  Pageable pageable);
+
+    /**
+     * Recherche globale dans tous les clients
+     */
+    @Query("SELECT c FROM Client c WHERE " +
+            "LOWER(c.nom) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+            "LOWER(c.prenom) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+            "c.telephone LIKE CONCAT('%', :search, '%') OR " +
+            "c.numeroCni LIKE CONCAT('%', :search, '%') OR " +
+            "c.numeroCompte LIKE CONCAT('%', :search, '%')")
+    Page<Client> findBySearchQuery(@Param("search") String search, Pageable pageable);
+
+    /**
+     * Trouve les clients par statut (global)
+     */
+    Page<Client> findByValide(Boolean valide, Pageable pageable);
 
     /**
      * Clients par collecteur et statut
@@ -361,14 +438,43 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
     List<Client> findByCollecteur(@Param("collecteurId") Long collecteurId);
 
     /**
-     * Compte les clients validés d'un collecteur spécifique
-     * Méthode manquante nécessaire pour AdminDashboardService
+     * Compte le nombre de clients actifs par agence
+     */
+    @Query("SELECT COUNT(c) FROM Client c WHERE c.agence.id = :agenceId AND c.valide = true")
+    Long countActiveByAgenceId(@Param("agenceId") Long agenceId);
+
+    /**
+     * Compte le nombre de clients par collecteur
      */
     @Query("SELECT COUNT(c) FROM Client c WHERE c.collecteur.id = :collecteurId")
     Long countByCollecteurId(@Param("collecteurId") Long collecteurId);
 
     @Query("SELECT COUNT(c) FROM Client c WHERE c.collecteur.id = :collecteurId AND c.valide = true")
     Long countByCollecteurIdAndValideTrue(@Param("collecteurId") Long collecteurId);
+
+    /**
+     * Récupère les statistiques de clients par agence
+     */
+    @Query("SELECT NEW map(c.agence.id as agenceId, " +
+            "c.agence.nomAgence as agenceNom, " +
+            "COUNT(c) as totalClients, " +
+            "SUM(CASE WHEN c.valide = true THEN 1 ELSE 0 END) as clientsActifs) " +
+            "FROM Client c " +
+            "GROUP BY c.agence.id, c.agence.nomAgence")
+    List<Map<String, Object>> getClientStatsByAgence();
+
+    /**
+     * Récupère les statistiques de clients par collecteur pour une agence
+     */
+    @Query("SELECT NEW map(c.collecteur.id as collecteurId, " +
+            "c.collecteur.nom as collecteurNom, " +
+            "c.collecteur.prenom as collecteurPrenom, " +
+            "COUNT(c) as totalClients, " +
+            "SUM(CASE WHEN c.valide = true THEN 1 ELSE 0 END) as clientsActifs) " +
+            "FROM Client c " +
+            "WHERE c.agence.id = :agenceId " +
+            "GROUP BY c.collecteur.id, c.collecteur.nom, c.collecteur.prenom")
+    List<Map<String, Object>> getClientStatsByCollecteurInAgence(@Param("agenceId") Long agenceId);
 
     /**
      * Alternative avec paramètre valide flexible
@@ -477,4 +583,52 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
             @Param("collecteurId") Long collecteurId,
             @Param("search") String search,
             Pageable pageable);
+
+    // =====================================
+// MÉTHODES POUR LES LISTES D'IDS
+// =====================================
+
+    /**
+     * Récupère tous les IDs de clients (pour super admin)
+     */
+    @Query("SELECT c.id FROM Client c")
+    List<Long> findAllClientIds();
+
+    /**
+     * Récupère les IDs des clients d'une agence
+     */
+    @Query("SELECT c.id FROM Client c WHERE c.agence.id = :agenceId")
+    List<Long> findClientIdsByAgenceId(@Param("agenceId") Long agenceId);
+
+    /**
+     * Récupère les IDs des clients d'un collecteur
+     */
+    @Query("SELECT c.id FROM Client c WHERE c.collecteur.id = :collecteurId")
+    List<Long> findClientIdsByCollecteurId(@Param("collecteurId") Long collecteurId);
+
+    // =====================================
+// MÉTHODES POUR LA GÉOLOCALISATION ADMIN
+// =====================================
+
+    /**
+     * Trouve les clients d'une agence avec localisation
+     */
+    @Query("SELECT c FROM Client c WHERE c.agence.id = :agenceId AND c.latitude IS NOT NULL AND c.longitude IS NOT NULL")
+    List<Client> findByAgenceIdWithLocation(@Param("agenceId") Long agenceId);
+
+    /**
+     * Trouve les clients d'une agence sans localisation
+     */
+    @Query("SELECT c FROM Client c WHERE c.agence.id = :agenceId AND (c.latitude IS NULL OR c.longitude IS NULL)")
+    List<Client> findByAgenceIdWithoutLocation(@Param("agenceId") Long agenceId);
+
+    /**
+     * Statistiques de géolocalisation par agence
+     */
+    @Query("SELECT NEW map(" +
+            "COUNT(c) as totalClients, " +
+            "SUM(CASE WHEN c.latitude IS NOT NULL AND c.longitude IS NOT NULL THEN 1 ELSE 0 END) as withLocation, " +
+            "SUM(CASE WHEN c.coordonneesSaisieManuelle = true THEN 1 ELSE 0 END) as manualLocation) " +
+            "FROM Client c WHERE c.agence.id = :agenceId")
+    Map<String, Object> getLocationStatsByAgence(@Param("agenceId") Long agenceId);
 }

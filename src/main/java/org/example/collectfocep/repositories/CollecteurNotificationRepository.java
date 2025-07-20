@@ -205,10 +205,12 @@ public interface CollecteurNotificationRepository extends JpaRepository<Collecte
     /**
      * 📈 Notifications par jour sur une période
      */
-    @Query("SELECT DATE(n.dateCreation) as jour, COUNT(n) as total " +
-            "FROM CollecteurNotification n WHERE n.collecteurId = :collecteurId " +
-            "AND n.dateCreation BETWEEN :debut AND :fin " +
-            "GROUP BY DATE(n.dateCreation) ORDER BY jour")
+    @Query(value = "SELECT DATE(date_creation) as jour, COUNT(*) as nombre " +
+            "FROM collecteur_notification " +
+            "WHERE collecteur_id = :collecteurId " +
+            "AND date_creation BETWEEN :debut AND :fin " +
+            "GROUP BY DATE(date_creation) ORDER BY jour",
+            nativeQuery = true)
     List<Object[]> getNotificationsParJour(@Param("collecteurId") Long collecteurId,
                                            @Param("debut") LocalDateTime debut,
                                            @Param("fin") LocalDateTime fin);

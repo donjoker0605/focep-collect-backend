@@ -11,10 +11,7 @@ import org.example.collectfocep.mappers.ClientMapper;
 import org.example.collectfocep.mappers.CommissionParameterMapper;
 import org.example.collectfocep.mappers.CompteMapper;
 import org.example.collectfocep.mappers.MouvementMapperV2;
-import org.example.collectfocep.repositories.ClientRepository;
-import org.example.collectfocep.repositories.CommissionParameterRepository;
-import org.example.collectfocep.repositories.CommissionTierRepository;
-import org.example.collectfocep.repositories.MouvementRepository;
+import org.example.collectfocep.repositories.*;
 import org.example.collectfocep.security.annotations.Audited;
 import org.example.collectfocep.security.service.SecurityService;
 import org.example.collectfocep.services.interfaces.ClientService;
@@ -29,6 +26,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.core.env.Environment;
 import java.util.Arrays;
@@ -61,6 +59,8 @@ public class ClientController {
     private final SecurityService securityService;
     private final Environment environment;
     private final CommissionTierRepository commissionTierRepository;
+    private final AdminRepository adminRepository;
+    private final CollecteurRepository collecteurRepository;
 
     // Endpoint pour créer un client
     @PostMapping
@@ -266,30 +266,166 @@ public class ClientController {
         }
     }
 
-    // Endpoint pour récupérer les clients d'un collecteur
+    /**
+     * Endpoint pour récupérer les clients d'un collecteur
+     * UTILISE canAccessCollecteurData au lieu de canManageCollecteur
+     */
     @GetMapping("/collecteur/{collecteurId}")
-    @PreAuthorize("@securityService.canManageCollecteur(authentication, #collecteurId)")
-    public ResponseEntity<List<ClientDTO>> getClientsByCollecteur(@PathVariable Long collecteurId) {
-        log.info("Récupération des clients pour le collecteur: {}", collecteurId);
-        List<Client> clients = clientService.findByCollecteurId(collecteurId);
-        List<ClientDTO> dtos = clients.stream()
-                .map(clientMapper::toDTO)
-                .toList();
-        return ResponseEntity.ok(dtos);
+    @PreAuthorize("@securityService.canAccessCollecteurData(authentication, #collecteurId)")
+    public ResponseEntity<ApiResponse<List<ClientDTO>>> getClientsByCollecteur(
+            @PathVariable Long collecteurId,
+            Authentication authentication) {
+
+        log.info("📋 Récupération des clients pour le collecteur: {} par {}",
+                collecteurId, authentication.getName());
+
+        try {
+            // 🔥 DEBUG: Vérifier les permissions explicitement
+            boolean canAccess = securityService.canAccessCollecteurData(authentication, collecteurId);
+            log.info("🎯 Permissions vérifiées: canAccess={} pour collecteur={}", canAccess, collecteurId);
+
+            if (!canAccess) {
+                log.warn("❌ Accès refusé aux clients du collecteur {} pour {}",
+                        collecteurId, authentication.getName());
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(ApiResponse.error("ACCESS_DENIED", "Accès refusé aux clients de ce collecteur"));
+            }
+
+            // Récupérer les clients
+            List<Client> clients = clientService.findByCollecteurId(collecteurId);
+            List<ClientDTO> dtos = clients.stream()
+                    .map(clientMapper::toDTO)
+                    .toList();
+
+            log.info("✅ Récupéré {} clients pour le collecteur {}", dtos.size(), collecteurId);
+
+            return ResponseEntity.ok(ApiResponse.success(dtos,
+                    String.format("Récupéré %d clients", dtos.size())));
+
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la récupération des clients du collecteur {}: {}",
+                    collecteurId, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("FETCH_ERROR", "Erreur lors de la récupération: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * endpoint pour les admins qui liste tous leurs clients
+     */
+    @GetMapping("/admin/my-clients")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('SUPER_ADMIN')")
+    public ResponseEntity<ApiResponse<Page<ClientDTO>>> getMyClientsAsAdmin(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "id") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDir,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) Long collecteurId,
+            Authentication authentication) {
+
+        log.info("📋 [ADMIN-DIRECT] Récupération de mes clients - page={}, size={}, search='{}'",
+                page, size, search);
+
+        try {
+            // Déterminer l'agence de l'admin
+            Long adminAgenceId = securityService.getCurrentUserAgenceId(authentication);
+            boolean isSuperAdmin = securityService.hasRole(authentication.getAuthorities(), "SUPER_ADMIN");
+
+            log.info("🎯 [ADMIN-DIRECT] Admin agence: {}, isSuperAdmin: {}", adminAgenceId, isSuperAdmin);
+
+            // Configuration pagination
+            Sort.Direction direction = sortDir.equalsIgnoreCase("desc") ?
+                    Sort.Direction.DESC : Sort.Direction.ASC;
+            PageRequest pageRequest = PageRequest.of(page, size, Sort.by(direction, sortBy));
+
+            Page<Client> clientsPage;
+
+            if (isSuperAdmin) {
+                // Super Admin peut voir tous les clients
+                if (search != null && !search.trim().isEmpty()) {
+                    clientsPage = clientRepository.findBySearchQuery(search.trim(), pageRequest);
+                } else if (collecteurId != null) {
+                    clientsPage = clientRepository.findByCollecteurId(collecteurId, pageRequest);
+                } else {
+                    clientsPage = clientRepository.findAll(pageRequest);
+                }
+            } else {
+                // Admin voit les clients de son agence
+                if (adminAgenceId == null) {
+                    throw new SecurityException("Impossible de déterminer l'agence de l'admin");
+                }
+
+                if (search != null && !search.trim().isEmpty()) {
+                    clientsPage = clientRepository.findByAgenceIdAndSearchQuery(adminAgenceId, search.trim(), pageRequest);
+                } else if (collecteurId != null) {
+                    clientsPage = clientRepository.findByAgenceIdAndCollecteurId(adminAgenceId, collecteurId, pageRequest);
+                } else {
+                    clientsPage = clientRepository.findByAgenceId(adminAgenceId, pageRequest);
+                }
+            }
+
+            // Mapper vers DTOs
+            Page<ClientDTO> dtoPage = clientsPage.map(clientMapper::toDTO);
+
+            ApiResponse<Page<ClientDTO>> response = ApiResponse.success(dtoPage,
+                    String.format("Récupéré %d clients", dtoPage.getNumberOfElements()));
+
+            // Ajouter métadonnées
+            response.addMeta("totalElements", clientsPage.getTotalElements());
+            response.addMeta("totalPages", clientsPage.getTotalPages());
+            response.addMeta("adminAgenceId", adminAgenceId);
+            response.addMeta("isSuperAdmin", isSuperAdmin);
+
+            log.info("✅ [ADMIN-DIRECT] Récupéré {} clients sur {} total",
+                    dtoPage.getNumberOfElements(), clientsPage.getTotalElements());
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            log.error("❌ [ADMIN-DIRECT] Erreur récupération clients: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("ADMIN_CLIENT_FETCH_ERROR", "Erreur: " + e.getMessage()));
+        }
     }
 
     // Endpoint pour récupérer un client par ID
     @GetMapping("/{id}")
     @PreAuthorize("@securityService.canManageClient(authentication, #id)")
-    public ResponseEntity<ApiResponse<ClientDTO>> getClientById(@PathVariable Long id) {
-        log.info("Récupération du client avec l'ID: {}", id);
-        Client client = clientService.getClientById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Client non trouvé avec l'ID: " + id));
+    public ResponseEntity<ApiResponse<ClientDTO>> getClientById(
+            @PathVariable Long id,
+            Authentication authentication) {
 
-        return ResponseEntity.ok(ApiResponse.success(
-                clientMapper.toDTO(client),
-                "Client récupéré avec succès"
-        ));
+        log.info("🔍 Récupération du client avec l'ID: {} par {}", id, authentication.getName());
+
+        try {
+            // 🔥 DEBUG: Vérifier les permissions explicitement
+            boolean canManage = securityService.canManageClient(authentication, id);
+            log.info("🎯 Permissions client {}: canManage={}", id, canManage);
+
+            if (!canManage) {
+                log.warn("❌ Accès refusé au client {} pour {}", id, authentication.getName());
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(ApiResponse.error("ACCESS_DENIED", "Accès refusé à ce client"));
+            }
+
+            Client client = clientService.getClientById(id)
+                    .orElseThrow(() -> new ResourceNotFoundException("Client non trouvé avec l'ID: " + id));
+
+            ClientDTO clientDTO = clientMapper.toDTO(client);
+            log.info("✅ Client {} récupéré avec succès", id);
+
+            return ResponseEntity.ok(ApiResponse.success(clientDTO, "Client récupéré avec succès"));
+
+        } catch (ResourceNotFoundException e) {
+            log.warn("⚠️ Client {} non trouvé", id);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(ApiResponse.error("CLIENT_NOT_FOUND", e.getMessage()));
+        } catch (Exception e) {
+            log.error("❌ Erreur récupération client {}: {}", id, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("CLIENT_FETCH_ERROR", "Erreur: " + e.getMessage()));
+        }
     }
 
     // Endpoint pour mettre à jour un client
@@ -313,7 +449,7 @@ public class ClientController {
                         .body(ApiResponse.error("UNAUTHORIZED", "Vous ne pouvez modifier que vos propres clients"));
             }
 
-            // 🔥 MISE À JOUR SÉLECTIVE (collecteur ne peut modifier que certains champs)
+            // MISE À JOUR SÉLECTIVE (collecteur ne peut modifier que certains champs)
             updateAllowedFieldsOnly(existingClient, clientUpdateDTO);
 
             Client updatedClient = clientService.updateClient(existingClient);
@@ -1221,6 +1357,220 @@ public class ClientController {
             return ResponseEntity.ok(ApiResponse.success(info, "Informations de debug"));
         } catch (Exception e) {
             return ResponseEntity.ok(ApiResponse.error("DEBUG_ERROR", e.getMessage()));
+        }
+    }
+
+    /**
+     * Ajouter un endpoint de debug pour les permissions
+     */
+    @GetMapping("/debug/permissions/{clientId}")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('SUPER_ADMIN')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> debugClientPermissions(
+            @PathVariable Long clientId,
+            Authentication authentication) {
+
+        log.info("🔍 [DEBUG] Vérification permissions client: {}", clientId);
+
+        try {
+            Map<String, Object> debugInfo = new HashMap<>();
+
+            // Informations utilisateur
+            debugInfo.put("username", authentication.getName());
+            debugInfo.put("authorities", authentication.getAuthorities().stream()
+                    .map(GrantedAuthority::getAuthority).collect(Collectors.toList()));
+
+            // Informations extraites avec les bonnes méthodes
+            Long userId = securityService.getCurrentUserId(authentication);
+            Long agenceId = securityService.getCurrentUserAgenceId(authentication);
+            // UTILISER LA VERSION SANS PARAMÈTRE OU EXTRAIRE MANUELLEMENT
+            String role = null;
+            if (authentication.getAuthorities() != null && !authentication.getAuthorities().isEmpty()) {
+                role = authentication.getAuthorities().iterator().next().getAuthority();
+            }
+
+            debugInfo.put("extractedUserId", userId);
+            debugInfo.put("extractedAgenceId", agenceId);
+            debugInfo.put("extractedRole", role);
+
+            // Informations client
+            Optional<Client> clientOpt = clientService.getClientById(clientId);
+            if (clientOpt.isPresent()) {
+                Client client = clientOpt.get();
+                debugInfo.put("clientExists", true);
+                debugInfo.put("clientAgenceId", client.getAgence() != null ? client.getAgence().getId() : null);
+                debugInfo.put("clientCollecteurId", client.getCollecteur() != null ? client.getCollecteur().getId() : null);
+            } else {
+                debugInfo.put("clientExists", false);
+            }
+
+            // Tests de permissions
+            boolean canManageClient = securityService.canManageClient(authentication, clientId);
+            debugInfo.put("canManageClient", canManageClient);
+
+            // Tests spécifiques pour admin (simplifiés pour éviter les erreurs)
+            if (securityService.hasRole(authentication.getAuthorities(), "ADMIN")) {
+                String adminEmail = authentication.getName();
+
+                // Version simple sans utiliser canAdminAccessClient qui n'existe peut-être pas encore
+                Long clientAgenceId = clientRepository.findAgenceIdByClientId(clientId);
+                debugInfo.put("clientAgenceIdFromRepo", clientAgenceId);
+                debugInfo.put("sameAgence", agenceId != null && agenceId.equals(clientAgenceId));
+
+                // Informations admin détaillées
+                try {
+                    Optional<Admin> adminOpt = adminRepository.findByAdresseMailWithAgence(adminEmail);
+                    if (adminOpt.isPresent()) {
+                        Admin admin = adminOpt.get();
+                        debugInfo.put("adminFound", true);
+                        debugInfo.put("adminAgenceId", admin.getAgence().getId());
+                        debugInfo.put("adminAgenceName", admin.getAgence().getNom());
+                    } else {
+                        debugInfo.put("adminFound", false);
+                    }
+                } catch (Exception e) {
+                    debugInfo.put("adminLookupError", e.getMessage());
+                }
+            }
+
+            return ResponseEntity.ok(ApiResponse.success(debugInfo, "Debug permissions client"));
+
+        } catch (Exception e) {
+            log.error("❌ [DEBUG] Erreur debug permissions: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("DEBUG_ERROR", "Erreur: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Endpoint de debug spécifique pour les collecteurs
+     */
+    @GetMapping("/debug/collecteur-permissions/{collecteurId}")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('SUPER_ADMIN')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> debugCollecteurPermissions(
+            @PathVariable Long collecteurId,
+            Authentication authentication) {
+
+        log.info("🔍 [DEBUG] Vérification permissions collecteur: {}", collecteurId);
+
+        try {
+            // Déclencher le debug dans SecurityService
+            securityService.debugAuthenticationInfo();
+
+            Map<String, Object> debugInfo = new HashMap<>();
+
+            // Test des permissions
+            boolean canManageCollecteur = securityService.canManageCollecteur(authentication, collecteurId);
+            debugInfo.put("canManageCollecteur", canManageCollecteur);
+
+            // Test de la nouvelle méthode si elle existe
+            try {
+                boolean canAccessCollecteurData = securityService.canAccessCollecteurData(authentication, collecteurId);
+                debugInfo.put("canAccessCollecteurData", canAccessCollecteurData);
+            } catch (Exception e) {
+                debugInfo.put("canAccessCollecteurDataError", e.getMessage());
+            }
+
+            // Informations collecteur
+            Optional<Collecteur> collecteurOpt = collecteurRepository.findByIdWithAgence(collecteurId);
+            if (collecteurOpt.isPresent()) {
+                Collecteur collecteur = collecteurOpt.get();
+                debugInfo.put("collecteurExists", true);
+                debugInfo.put("collecteurAgenceId", collecteur.getAgence() != null ? collecteur.getAgence().getId() : null);
+                debugInfo.put("collecteurNom", collecteur.getNom() + " " + collecteur.getPrenom());
+            } else {
+                debugInfo.put("collecteurExists", false);
+            }
+
+            // Informations admin
+            Long adminAgenceId = securityService.getCurrentUserAgenceId(authentication);
+            debugInfo.put("adminAgenceId", adminAgenceId);
+
+            return ResponseEntity.ok(ApiResponse.success(debugInfo, "Debug permissions collecteur"));
+
+        } catch (Exception e) {
+            log.error("❌ [DEBUG] Erreur debug collecteur: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("DEBUG_ERROR", "Erreur: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Endpoint de test rapide pour diagnostic immédiat
+     * Cet endpoint permet de diagnostiquer rapidement le problème principal
+     */
+    @GetMapping("/debug/quick-test/{collecteurId}")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('SUPER_ADMIN')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> quickTestAccess(
+            @PathVariable Long collecteurId,
+            Authentication authentication) {
+
+        log.error("🔍 [QUICK-TEST] Test d'accès collecteur {} par admin {}", collecteurId, authentication.getName());
+
+        Map<String, Object> result = new HashMap<>();
+        String adminEmail = authentication.getName();
+
+        try {
+            // 1. Vérifier les infos de l'admin
+            Optional<Admin> adminOpt = adminRepository.findByAdresseMailWithAgence(adminEmail);
+            if (adminOpt.isPresent()) {
+                Admin admin = adminOpt.get();
+                result.put("adminFound", true);
+                result.put("adminId", admin.getId());
+                result.put("adminAgenceId", admin.getAgence().getId());
+                result.put("adminAgenceNom", admin.getAgence().getNom());
+                log.error("✅ [QUICK-TEST] Admin trouvé: ID={}, Agence={}", admin.getId(), admin.getAgence().getId());
+            } else {
+                result.put("adminFound", false);
+                log.error("❌ [QUICK-TEST] Admin non trouvé: {}", adminEmail);
+            }
+
+            // 2. Vérifier les infos du collecteur
+            Optional<Collecteur> collecteurOpt = collecteurRepository.findByIdWithAgence(collecteurId);
+            if (collecteurOpt.isPresent()) {
+                Collecteur collecteur = collecteurOpt.get();
+                result.put("collecteurFound", true);
+                result.put("collecteurId", collecteur.getId());
+                result.put("collecteurAgenceId", collecteur.getAgence().getId());
+                result.put("collecteurAgenceNom", collecteur.getAgence().getNom());
+                log.error("✅ [QUICK-TEST] Collecteur trouvé: ID={}, Agence={}", collecteur.getId(), collecteur.getAgence().getId());
+            } else {
+                result.put("collecteurFound", false);
+                log.error("❌ [QUICK-TEST] Collecteur non trouvé: {}", collecteurId);
+            }
+
+            // 3. Test de la méthode actuelle (défaillante)
+            boolean currentMethodResult = securityService.canManageCollecteur(authentication, collecteurId);
+            result.put("currentMethodResult", currentMethodResult);
+            log.error("🎯 [QUICK-TEST] Méthode actuelle résultat: {}", currentMethodResult);
+
+            // 4. Test de la méthode corrigée (simulation)
+            if (adminOpt.isPresent() && collecteurOpt.isPresent()) {
+                boolean shouldWork = adminOpt.get().getAgence().getId().equals(collecteurOpt.get().getAgence().getId());
+                result.put("shouldWork", shouldWork);
+                log.error("🔧 [QUICK-TEST] Devrait fonctionner: {}", shouldWork);
+            }
+
+            // 5. Compter les clients du collecteur
+            List<Client> clients = clientRepository.findByCollecteurId(collecteurId);
+            result.put("clientCount", clients.size());
+            log.error("📊 [QUICK-TEST] Nombre de clients du collecteur: {}", clients.size());
+
+            // 6. Test canAccessCollecteurData si la méthode existe
+            try {
+                boolean canAccessData = securityService.canAccessCollecteurData(authentication, collecteurId);
+                result.put("canAccessCollecteurData", canAccessData);
+                log.error("🎯 [QUICK-TEST] canAccessCollecteurData: {}", canAccessData);
+            } catch (Exception e) {
+                result.put("canAccessCollecteurDataError", e.getMessage());
+                log.error("❌ [QUICK-TEST] Erreur canAccessCollecteurData: {}", e.getMessage());
+            }
+
+            return ResponseEntity.ok(ApiResponse.success(result, "Test rapide effectué"));
+
+        } catch (Exception e) {
+            log.error("❌ [QUICK-TEST] Erreur: {}", e.getMessage(), e);
+            result.put("error", e.getMessage());
+            return ResponseEntity.ok(ApiResponse.success(result, "Test avec erreur"));
         }
     }
 }
