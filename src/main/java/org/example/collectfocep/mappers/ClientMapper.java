@@ -8,13 +8,16 @@ import org.mapstruct.*;
 
 import java.math.BigDecimal;
 
-@Mapper(componentModel = "spring")
+
+@Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.IGNORE)
 public interface ClientMapper {
 
     @Mapping(source = "collecteur.id", target = "collecteurId")
     @Mapping(source = "agence.id", target = "agenceId")
     @Mapping(source = "latitude", target = "latitude", qualifiedByName = "bigDecimalToDouble")
     @Mapping(source = "longitude", target = "longitude", qualifiedByName = "bigDecimalToDouble")
+    // Ignorer commissionParameter lors du mapping Entity->DTO car il sera peuplé séparément
+    @Mapping(target = "commissionParameter", ignore = true)
     ClientDTO toDTO(Client client);
 
     @Mapping(source = "collecteurId", target = "collecteur", qualifiedByName = "idToCollecteur")

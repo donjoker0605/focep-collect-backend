@@ -4,10 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.aspects.LogActivity;
 import org.example.collectfocep.dto.*;
-import org.example.collectfocep.entities.Client;
-import org.example.collectfocep.entities.CommissionParameter;
-import org.example.collectfocep.entities.Compte;
-import org.example.collectfocep.entities.Mouvement;
+import org.example.collectfocep.entities.*;
 import org.example.collectfocep.exceptions.BusinessException;
 import org.example.collectfocep.exceptions.ResourceNotFoundException;
 import org.example.collectfocep.mappers.ClientMapper;
@@ -16,6 +13,7 @@ import org.example.collectfocep.mappers.CompteMapper;
 import org.example.collectfocep.mappers.MouvementMapperV2;
 import org.example.collectfocep.repositories.ClientRepository;
 import org.example.collectfocep.repositories.CommissionParameterRepository;
+import org.example.collectfocep.repositories.CommissionTierRepository;
 import org.example.collectfocep.repositories.MouvementRepository;
 import org.example.collectfocep.security.annotations.Audited;
 import org.example.collectfocep.security.service.SecurityService;
@@ -62,6 +60,7 @@ public class ClientController {
     private final GeolocationService geolocationService;
     private final SecurityService securityService;
     private final Environment environment;
+    private final CommissionTierRepository commissionTierRepository;
 
     // Endpoint pour créer un client
     @PostMapping
@@ -82,9 +81,7 @@ public class ClientController {
                 log.error("❌ Impossible d'extraire collecteurId={} ou agenceId={} du token",
                         currentCollecteurId, currentAgenceId);
 
-                // 🔥 DEBUG EN CAS DE PROBLÈME
                 securityService.debugAuthenticationInfo();
-
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
                         .body(ApiResponse.error("MISSING_AUTH_INFO", "Informations d'authentification incomplètes"));
             }
@@ -102,8 +99,13 @@ public class ClientController {
             // Conversion DTO vers Entity
             Client client = clientMapper.toEntity(clientDTO);
 
-            // Sauvegarde
+            // 🔥 NOUVEAU : Sauvegarde avec création compte et commission
             Client savedClient = clientService.saveClient(client);
+
+            // 🔥 NOUVEAU : Créer le paramètre de commission si spécifié
+            if (clientDTO.hasCommissionParameter()) {
+                createCommissionParameterForClient(savedClient, clientDTO.getCommissionParameter());
+            }
 
             return ResponseEntity.ok(ApiResponse.success(
                     clientMapper.toDTO(savedClient),
@@ -113,7 +115,7 @@ public class ClientController {
         } catch (BusinessException e) {
             log.error("❌ Erreur métier: {}", e.getMessage());
             return ResponseEntity.badRequest()
-                    .body(ApiResponse.error(e.getCode(), e.getMessage())); // ✅ CORRECTION: getCode() au lieu de getErrorCode()
+                    .body(ApiResponse.error(e.getCode(), e.getMessage()));
 
         } catch (Exception e) {
             log.error("❌ Erreur inattendue lors de la création du client", e);
@@ -123,19 +125,145 @@ public class ClientController {
     }
 
     /**
-     * Vérifier si les coordonnées sont dans les limites du Cameroun
+     * 🔥 NOUVELLE MÉTHODE : Créer paramètre de commission pour un client
      */
-    private boolean isInCameroonBounds(double lat, double lng) {
-        return lat >= 1.0 && lat <= 13.5 && lng >= 8.0 && lng <= 16.5;
+    private void createCommissionParameterForClient(Client client, CommissionParameterDTO commissionDTO) {
+        try {
+            log.info("💰 Création paramètre commission pour client: {} {}",
+                    client.getPrenom(), client.getNom());
+
+            // Validation du type de commission
+            if (commissionDTO.getType() == null) {
+                log.warn("⚠️ Type de commission manquant, ignoré");
+                return;
+            }
+
+            // Créer l'entité CommissionParameter
+            CommissionParameter parameter = CommissionParameter.builder()
+                    .client(client)
+                    .type(commissionDTO.getType())
+                    .valeur(commissionDTO.getValeur() != null ? commissionDTO.getValeur() : 0.0)
+                    .active(commissionDTO.getActive() != null ? commissionDTO.getActive() : true)
+                    .validFrom(commissionDTO.getValidFrom() != null ?
+                            commissionDTO.getValidFrom() : LocalDate.now())
+                    .validTo(commissionDTO.getValidTo())
+                    .build();
+
+            // Sauvegarder le paramètre
+            CommissionParameter savedParameter = commissionParameterRepository.save(parameter);
+            log.info("✅ Paramètre commission créé: ID={}, Type={}, Valeur={}",
+                    savedParameter.getId(), savedParameter.getType(), savedParameter.getValeur());
+
+            // 🔥 GESTION DES PALIERS POUR TYPE TIER
+            if (commissionDTO.getType() == CommissionType.TIER &&
+                    commissionDTO.getPaliersCommission() != null && !commissionDTO.getPaliersCommission().isEmpty()) {
+
+                createCommissionTiers(savedParameter, commissionDTO.getPaliersCommission());
+            }
+
+        } catch (Exception e) {
+            log.error("❌ Erreur création paramètre commission: {}", e.getMessage(), e);
+            // Ne pas faire échouer la création du client pour autant
+            log.warn("⚠️ Client créé mais sans paramètre de commission - À corriger manuellement");
+        }
     }
 
     /**
-     * Vérifier si on est en mode développement
+     * Créer les paliers de commission
      */
+    /**
+     * 🔥 VERSION FINALE CORRIGÉE: Créer les paliers de commission
+     */
+    private void createCommissionTiers(CommissionParameter parameter, List<PalierCommissionDTO> tiersDTO) {
+        try {
+            log.info("📊 Création de {} paliers de commission", tiersDTO.size());
 
-    private boolean isDevMode() {
-        return Arrays.asList(environment.getActiveProfiles()).contains("dev") ||
-                Boolean.parseBoolean(environment.getProperty("app.development.mode", "false"));
+            for (int i = 0; i < tiersDTO.size(); i++) {
+                PalierCommissionDTO tierDTO = tiersDTO.get(i);
+
+                // Validation des champs obligatoires
+                if (tierDTO.getMontantMin() == null || tierDTO.getTaux() == null) {
+                    log.warn("⚠️ Palier {} invalide (montantMin ou taux null), ignoré", i + 1);
+                    continue;
+                }
+
+                Double montantMin = tierDTO.getMontantMin();
+                Double taux = tierDTO.getTaux();
+                Double montantMax = tierDTO.getMontantMax(); // Peut être null pour "illimité"
+
+                // Validation des valeurs numériques
+                if (montantMin < 0 || taux < 0 || taux > 100) {
+                    log.warn("⚠️ Valeurs palier {} invalides (montantMin={}, taux={}), ignoré",
+                            i + 1, montantMin, taux);
+                    continue;
+                }
+
+                // Si montantMax est défini, vérifier qu'il est supérieur à montantMin
+                if (montantMax != null && montantMax <= montantMin) {
+                    log.warn("⚠️ Palier {} invalide (montantMax {} <= montantMin {}), ignoré",
+                            i + 1, montantMax, montantMin);
+                    continue;
+                }
+
+                // Vérifier les chevauchements avec les paliers existants
+                if (!validateNoOverlap(parameter.getId(), montantMin, montantMax)) {
+                    log.warn("⚠️ Palier {} ignoré à cause d'un chevauchement", i + 1);
+                    continue;
+                }
+
+                // Créer l'entité CommissionTier avec la nouvelle structure
+                CommissionTier tier = CommissionTier.builder()
+                        .commissionParameter(parameter)
+                        .montantMin(montantMin)
+                        .montantMax(montantMax) // null est autorisé maintenant
+                        .taux(taux)
+                        .build();
+
+                // Validation finale de l'entité
+                if (!tier.isValid()) {
+                    log.warn("⚠️ Palier {} invalide après création, ignoré", i + 1);
+                    continue;
+                }
+
+                CommissionTier savedTier = commissionTierRepository.save(tier);
+                log.info("✅ Palier {} créé: {} = {}%",
+                        i + 1,
+                        savedTier.getRangeDescription(),
+                        savedTier.getTaux());
+            }
+
+        } catch (Exception e) {
+            log.error("❌ Erreur création paliers commission: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Valider qu'il n'y a pas de chevauchement avec les paliers existants
+     */
+    private boolean validateNoOverlap(Long parameterId, Double montantMin, Double montantMax) {
+        try {
+            List<CommissionTier> existingTiers = commissionTierRepository
+                    .findByCommissionParameterIdOrderByMontantMinAsc(parameterId);
+
+            // Créer un palier temporaire pour tester les chevauchements
+            CommissionTier newTier = CommissionTier.builder()
+                    .montantMin(montantMin)
+                    .montantMax(montantMax)
+                    .build();
+
+            for (CommissionTier existing : existingTiers) {
+                if (newTier.overlapsWith(existing)) {
+                    log.warn("⚠️ Chevauchement détecté avec palier existant: {}",
+                            existing.getRangeDescription());
+                    return false;
+                }
+            }
+
+            return true;
+        } catch (Exception e) {
+            log.error("❌ Erreur validation chevauchement: {}", e.getMessage());
+            return true; // En cas d'erreur, on autorise pour ne pas bloquer
+        }
     }
 
     // Endpoint pour récupérer les clients d'un collecteur
@@ -1029,11 +1157,9 @@ public class ClientController {
     private void validateAndProcessCoordinates(ClientDTO clientDTO) {
         if (clientDTO.getLatitude() != null && clientDTO.getLongitude() != null) {
 
-            // Validation des coordonnées
             double lat = clientDTO.getLatitude();
             double lng = clientDTO.getLongitude();
 
-            // Vérifications de base
             if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
                 throw new BusinessException("Coordonnées GPS invalides", "INVALID_COORDINATES");
             }
@@ -1055,16 +1181,29 @@ public class ClientController {
             // Vérification spécifique Cameroun (avec tolérance)
             if (!isInCameroonBounds(lat, lng)) {
                 log.warn("⚠️ Coordonnées {} {} semblent être en dehors du Cameroun", lat, lng);
-                // En production, on pourrait ajouter un avertissement mais pas bloquer
             }
 
             log.info("📍 Coordonnées validées: lat={}, lng={}, manuel={}",
                     lat, lng, clientDTO.getCoordonneesSaisieManuelle());
         } else {
-            // COORDINATION MANQUANTES - POLITIQUE FLEXIBLE
             log.warn("⚠️ Client créé sans coordonnées GPS");
-            // Ne pas bloquer, mais signaler pour amélioration future
         }
+    }
+
+    /**
+     * Vérifier si les coordonnées sont dans les limites du Cameroun
+     */
+    private boolean isInCameroonBounds(double lat, double lng) {
+        return lat >= 1.0 && lat <= 13.5 && lng >= 8.0 && lng <= 16.5;
+    }
+
+    /**
+     * Vérifier si on est en mode développement
+     */
+
+    private boolean isDevMode() {
+        return Arrays.asList(environment.getActiveProfiles()).contains("dev") ||
+                Boolean.parseBoolean(environment.getProperty("app.development.mode", "false"));
     }
 
     @GetMapping("/debug/auth-info")

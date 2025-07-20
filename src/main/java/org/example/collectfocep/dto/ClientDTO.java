@@ -36,7 +36,9 @@ public class ClientDTO {
     private String telephone;
 
     private String photoPath;
-    private boolean valide = true;
+
+    // 🔥 NOUVEAU : Gestion statut actif/inactif
+    private Boolean valide = true;
 
     @NotNull(message = "L'ID du collecteur est obligatoire")
     private Long collecteurId;
@@ -47,7 +49,7 @@ public class ClientDTO {
     private LocalDateTime dateCreation;
     private LocalDateTime dateModification;
 
-    // CHAMPS GÉOLOCALISATION INTÉGRÉS
+    // CHAMPS GÉOLOCALISATION
     @DecimalMin(value = "-90.0", message = "La latitude doit être supérieure ou égale à -90")
     @DecimalMax(value = "90.0", message = "La latitude doit être inférieure ou égale à 90")
     private Double latitude;
@@ -63,34 +65,24 @@ public class ClientDTO {
 
     private LocalDateTime dateMajCoordonnees;
 
-    // 🔥 MÉTHODES UTILITAIRES
+    // 🔥 NOUVEAUX CHAMPS COMMISSION - Utilise les DTOs existants
+    private CommissionParameterDTO commissionParameter;
 
-    /**
-     * Vérifie si le client a une localisation définie
-     */
+    // 🔥 MÉTHODES UTILITAIRES
     public boolean hasLocation() {
         return latitude != null && longitude != null;
     }
 
-    /**
-     * Vérifie si la localisation a été saisie manuellement
-     */
     public boolean isManualLocation() {
         return coordonneesSaisieManuelle != null && coordonneesSaisieManuelle;
     }
 
-    /**
-     * Obtient le nom complet du client
-     */
     public String getNomComplet() {
         return String.format("%s %s",
                 prenom != null ? prenom : "",
                 nom != null ? nom : "").trim();
     }
 
-    /**
-     * Obtient un résumé de la localisation
-     */
     public String getLocationSummary() {
         if (!hasLocation()) {
             return "Pas de localisation";
@@ -100,9 +92,6 @@ public class ClientDTO {
         return String.format("%.6f, %.6f (%s)", latitude, longitude, source);
     }
 
-    /**
-     * Obtient l'adresse complète ou construite
-     */
     public String getFullAddress() {
         if (adresseComplete != null && !adresseComplete.trim().isEmpty()) {
             return adresseComplete;
@@ -115,15 +104,11 @@ public class ClientDTO {
         return ville != null ? ville : "Adresse non renseignée";
     }
 
-    /**
-     * Indique si une validation des coordonnées est nécessaire
-     */
     public boolean needsCoordinateValidation() {
         if (!hasLocation()) {
             return false;
         }
 
-        // Validation basique des coordonnées
         double lat = latitude;
         double lng = longitude;
 
@@ -133,9 +118,6 @@ public class ClientDTO {
         return !inCameroon;
     }
 
-    /**
-     * Obtient la source de localisation
-     */
     public String getLocationSource() {
         if (!hasLocation()) {
             return "NONE";
@@ -143,20 +125,15 @@ public class ClientDTO {
         return isManualLocation() ? "MANUAL" : "GPS";
     }
 
-    /**
-     * Validation personnalisée des coordonnées
-     */
     public boolean areCoordinatesValid() {
         if (!hasLocation()) {
-            return true; // Pas de coordonnées = valide
+            return true;
         }
 
-        // Validation des limites globales
         if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
             return false;
         }
 
-        // Validation contre les coordonnées nulles exactes
         if (Math.abs(latitude) < 0.001 && Math.abs(longitude) < 0.001) {
             return false;
         }
@@ -164,9 +141,6 @@ public class ClientDTO {
         return true;
     }
 
-    /**
-     * Obtient un message d'avertissement sur la localisation
-     */
     public String getLocationWarning() {
         if (!hasLocation()) {
             return null;
@@ -180,7 +154,6 @@ public class ClientDTO {
             return "Coordonnées en dehors du Cameroun";
         }
 
-        // Détecter l'émulateur Android (Mountain View, CA)
         if (Math.abs(latitude - 37.4219983) < 0.001 && Math.abs(longitude - (-122.084)) < 0.001) {
             return "Coordonnées d'émulateur détectées";
         }
@@ -188,65 +161,30 @@ public class ClientDTO {
         return null;
     }
 
-    /**
-     * Calcule la distance par rapport à une position donnée
-     */
-    public Double getDistanceFrom(Double targetLat, Double targetLng) {
-        if (!hasLocation() || targetLat == null || targetLng == null) {
-            return null;
-        }
-
-        // Formule de Haversine simplifiée
-        final double EARTH_RADIUS_KM = 6371.0;
-
-        double dLat = Math.toRadians(targetLat - latitude);
-        double dLng = Math.toRadians(targetLng - longitude);
-
-        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                Math.cos(Math.toRadians(latitude)) * Math.cos(Math.toRadians(targetLat)) *
-                        Math.sin(dLng / 2) * Math.sin(dLng / 2);
-
-        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-        return EARTH_RADIUS_KM * c;
+    // MÉTHODES COMMISSION
+    public boolean hasCommissionParameter() {
+        return commissionParameter != null;
     }
 
-    /**
-     * Formate une distance en texte lisible
-     */
-    public String formatDistance(Double distanceKm) {
-        if (distanceKm == null) {
-            return "Distance inconnue";
-        }
-
-        if (distanceKm < 1.0) {
-            return String.format("%.0f m", distanceKm * 1000);
-        } else {
-            return String.format("%.1f km", distanceKm);
-        }
+    public boolean isCommissionInherited() {
+        return commissionParameter == null;
     }
 
-    /**
-     * Obtient une description de la fraîcheur des données de localisation
-     */
-    public String getLocationFreshness() {
-        if (!hasLocation() || dateMajCoordonnees == null) {
-            return "Jamais mise à jour";
+    public String getCommissionSummary() {
+        if (isCommissionInherited()) {
+            return "Hérite de l'agence";
         }
 
-        LocalDateTime now = LocalDateTime.now();
-        long daysBetween = java.time.temporal.ChronoUnit.DAYS.between(dateMajCoordonnees, now);
-
-        if (daysBetween == 0) {
-            return "Aujourd'hui";
-        } else if (daysBetween == 1) {
-            return "Hier";
-        } else if (daysBetween <= 7) {
-            return String.format("Il y a %d jours", daysBetween);
-        } else if (daysBetween <= 30) {
-            return String.format("Il y a %d semaines", daysBetween / 7);
-        } else {
-            return String.format("Il y a %d mois", daysBetween / 30);
+        switch (commissionParameter.getType()) {
+            case FIXED:
+                return String.format("Fixe: %.0f FCFA", commissionParameter.getValeur());
+            case PERCENTAGE:
+                return String.format("Pourcentage: %.1f%%", commissionParameter.getValeur());
+            case TIER:
+                return String.format("Paliers: %d niveaux",
+                        commissionParameter.getPaliersCommission() != null ? commissionParameter.getPaliersCommission().size() : 0);
+            default:
+                return "Type inconnu";
         }
     }
 }

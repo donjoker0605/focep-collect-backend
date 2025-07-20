@@ -5,6 +5,7 @@ import org.example.collectfocep.Validation.ClientValidator;
 import org.example.collectfocep.entities.Agence;
 import org.example.collectfocep.entities.Client;
 import org.example.collectfocep.entities.Collecteur;
+import org.example.collectfocep.entities.CompteClient;
 import org.example.collectfocep.exceptions.BusinessException;
 import org.example.collectfocep.exceptions.DuplicateResourceException;
 import org.example.collectfocep.exceptions.ResourceNotFoundException;
@@ -12,6 +13,7 @@ import org.example.collectfocep.exceptions.UnauthorizedAccessException;
 import org.example.collectfocep.repositories.AgenceRepository;
 import org.example.collectfocep.repositories.ClientRepository;
 import org.example.collectfocep.repositories.CollecteurRepository;
+import org.example.collectfocep.repositories.CompteClientRepository;
 import org.example.collectfocep.services.interfaces.ClientService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.CacheEvict;
@@ -34,6 +36,7 @@ public class ClientServiceImpl implements ClientService {
     private final ClientRepository clientRepository;
     private final CollecteurRepository collecteurRepository;
     private final AgenceRepository agenceRepository;
+    private final CompteClientRepository compteClientRepository;
 
     @Autowired
     private ClientValidator clientValidator;
@@ -42,10 +45,12 @@ public class ClientServiceImpl implements ClientService {
     public ClientServiceImpl(
             ClientRepository clientRepository,
             CollecteurRepository collecteurRepository,
-            AgenceRepository agenceRepository) {
+            AgenceRepository agenceRepository,
+            CompteClientRepository compteClientRepository) { // 🔥 INJECTION COMPTE REPOSITORY
         this.clientRepository = clientRepository;
         this.collecteurRepository = collecteurRepository;
         this.agenceRepository = agenceRepository;
+        this.compteClientRepository = compteClientRepository;
     }
 
     @Override
@@ -108,19 +113,25 @@ public class ClientServiceImpl implements ClientService {
             );
         }
 
-        // 🔥 NOUVEAU : Validation et traitement de la géolocalisation
+        // Validation et traitement de la géolocalisation
         validateAndProcessGeolocation(client);
 
-        // 🔥 NOUVEAU : Génération du numéro de compte si nouveau client
+        // Génération du numéro de compte si nouveau client
         if (client.getId() == null && (client.getNumeroCompte() == null || client.getNumeroCompte().trim().isEmpty())) {
             client.setNumeroCompte(generateAccountNumber(agence.getId()));
         }
 
         try {
+            // SAUVEGARDE DU CLIENT
             Client savedClient = clientRepository.save(client);
             log.info("Client sauvegardé avec succès, ID: {}", savedClient.getId());
 
-            // 🔥 NOUVEAU : Log des informations de géolocalisation
+            // CRÉATION AUTOMATIQUE DU COMPTE CLIENT
+            if (savedClient.getId() != null) {
+                createClientAccountIfNotExists(savedClient, agence);
+            }
+
+            // Log des informations de géolocalisation
             if (savedClient.hasLocation()) {
                 log.info("📍 Client sauvegardé avec localisation: {}", savedClient.getLocationSummary());
             }
@@ -131,6 +142,51 @@ public class ClientServiceImpl implements ClientService {
             throw new BusinessException("Impossible de sauvegarder le client", "CLIENT_SAVE_ERROR",
                     "Une erreur est survenue lors de la sauvegarde: " + e.getMessage());
         }
+    }
+
+    /**
+     * Création automatique du compte client
+     */
+    private void createClientAccountIfNotExists(Client client, Agence agence) {
+        log.info("🏦 Vérification/création du compte pour le client: {} {}", client.getPrenom(), client.getNom());
+
+        // Vérifier si le client a déjà un compte
+        Optional<CompteClient> existingAccount = compteClientRepository.findByClient(client);
+
+        if (existingAccount.isPresent()) {
+            log.info("✅ Compte existant trouvé pour le client ID: {}", client.getId());
+            return;
+        }
+
+        // Créer le compte client
+        try {
+            CompteClient compteClient = CompteClient.builder()
+                    .client(client)
+                    .nomCompte("Compte Épargne - " + client.getPrenom() + " " + client.getNom())
+                    .numeroCompte(generateClientAccountNumber(client, agence))
+                    .solde(0.0)
+                    .typeCompte("EPARGNE")
+                    .version(0L)
+                    .build();
+
+            CompteClient savedCompte = compteClientRepository.save(compteClient);
+            log.info("✅ Compte client créé avec succès - ID: {}, Numéro: {}",
+                    savedCompte.getId(), savedCompte.getNumeroCompte());
+
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la création du compte client: {}", e.getMessage(), e);
+            // Ne pas faire échouer la création du client pour autant
+            log.warn("⚠️ Client créé mais sans compte - À corriger manuellement");
+        }
+    }
+
+    /**
+     * Génération numéro de compte client
+     */
+    private String generateClientAccountNumber(Client client, Agence agence) {
+        String codeAgence = agence.getCodeAgence() != null ? agence.getCodeAgence() : "DEF";
+        String clientIdFormatted = String.format("%08d", client.getId());
+        return "372" + codeAgence + clientIdFormatted;
     }
 
     /**
@@ -167,7 +223,7 @@ public class ClientServiceImpl implements ClientService {
                     });
         }
 
-        // 🔥 NOUVEAU : Validation du téléphone camerounais
+        // Validation du téléphone camerounais
         if (client.getTelephone() != null && !client.getTelephone().trim().isEmpty()) {
             if (!isValidCameroonianPhone(client.getTelephone())) {
                 throw new BusinessException("Format de téléphone camerounais invalide", "INVALID_PHONE_FORMAT");
@@ -175,7 +231,7 @@ public class ClientServiceImpl implements ClientService {
         }
     }
 
-    // 🔥 NOUVEAU : Validation et traitement de la géolocalisation
+    // Validation et traitement de la géolocalisation
     private void validateAndProcessGeolocation(Client client) {
         // Si des coordonnées sont fournies, les valider
         if (client.getLatitude() != null || client.getLongitude() != null) {
@@ -217,7 +273,7 @@ public class ClientServiceImpl implements ClientService {
         }
     }
 
-    // 🔥 NOUVEAU : Validation du format de téléphone camerounais
+    // Validation du format de téléphone camerounais
     private boolean isValidCameroonianPhone(String phone) {
         if (phone == null || phone.trim().isEmpty()) {
             return false;
@@ -228,7 +284,7 @@ public class ClientServiceImpl implements ClientService {
         return cleanPhone.matches("^(\\+237|237)?[679]\\d{8}$");
     }
 
-    // 🔥 NOUVEAU : Génération d'un numéro de compte unique
+    // Génération d'un numéro de compte unique
     private String generateAccountNumber(Long agenceId) {
         String prefix = "CLI-" + agenceId + "-";
         String timestamp = String.valueOf(System.currentTimeMillis());
@@ -244,7 +300,7 @@ public class ClientServiceImpl implements ClientService {
         }
 
         try {
-            // 🔥 MODIFICATION : Soft delete au lieu de hard delete
+            // Soft delete au lieu de hard delete
             Client client = clientRepository.findById(id)
                     .orElseThrow(() -> new ResourceNotFoundException("Client", "id", id));
 
@@ -331,7 +387,7 @@ public class ClientServiceImpl implements ClientService {
         return saveClient(client);
     }
 
-    // 🔥 NOUVEAU : Méthode pour mettre à jour seulement la localisation
+    // Méthode pour mettre à jour seulement la localisation
     @Transactional
     public Client updateClientLocation(Long clientId, BigDecimal latitude, BigDecimal longitude,
                                        Boolean saisieManuelle, String adresseComplete) {
@@ -349,21 +405,21 @@ public class ClientServiceImpl implements ClientService {
         return savedClient;
     }
 
-    // 🔥 NOUVEAU : Méthode pour obtenir les clients avec localisation
+    // Méthode pour obtenir les clients avec localisation
     public List<Client> getClientsWithLocation() {
         return clientRepository.findAll().stream()
                 .filter(Client::hasLocation)
                 .toList();
     }
 
-    // 🔥 NOUVEAU : Méthode pour obtenir les clients sans localisation
+    // Méthode pour obtenir les clients sans localisation
     public List<Client> getClientsWithoutLocation() {
         return clientRepository.findAll().stream()
                 .filter(client -> !client.hasLocation())
                 .toList();
     }
 
-    // 🔥 NOUVEAU : Statistiques de géolocalisation
+    // Statistiques de géolocalisation
     public LocationStatistics getLocationStatistics() {
         List<Client> allClients = clientRepository.findAll();
 
