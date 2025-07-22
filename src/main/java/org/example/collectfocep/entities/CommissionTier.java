@@ -1,97 +1,110 @@
 package org.example.collectfocep.entities;
 
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-import lombok.experimental.SuperBuilder;
+import jakarta.validation.constraints.*;
+import lombok.*;
 
+/**
+ * Entity pour les paliers de commission (type TIER)
+ * Permet de définir des taux différents selon des tranches de montant
+ */
 @Entity
-@Table(name = "commission_tiers")
+@Table(name = "commission_tier")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-@SuperBuilder
+@Builder
 public class CommissionTier {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(name = "montant_min", nullable = false)
-    private Double montantMin; // Changé de double vers Double pour cohérence
+    @NotNull(message = "Le montant minimum est requis")
+    @Min(value = 0, message = "Le montant minimum doit être positif")
+    private Double montantMin;
 
-    // 🔥 CORRECTION: Permettre que montantMax soit null pour les paliers "illimités"
-    @Column(name = "montant_max", nullable = true)
-    private Double montantMax; // Changé de double vers Double et nullable = true
+    @Column(name = "montant_max", nullable = false)
+    @NotNull(message = "Le montant maximum est requis")
+    @Min(value = 1, message = "Le montant maximum doit être positif")
+    private Double montantMax;
 
-    @Column(nullable = false)
-    private Double taux; // Changé de double vers Double pour cohérence
+    @Column(name = "taux", nullable = false)
+    @NotNull(message = "Le taux est requis")
+    @DecimalMin(value = "0.0", message = "Le taux doit être positif")
+    @DecimalMax(value = "100.0", message = "Le taux ne peut pas dépasser 100%")
+    private Double taux;
+
+    @Column(name = "description")
+    private String description;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "commission_parameter_id")
+    @JoinColumn(name = "commission_parameter_id", nullable = false)
     private CommissionParameter commissionParameter;
 
-    // Méthodes utilitaires
+    @Version
+    private Long version;
 
-    /**
-     * Vérifie si ce palier est applicable pour un montant donné
-     */
+    // Validation métier
+    @PrePersist
+    @PreUpdate
+    private void validate() {
+        if (montantMin != null && montantMax != null && montantMin >= montantMax) {
+            throw new IllegalArgumentException(
+                    String.format("Le montant minimum (%.2f) doit être inférieur au montant maximum (%.2f)",
+                            montantMin, montantMax));
+        }
+    }
+
+    // Méthodes utilitaires
     public boolean isApplicableFor(Double montant) {
         if (montant == null) return false;
-
-        boolean minOk = montant >= montantMin;
-        boolean maxOk = montantMax == null || montant <= montantMax;
-
-        return minOk && maxOk;
+        return montant >= montantMin && montant <= montantMax;
     }
 
-    /**
-     * Vérifie si ce palier chevauche avec un autre
-     */
-    public boolean overlapsWith(CommissionTier other) {
+    public boolean isApplicableFor(java.math.BigDecimal montant) {
+        if (montant == null) return false;
+        return isApplicableFor(montant.doubleValue());
+    }
+
+    public String getRangeDescription() {
+        return String.format("%.2f - %.2f FCFA (%.2f%%)", montantMin, montantMax, taux);
+    }
+
+    public boolean overlappsWith(CommissionTier other) {
         if (other == null) return false;
 
-        // Si l'un des paliers n'a pas de max, on doit vérifier différemment
-        if (this.montantMax == null && other.montantMax == null) {
-            // Deux paliers illimités ne peuvent coexister
-            return true;
-        }
-
-        if (this.montantMax == null) {
-            // Ce palier est illimité, il chevauche si l'autre commence avant son minimum
-            return other.montantMin < this.montantMin ||
-                    (other.montantMax != null && other.montantMax > this.montantMin);
-        }
-
-        if (other.montantMax == null) {
-            // L'autre palier est illimité
-            return this.montantMin < other.montantMin || this.montantMax > other.montantMin;
-        }
-
-        // Cas standard: aucun des deux n'est illimité
-        return this.montantMin < other.montantMax && this.montantMax > other.montantMin;
+        return (this.montantMin < other.montantMax && this.montantMax > other.montantMin);
     }
 
-    /**
-     * Représentation textuelle du palier
-     */
-    public String getRangeDescription() {
-        if (montantMax == null) {
-            return String.format("%.0f FCFA et plus", montantMin);
+    public java.math.BigDecimal calculateCommission(java.math.BigDecimal montant) {
+        if (!isApplicableFor(montant)) {
+            return java.math.BigDecimal.ZERO;
         }
-        return String.format("%.0f - %.0f FCFA", montantMin, montantMax);
+
+        return montant.multiply(java.math.BigDecimal.valueOf(taux))
+                .divide(java.math.BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
     }
 
-    /**
-     * Validation de la cohérence du palier
-     */
-    public boolean isValid() {
-        if (montantMin == null || montantMin < 0) return false;
-        if (taux == null || taux < 0 || taux > 100) return false;
-        if (montantMax != null && montantMax <= montantMin) return false;
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
 
-        return true;
+        CommissionTier that = (CommissionTier) o;
+        return id != null && id.equals(that.id);
+    }
+
+    @Override
+    public int hashCode() {
+        return getClass().hashCode();
+    }
+
+    @Override
+    public String toString() {
+        return String.format("CommissionTier{id=%d, range=[%.2f-%.2f], taux=%.2f%%}",
+                id, montantMin, montantMax, taux);
     }
 }
