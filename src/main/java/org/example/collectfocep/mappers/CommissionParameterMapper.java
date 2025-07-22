@@ -42,6 +42,8 @@ public interface CommissionParameterMapper {
     @Mapping(target = "agence", ignore = true) // Géré manuellement dans le service
     @Mapping(target = "tiers", ignore = true) // Géré manuellement avec validation
     @Mapping(target = "version", ignore = true) // Géré par JPA
+    @Mapping(target = "valeurFromDouble", ignore = true)
+    @Mapping(target = "valeurFromString", ignore = true)
     CommissionParameter toEntity(CommissionParameterDTO dto);
 
     /**
@@ -95,6 +97,7 @@ public interface CommissionParameterMapper {
     @Mapping(target = "agence", ignore = true)
     @Mapping(target = "tiers", ignore = true)
     @Mapping(target = "version", ignore = true)
+    @Mapping(target = "valeurFromDouble", ignore = true)
     void updateEntityFromDTO(CommissionParameterDTO dto, @MappingTarget CommissionParameter entity);
 
     // ================================
@@ -133,13 +136,6 @@ public interface CommissionParameterMapper {
      */
     @AfterMapping
     default void enrichDTO(@MappingTarget CommissionParameterDTO dto, CommissionParameter entity) {
-        // Ajouter le scope calculé
-        if (dto.getScope() == null) {
-            if (entity.getClient() != null) dto.setScope("CLIENT");
-            else if (entity.getCollecteur() != null) dto.setScope("COLLECTEUR");
-            else if (entity.getAgence() != null) dto.setScope("AGENCE");
-        }
-
         // Validation cohérence
         if (!dto.isValidScope()) {
             throw new IllegalStateException("Scope invalide pour paramètre ID: " + entity.getId());
@@ -187,9 +183,12 @@ public interface CommissionParameterMapper {
         else if (entity.getCollecteur() != null) scope = "Collecteur: " + entity.getCollecteur().getNom();
         else if (entity.getAgence() != null) scope = "Agence: " + entity.getAgence().getNomAgence();
 
+        // Gérer BigDecimal pour valeur
+        double valeurDouble = entity.getValeur() != null ? entity.getValeur().doubleValue() : 0.0;
+
         return String.format("%s - %s (%.2f)",
                 entity.getType(),
                 scope,
-                entity.getValeur() != null ? entity.getValeur() : 0.0);
+                valeurDouble);
     }
 }

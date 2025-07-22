@@ -331,7 +331,7 @@ public class CollecteurServiceImpl implements CollecteurService {
                 throw new BusinessException("Un collecteur avec cet email existe déjà");
             }
 
-            // 🔥 GESTION DU CHANGEMENT DE MOT DE PASSE
+            // GESTION DU CHANGEMENT DE MOT DE PASSE
             if (dto.getNewPassword() != null && !dto.getNewPassword().trim().isEmpty()) {
                 log.info("🔑 Changement de mot de passe demandé pour le collecteur: {}", id);
                 validatePassword(dto.getNewPassword());
@@ -590,14 +590,16 @@ public class CollecteurServiceImpl implements CollecteurService {
     @Override
     @Deprecated
     public Collecteur saveCollecteur(CollecteurDTO dto, Long agenceId) {
-        CollecteurCreateDTO createDTO = new CollecteurCreateDTO();
-        createDTO.setNom(dto.getNom());
-        createDTO.setPrenom(dto.getPrenom());
-        createDTO.setNumeroCni(dto.getNumeroCni());
-        createDTO.setAdresseMail(dto.getAdresseMail());
-        createDTO.setTelephone(dto.getTelephone());
-        createDTO.setAgenceId(agenceId);
-        createDTO.setMontantMaxRetrait(dto.getMontantMaxRetrait());
+        CollecteurCreateDTO createDTO = CollecteurCreateDTO.builder()
+                .nom(dto.getNom())
+                .prenom(dto.getPrenom())
+                .numeroCni(dto.getNumeroCni())
+                .adresseMail(dto.getAdresseMail())
+                .telephone(dto.getTelephone())
+                .agenceId(agenceId)
+                .montantMaxRetrait(dto.getMontantMaxRetrait())
+                .password("TempPass123") // Mot de passe temporaire
+                .build();
 
         return saveCollecteur(createDTO);
     }
@@ -611,28 +613,16 @@ public class CollecteurServiceImpl implements CollecteurService {
     @Override
     @Deprecated
     public Collecteur convertToEntity(CollecteurDTO dto) {
-        CollecteurCreateDTO createDTO = new CollecteurCreateDTO();
-        createDTO.setNom(dto.getNom());
-        createDTO.setPrenom(dto.getPrenom());
-        createDTO.setNumeroCni(dto.getNumeroCni());
-        createDTO.setAdresseMail(dto.getAdresseMail());
-        createDTO.setTelephone(dto.getTelephone());
-        createDTO.setAgenceId(dto.getAgenceId());
-        createDTO.setMontantMaxRetrait(dto.getMontantMaxRetrait());
-        return collecteurMapper.toEntity(createDTO);
+        // UTILISONS directement le mapper pour CollecteurDTO
+        return collecteurMapper.toEntity(dto);
     }
+
 
     @Override
     @Deprecated
     public void updateCollecteurFromDTO(Collecteur collecteur, CollecteurDTO dto) {
-        CollecteurUpdateDTO updateDTO = new CollecteurUpdateDTO();
-        updateDTO.setNom(dto.getNom());
-        updateDTO.setPrenom(dto.getPrenom());
-        updateDTO.setTelephone(dto.getTelephone());
-        updateDTO.setMontantMaxRetrait(dto.getMontantMaxRetrait());
-        updateDTO.setActive(dto.isActive());
-
-        collecteurMapper.updateEntityFromDTO(updateDTO, collecteur);
+        // UTILISONS directement le mapper pour CollecteurDTO
+        collecteurMapper.updateEntityFromDTO(dto, collecteur);
     }
 
     @Override
@@ -644,12 +634,13 @@ public class CollecteurServiceImpl implements CollecteurService {
     @Override
     @Deprecated
     public Collecteur updateCollecteur(Long id, CollecteurDTO dto) {
-        CollecteurUpdateDTO updateDTO = new CollecteurUpdateDTO();
-        updateDTO.setNom(dto.getNom());
-        updateDTO.setPrenom(dto.getPrenom());
-        updateDTO.setTelephone(dto.getTelephone());
-        updateDTO.setMontantMaxRetrait(dto.getMontantMaxRetrait());
-        updateDTO.setActive(dto.isActive());
+        CollecteurUpdateDTO updateDTO = CollecteurUpdateDTO.builder()
+                .nom(dto.getNom())
+                .prenom(dto.getPrenom())
+                .telephone(dto.getTelephone())
+                .montantMaxRetrait(dto.getMontantMaxRetrait())
+                .active(dto.getActive())
+                .build();
 
         return updateCollecteur(id, updateDTO);
     }

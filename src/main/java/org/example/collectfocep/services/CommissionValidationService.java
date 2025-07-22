@@ -6,6 +6,7 @@ import org.example.collectfocep.entities.CommissionParameter;
 import org.example.collectfocep.entities.CommissionTier;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -40,7 +41,7 @@ public class CommissionValidationService {
         // Validation des dates
         result = result.and(validateDates(parameter));
 
-        log.debug("Résultat validation: {}", result.isValid() ? "SUCCESS" : "FAILED");
+        log.debug("Résultat validation: {}", result.isValid() ? "VALIDE" : "INVALIDE");
         return result;
     }
 
@@ -51,127 +52,104 @@ public class CommissionValidationService {
         if (parameter.getAgence() != null) scopeCount++;
 
         if (scopeCount == 0) {
-            return ValidationResult.error("Un scope doit être défini (client, collecteur, ou agence)");
+            return ValidationResult.error("Au moins une relation (client, collecteur, ou agence) doit être définie");
         }
-
         if (scopeCount > 1) {
-            return ValidationResult.error("Un seul scope peut être défini à la fois");
+            return ValidationResult.error("Un seul scope doit être défini");
         }
-
         return ValidationResult.success();
     }
 
     private ValidationResult validateFixedCommission(CommissionParameter parameter) {
-        // Utilisation de Double wrapper au lieu de double primitif
-        Double valeur = parameter.getValeur();
-        if (valeur == null || valeur <= 0) {
-            return ValidationResult.error("Le montant fixe doit être supérieur à zéro");
+        // Gérer BigDecimal au lieu de Double
+        if (parameter.getValeur() == null || parameter.getValeur().compareTo(BigDecimal.ZERO) <= 0) {
+            return ValidationResult.error("Une valeur positive est requise pour le type FIXED");
         }
 
-        // Un montant fixe ne doit pas être trop élevé (limite de sécurité)
-        if (valeur > 1000000) {
-            return ValidationResult.warning("Montant fixe très élevé: " + valeur);
+        // Validation plafond raisonnable
+        if (parameter.getValeur().compareTo(BigDecimal.valueOf(1000000)) > 0) {
+            return ValidationResult.warning("Montant fixe très élevé: " + parameter.getValeur());
         }
 
         return ValidationResult.success();
     }
 
     private ValidationResult validatePercentageCommission(CommissionParameter parameter) {
-        // Utilisation de Double wrapper au lieu de double primitif
-        Double valeur = parameter.getValeur();
-        if (valeur == null || valeur < 0 || valeur > 100) {
-            return ValidationResult.error("Le pourcentage doit être compris entre 0 et 100");
+        // Gérer BigDecimal au lieu de Double
+        if (parameter.getValeur() == null ||
+                parameter.getValeur().compareTo(BigDecimal.ZERO) <= 0 ||
+                parameter.getValeur().compareTo(BigDecimal.valueOf(100)) > 0) {
+            return ValidationResult.error("Le pourcentage doit être entre 0 et 100");
         }
 
-        // Avertissement pour des taux très élevés
-        if (valeur > 20) {
-            return ValidationResult.warning("Taux de commission très élevé: " + valeur + "%");
+        // Warning pour pourcentages élevés
+        if (parameter.getValeur().compareTo(BigDecimal.valueOf(20)) > 0) {
+            return ValidationResult.warning("Pourcentage élevé: " + parameter.getValeur() + "%");
         }
 
         return ValidationResult.success();
     }
 
     private ValidationResult validateTierCommission(CommissionParameter parameter) {
-        List<CommissionTier> tiers = parameter.getTiers();
-
-        if (tiers == null || tiers.isEmpty()) {
-            return ValidationResult.error("Les paliers sont requis pour ce type de commission");
+        if (parameter.getTiers() == null || parameter.getTiers().isEmpty()) {
+            return ValidationResult.error("Au moins un palier est requis pour le type TIER");
         }
 
-        // Tri par montant minimum
-        tiers.sort(Comparator.comparing(CommissionTier::getMontantMin));
+        var result = ValidationResult.success();
+        List<CommissionTier> sortedTiers = new ArrayList<>(parameter.getTiers());
+        sortedTiers.sort(Comparator.comparing(CommissionTier::getMontantMin));
 
         // Validation de chaque palier
-        for (int i = 0; i < tiers.size(); i++) {
-            CommissionTier tier = tiers.get(i);
+        for (CommissionTier tier : sortedTiers) {
+            if (tier.getMontantMin() == null || tier.getMontantMax() == null || tier.getTaux() == null) {
+                result = result.and(ValidationResult.error("Palier incomplet détecté"));
+                continue;
+            }
 
-            // Validation des bornes (les champs sont double primitifs, pas de vérification null)
             if (tier.getMontantMin() >= tier.getMontantMax()) {
-                return ValidationResult.error(
-                        String.format("Palier %d invalide [%.2f-%.2f]: minimum doit être inférieur au maximum",
-                                i+1, tier.getMontantMin(), tier.getMontantMax())
-                );
+                result = result.and(ValidationResult.error(
+                        String.format("Palier invalide: min (%.2f) >= max (%.2f)",
+                                tier.getMontantMin(), tier.getMontantMax())));
             }
 
-            // Validation du taux (double primitif)
             if (tier.getTaux() < 0 || tier.getTaux() > 100) {
-                return ValidationResult.error(
-                        String.format("Palier %d: le taux doit être compris entre 0 et 100 (actuel: %.2f)",
-                                i+1, tier.getTaux())
-                );
-            }
-
-            // Validation de la continuité
-            if (i > 0) {
-                CommissionTier previous = tiers.get(i-1);
-
-                // Vérification du chevauchement (stricte)
-                if (previous.getMontantMax() > tier.getMontantMin()) {
-                    return ValidationResult.error(
-                            String.format("Chevauchement détecté entre paliers %d et %d: [%.2f-%.2f] et [%.2f-%.2f]",
-                                    i, i+1,
-                                    previous.getMontantMin(), previous.getMontantMax(),
-                                    tier.getMontantMin(), tier.getMontantMax())
-                    );
-                }
-
-                // Avertissement pour les gaps (optionnel selon votre métier)
-                if (previous.getMontantMax() < tier.getMontantMin() - 1) {
-                    return ValidationResult.warning(
-                            String.format("Gap détecté entre paliers %d et %d: [%.2f-%.2f] -> [%.2f-%.2f]",
-                                    i, i+1,
-                                    previous.getMontantMin(), previous.getMontantMax(),
-                                    tier.getMontantMin(), tier.getMontantMax())
-                    );
-                }
-            }
-
-            // Le premier palier doit commencer à 0
-            if (i == 0 && tier.getMontantMin() > 0) {
-                return ValidationResult.warning("Le premier palier ne commence pas à 0: " + tier.getMontantMin());
+                result = result.and(ValidationResult.error(
+                        String.format("Taux invalide: %.2f%% (doit être entre 0 et 100)", tier.getTaux())));
             }
         }
 
-        return ValidationResult.success();
+        // Validation des chevauchements
+        for (int i = 0; i < sortedTiers.size() - 1; i++) {
+            CommissionTier current = sortedTiers.get(i);
+            CommissionTier next = sortedTiers.get(i + 1);
+
+            if (current.getMontantMax() > next.getMontantMin()) {
+                result = result.and(ValidationResult.error(
+                        String.format("Chevauchement entre paliers [%.2f-%.2f] et [%.2f-%.2f]",
+                                current.getMontantMin(), current.getMontantMax(),
+                                next.getMontantMin(), next.getMontantMax())));
+            }
+        }
+
+        return result;
     }
 
     private ValidationResult validateDates(CommissionParameter parameter) {
-        LocalDate debut = parameter.getValidFrom();
-        LocalDate fin = parameter.getValidTo();
-
-        if (debut != null && fin != null && debut.isAfter(fin)) {
-            return ValidationResult.error("La date de début doit être antérieure à la date de fin");
+        if (parameter.getValidFrom() != null && parameter.getValidTo() != null) {
+            if (parameter.getValidFrom().isAfter(parameter.getValidTo())) {
+                return ValidationResult.error("La date de début doit être antérieure à la date de fin");
+            }
         }
 
-        // Vérification que la période n'est pas dans le passé
-        if (fin != null && fin.isBefore(LocalDate.now())) {
-            return ValidationResult.warning("La période de validité est dans le passé");
+        // Warning pour paramètre expiré
+        if (parameter.getValidTo() != null && parameter.getValidTo().isBefore(LocalDate.now())) {
+            return ValidationResult.warning("Ce paramètre est expiré");
         }
 
         return ValidationResult.success();
     }
 
-    // Classe interne pour les résultats de validation
+    // CLASSE INTERNE ValidationResult
     public static class ValidationResult {
         private final boolean valid;
         private final List<String> errors;
@@ -179,36 +157,33 @@ public class CommissionValidationService {
 
         private ValidationResult(boolean valid, List<String> errors, List<String> warnings) {
             this.valid = valid;
-            this.errors = errors;
-            this.warnings = warnings;
+            this.errors = errors != null ? new ArrayList<>(errors) : new ArrayList<>();
+            this.warnings = warnings != null ? new ArrayList<>(warnings) : new ArrayList<>();
         }
 
         public static ValidationResult success() {
             return new ValidationResult(true, new ArrayList<>(), new ArrayList<>());
         }
 
-        public static ValidationResult error(String message) {
+        public static ValidationResult error(String error) {
             List<String> errors = new ArrayList<>();
-            errors.add(message);
+            errors.add(error);
             return new ValidationResult(false, errors, new ArrayList<>());
         }
 
-        public static ValidationResult warning(String message) {
+        public static ValidationResult warning(String warning) {
             List<String> warnings = new ArrayList<>();
-            warnings.add(message);
+            warnings.add(warning);
             return new ValidationResult(true, new ArrayList<>(), warnings);
         }
 
         public ValidationResult and(ValidationResult other) {
-            List<String> allErrors = new ArrayList<>(this.errors);
-            allErrors.addAll(other.errors);
-
-            List<String> allWarnings = new ArrayList<>(this.warnings);
-            allWarnings.addAll(other.warnings);
-
             boolean combinedValid = this.valid && other.valid;
-
-            return new ValidationResult(combinedValid, allErrors, allWarnings);
+            List<String> combinedErrors = new ArrayList<>(this.errors);
+            combinedErrors.addAll(other.errors);
+            List<String> combinedWarnings = new ArrayList<>(this.warnings);
+            combinedWarnings.addAll(other.warnings);
+            return new ValidationResult(combinedValid, combinedErrors, combinedWarnings);
         }
 
         public boolean isValid() { return valid; }
@@ -217,7 +192,7 @@ public class CommissionValidationService {
 
         public void throwIfInvalid() {
             if (!valid) {
-                throw new ValidationException(String.join("; ", errors));
+                throw new ValidationException("Validation échouée: " + String.join(", ", errors));
             }
         }
     }

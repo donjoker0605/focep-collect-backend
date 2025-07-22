@@ -2,10 +2,14 @@ package org.example.collectfocep.dto;
 
 import jakarta.validation.constraints.*;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDateTime;
+
 @Data
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class CollecteurDTO {
@@ -40,18 +44,56 @@ public class CollecteurDTO {
     @DecimalMax(value = "1000000.0", message = "Le montant maximum ne peut pas dépasser 1,000,000")
     private Double montantMaxRetrait;
 
+    @Builder.Default
     private Boolean active = true;
 
     @Min(value = 0, message = "L'ancienneté ne peut pas être négative")
     @Max(value = 480, message = "L'ancienneté ne peut pas dépasser 40 ans (480 mois)")
+    @Builder.Default
     private Integer ancienneteEnMois = 0;
 
-    // Getter/Setter pour convention JavaBean
+    // ✅ NOUVEAUX CHAMPS AJOUTÉS pour compatibilité mapper
+    private LocalDateTime dateModificationMontantMax;
+    private String modifiePar;
+
+    // Information de l'agence (read-only)
+    private String agenceNom;
+
+    // Statistiques (read-only)
+    private Integer nombreClients;
+    private Integer nombreComptes;
+
+    // FCM Token pour notifications
+    private String fcmToken;
+    private LocalDateTime fcmTokenUpdatedAt;
+
+    // ✅ MÉTHODES DE COMPATIBILITÉ
     public Boolean isActive() {
         return active;
     }
 
     public void setActive(Boolean active) {
         this.active = active;
+    }
+
+    /**
+     * Vérifie si le collecteur est un nouveau collecteur (< 3 mois)
+     */
+    public boolean isNouveauCollecteur() {
+        return ancienneteEnMois != null && ancienneteEnMois < 3;
+    }
+
+    /**
+     * Nom complet du collecteur
+     */
+    public String getNomComplet() {
+        return (prenom != null ? prenom : "") + " " + (nom != null ? nom : "");
+    }
+
+    /**
+     * Vérifie si le collecteur peut effectuer des retraits
+     */
+    public boolean canPerformWithdrawals() {
+        return Boolean.TRUE.equals(active) && montantMaxRetrait != null && montantMaxRetrait > 0;
     }
 }
