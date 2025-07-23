@@ -8,20 +8,27 @@ import org.example.collectfocep.entities.Collecteur;
 import org.mapstruct.*;
 
 /**
- * Mapper MapStruct existant avec ajouts pour DTOs manquants
+ * Mapper MapStruct corrigé - SUPPRESSION des mappings deprecated
+ * SOLUTION: Ne pas essayer d'ignorer les méthodes deprecated qui n'existent pas dans le builder
  */
 @Mapper(componentModel = "spring",
         nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
 public interface CollecteurMapper {
 
-    // MAPPING EXISTANT - CONSERVÉ
+    // ================================
+    // MAPPING VERS DTO - CORRECT
+    // ================================
+
     @Mapping(source = "agence.id", target = "agenceId")
-    @Mapping(source = "agence.nom", target = "agenceNom") // Ajout pour compatibilité
-    @Mapping(expression = "java(collecteur.getClients() != null ? collecteur.getClients().size() : 0)", target = "nombreClients", ignore = true)
-    @Mapping(expression = "java(collecteur.getComptes() != null ? collecteur.getComptes().size() : 0)", target = "nombreComptes", ignore = true)
+    @Mapping(source = "agence.nom", target = "agenceNom")
+    @Mapping(expression = "java(collecteur.getClients() != null ? collecteur.getClients().size() : 0)", target = "nombreClients")
+    @Mapping(expression = "java(collecteur.getComptes() != null ? collecteur.getComptes().size() : 0)", target = "nombreComptes")
     CollecteurDTO toDTO(Collecteur collecteur);
 
-    // MAPPING EXISTANT - CONSERVÉ
+    // ================================
+    // MAPPING DEPUIS CollecteurCreateDTO - SIMPLIFIÉ
+    // ================================
+
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "agence", source = "agenceId", qualifiedByName = "mapAgence")
     @Mapping(target = "role", constant = "COLLECTEUR")
@@ -39,10 +46,10 @@ public interface CollecteurMapper {
     @Mapping(target = "fcmTokenUpdatedAt", ignore = true)
     Collecteur toEntity(CollecteurCreateDTO dto);
 
+    // ================================
+    // MAPPING DEPUIS CollecteurDTO (deprecated mais nécessaire) - SIMPLIFIÉ
+    // ================================
 
-    /**
-     * Mapper CollecteurDTO vers Entity (pour les méthodes deprecated)
-     */
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "agence", source = "agenceId", qualifiedByName = "mapAgence")
     @Mapping(target = "role", constant = "COLLECTEUR")
@@ -58,7 +65,10 @@ public interface CollecteurMapper {
     @Mapping(target = "fcmTokenUpdatedAt", ignore = true)
     Collecteur toEntity(CollecteurDTO dto);
 
-    // MAPPING UPDATE EXISTANT - CONSERVÉ
+    // ================================
+    // MAPPING UPDATE DEPUIS CollecteurUpdateDTO - SIMPLIFIÉ
+    // ================================
+
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "agence", ignore = true)
     @Mapping(target = "agenceId", ignore = true)
@@ -78,9 +88,10 @@ public interface CollecteurMapper {
     @Mapping(target = "fcmTokenUpdatedAt", ignore = true)
     void updateEntityFromDTO(CollecteurUpdateDTO dto, @MappingTarget Collecteur collecteur);
 
-    /**
-     * Mise à jour depuis CollecteurDTO (pour compatibilité deprecated)
-     */
+    // ================================
+    // MAPPING UPDATE DEPUIS CollecteurDTO (deprecated mais nécessaire) - SIMPLIFIÉ
+    // ================================
+
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "agence", ignore = true)
     @Mapping(target = "agenceId", ignore = true)
@@ -99,7 +110,10 @@ public interface CollecteurMapper {
     @Mapping(target = "fcmTokenUpdatedAt", ignore = true)
     void updateEntityFromDTO(CollecteurDTO dto, @MappingTarget Collecteur collecteur);
 
-    // MÉTHODE HELPER EXISTANTE - CONSERVÉE
+    // ================================
+    // MÉTHODE HELPER - INCHANGÉE
+    // ================================
+
     @Named("mapAgence")
     default Agence mapAgence(Long agenceId) {
         if (agenceId == null) return null;
