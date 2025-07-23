@@ -17,8 +17,8 @@ public interface CollecteurMapper {
     // MAPPING EXISTANT - CONSERVÉ
     @Mapping(source = "agence.id", target = "agenceId")
     @Mapping(source = "agence.nom", target = "agenceNom") // Ajout pour compatibilité
-    @Mapping(expression = "java(collecteur.getClients() != null ? collecteur.getClients().size() : 0)", target = "nombreClients")
-    @Mapping(expression = "java(collecteur.getComptes() != null ? collecteur.getComptes().size() : 0)", target = "nombreComptes")
+    @Mapping(expression = "java(collecteur.getClients() != null ? collecteur.getClients().size() : 0)", target = "nombreClients", ignore = true)
+    @Mapping(expression = "java(collecteur.getComptes() != null ? collecteur.getComptes().size() : 0)", target = "nombreComptes", ignore = true)
     CollecteurDTO toDTO(Collecteur collecteur);
 
     // MAPPING EXISTANT - CONSERVÉ

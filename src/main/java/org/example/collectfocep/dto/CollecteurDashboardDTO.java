@@ -3,6 +3,8 @@ package org.example.collectfocep.dto;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Builder;
 import lombok.Data;
+
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -21,8 +23,8 @@ public class CollecteurDashboardDTO {
 
     // Statistiques du jour
     private Long transactionsAujourdhui;
-    private Double montantEpargneAujourdhui;
-    private Double montantRetraitAujourdhui;
+    private BigDecimal montantEpargneAujourdhui;
+    private BigDecimal montantRetraitAujourdhui;
     private Long nouveauxClientsAujourdhui;
 
     // Statistiques de la semaine
