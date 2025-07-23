@@ -6,6 +6,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
+
 @Data
 @Builder
 @NoArgsConstructor
@@ -28,7 +30,7 @@ public class CollecteurUpdateDTO {
     private String adresseMail;
 
     @Positive(message = "Le montant doit être positif")
-    private Double montantMaxRetrait;
+    private BigDecimal montantMaxRetrait;
 
     private Boolean active;
 
@@ -39,10 +41,19 @@ public class CollecteurUpdateDTO {
     // Ne jamais permettre la modification de l'agence
     private Long agenceId;
 
-    /**
-     * Vérifie si un nouveau mot de passe est fourni
-     */
+    // Méthode utilitaire pour vérifier changement de mot de passe
     public boolean hasNewPassword() {
         return newPassword != null && !newPassword.trim().isEmpty();
+    }
+
+    // Méthodes de compatibilité
+    @Deprecated(since = "2.0", forRemoval = true)
+    public Double getMontantMaxRetraitAsDouble() {
+        return montantMaxRetrait != null ? montantMaxRetrait.doubleValue() : null;
+    }
+
+    @Deprecated(since = "2.0", forRemoval = true)
+    public void setMontantMaxRetraitFromDouble(Double montant) {
+        this.montantMaxRetrait = montant != null ? BigDecimal.valueOf(montant) : null;
     }
 }

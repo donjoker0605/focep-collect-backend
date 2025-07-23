@@ -29,6 +29,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
@@ -192,7 +193,7 @@ public class CollecteurController {
         }
     }
 
-    // ✅ TON CODE EXISTANT - CONSERVÉ INTÉGRALEMENT
+    // CONSERVÉ INTÉGRALEMENT
     @PutMapping("/{id}/montant-max")
     @PreAuthorize("@securityService.canManageCollecteur(authentication, #id)")
     @Audited(action = "UPDATE_MONTANT_MAX", entityType = "Collecteur")
@@ -203,6 +204,7 @@ public class CollecteurController {
         log.info("Demande de modification du montant max de retrait pour le collecteur: {}", id);
 
         try {
+            // - getNouveauMontant() doit retourner BigDecimal
             Collecteur collecteur = collecteurService.updateMontantMaxRetrait(
                     id,
                     request.getNouveauMontant(),
