@@ -4,10 +4,13 @@ import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Builder;
 import lombok.Data;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
+/**
+ * ✅ COLLECTEUR DASHBOARD DTO - CORRECTION TYPES COHÉRENTS
+ * Tous les montants en Double pour éviter les erreurs de conversion
+ */
 @Data
 @Builder
 public class CollecteurDashboardDTO {
@@ -21,10 +24,10 @@ public class CollecteurDashboardDTO {
     private Double totalRetraits;
     private Double soldeTotal;
 
-    // Statistiques du jour
+    // Statistiques du jour en Double (pas BigDecimal)
     private Long transactionsAujourdhui;
-    private BigDecimal montantEpargneAujourdhui;
-    private BigDecimal montantRetraitAujourdhui;
+    private Double montantEpargneAujourdhui;
+    private Double montantRetraitAujourdhui;
     private Long nouveauxClientsAujourdhui;
 
     // Statistiques de la semaine

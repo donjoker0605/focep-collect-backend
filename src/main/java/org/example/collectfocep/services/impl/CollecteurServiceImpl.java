@@ -467,8 +467,8 @@ public class CollecteurServiceImpl implements CollecteurService {
                     .journalActuel(journalActuel)
                     .lastUpdate(LocalDateTime.now())
                     .transactionsAujourdhui(0L)
-                    .montantEpargneAujourdhui(0.0)
-                    .montantRetraitAujourdhui(0.0)
+                    .montantEpargneAujourdhui(0.0) // ✅ CORRIGÉ: Double au lieu de BigDecimal
+                    .montantRetraitAujourdhui(0.0) // ✅ CORRIGÉ: Double au lieu de BigDecimal
                     .nouveauxClientsAujourdhui(0L)
                     .montantEpargneSemaine(0.0)
                     .montantRetraitSemaine(0.0)
