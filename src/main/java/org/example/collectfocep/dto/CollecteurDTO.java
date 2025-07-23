@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Data
@@ -39,10 +40,11 @@ public class CollecteurDTO {
     @Positive(message = "L'ID de l'agence doit être positif")
     private Long agenceId;
 
+    // BigDecimal au lieu de Double
     @NotNull(message = "Le montant maximum de retrait est obligatoire")
     @DecimalMin(value = "0.0", inclusive = true, message = "Le montant maximum doit être supérieur ou égal à 0")
     @DecimalMax(value = "1000000.0", message = "Le montant maximum ne peut pas dépasser 1,000,000")
-    private Double montantMaxRetrait;
+    private BigDecimal montantMaxRetrait;
 
     @Builder.Default
     private Boolean active = true;
@@ -52,22 +54,16 @@ public class CollecteurDTO {
     @Builder.Default
     private Integer ancienneteEnMois = 0;
 
-    // ✅ NOUVEAUX CHAMPS AJOUTÉS pour compatibilité mapper
+    // Champs existants
     private LocalDateTime dateModificationMontantMax;
     private String modifiePar;
-
-    // Information de l'agence (read-only)
     private String agenceNom;
-
-    // Statistiques (read-only)
     private Integer nombreClients;
     private Integer nombreComptes;
-
-    // FCM Token pour notifications
     private String fcmToken;
     private LocalDateTime fcmTokenUpdatedAt;
 
-    // ✅ MÉTHODES DE COMPATIBILITÉ
+    // MÉTHODES UTILITAIRES CORRIGÉES
     public Boolean isActive() {
         return active;
     }
@@ -76,24 +72,28 @@ public class CollecteurDTO {
         this.active = active;
     }
 
-    /**
-     * Vérifie si le collecteur est un nouveau collecteur (< 3 mois)
-     */
     public boolean isNouveauCollecteur() {
         return ancienneteEnMois != null && ancienneteEnMois < 3;
     }
 
-    /**
-     * Nom complet du collecteur
-     */
     public String getNomComplet() {
         return (prenom != null ? prenom : "") + " " + (nom != null ? nom : "");
     }
 
-    /**
-     * Vérifie si le collecteur peut effectuer des retraits
-     */
     public boolean canPerformWithdrawals() {
-        return Boolean.TRUE.equals(active) && montantMaxRetrait != null && montantMaxRetrait > 0;
+        return Boolean.TRUE.equals(active) &&
+                montantMaxRetrait != null &&
+                montantMaxRetrait.compareTo(BigDecimal.ZERO) > 0;
+    }
+
+    // NOUVELLES MÉTHODES pour compatibilité transition
+    @Deprecated(since = "2.0", forRemoval = true)
+    public Double getMontantMaxRetraitAsDouble() {
+        return montantMaxRetrait != null ? montantMaxRetrait.doubleValue() : null;
+    }
+
+    @Deprecated(since = "2.0", forRemoval = true)
+    public void setMontantMaxRetraitFromDouble(Double montant) {
+        this.montantMaxRetrait = montant != null ? BigDecimal.valueOf(montant) : null;
     }
 }

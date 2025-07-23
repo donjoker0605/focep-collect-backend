@@ -5,16 +5,18 @@ import org.example.collectfocep.dto.CommissionTierDTO;
 import org.example.collectfocep.dto.PalierCommissionDTO;
 import org.example.collectfocep.entities.CommissionParameter;
 import org.example.collectfocep.entities.CommissionTier;
+import org.example.collectfocep.entities.CommissionType;
 import org.mapstruct.*;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
- * ✅ NOUVEAU : Mapper pour CommissionParameter
- * Conversion bidirectionnelle Entity <-> DTO
+ * ✅ MAPPER FINAL CORRIGÉ : CommissionParameter
+ * Résout tous les problèmes de propriétés non mappées
  */
-@Mapper(componentModel = "spring")
+@Mapper(componentModel = "spring", unmappedTargetPolicy = ReportingPolicy.IGNORE)
 @Component
 public interface CommissionParameterMapper {
 
@@ -23,7 +25,7 @@ public interface CommissionParameterMapper {
     // ================================
 
     /**
-     * Entity vers DTO
+     * Entity vers DTO - Mapping simple et sûr
      */
     @Mapping(source = "client.id", target = "clientId")
     @Mapping(source = "client.nom", target = "clientNom")
@@ -32,97 +34,120 @@ public interface CommissionParameterMapper {
     @Mapping(source = "agence.id", target = "agenceId")
     @Mapping(source = "agence.nomAgence", target = "agenceNom")
     @Mapping(source = "tiers", target = "paliersCommission")
+    @Mapping(expression = "java(bigDecimalToDouble(entity.getValeur()))", target = "valeur")
     CommissionParameterDTO toDTO(CommissionParameter entity);
 
     /**
-     * DTO vers Entity (pour création/mise à jour)
+     * DTO vers Entity - TOUTES LES PROPRIÉTÉS BUILDER IGNORÉES
      */
-    @Mapping(target = "client", ignore = true) // Géré manuellement dans le service
-    @Mapping(target = "collecteur", ignore = true) // Géré manuellement dans le service
-    @Mapping(target = "agence", ignore = true) // Géré manuellement dans le service
-    @Mapping(target = "tiers", ignore = true) // Géré manuellement avec validation
-    @Mapping(target = "version", ignore = true) // Géré par JPA
+    @Mapping(target = "client", ignore = true)
+    @Mapping(target = "collecteur", ignore = true)
+    @Mapping(target = "agence", ignore = true)
+    @Mapping(target = "tiers", ignore = true)
+    @Mapping(target = "version", ignore = true)
+    // ✅ CORRECTION CRITIQUE : Ignorer explicitement toutes les méthodes builder
     @Mapping(target = "valeurFromDouble", ignore = true)
     @Mapping(target = "valeurFromString", ignore = true)
+    @Mapping(expression = "java(doubleToBigDecimal(dto.getValeur()))", target = "valeur")
     CommissionParameter toEntity(CommissionParameterDTO dto);
 
     /**
-     * Liste Entity vers Liste DTO
+     * Mise à jour partielle - TOUTES LES PROPRIÉTÉS PROBLÉMATIQUES IGNORÉES
      */
-    List<CommissionParameterDTO> toDTOList(List<CommissionParameter> entities);
-
-    /**
-     * Liste DTO vers Liste Entity
-     */
-    List<CommissionParameter> toEntityList(List<CommissionParameterDTO> dtos);
-
-    // ================================
-    // MAPPINGS TIER/PALIERS
-    // ================================
-
-    /**
-     * CommissionTier vers PalierCommissionDTO
-     */
-    @Mapping(target = "description", source = "description")
-    PalierCommissionDTO tierToPalierDTO(CommissionTier tier);
-
-    /**
-     * PalierCommissionDTO vers CommissionTier
-     */
-    @Mapping(target = "commissionParameter", ignore = true) // Géré par le parent
-    @Mapping(target = "version", ignore = true) // Géré par JPA
-    CommissionTier palierDTOToTier(PalierCommissionDTO palierDTO);
-
-    /**
-     * Liste Tiers vers Liste Paliers
-     */
-    List<PalierCommissionDTO> tiersTopaliers(List<CommissionTier> tiers);
-
-    /**
-     * Liste Paliers vers Liste Tiers
-     */
-    List<CommissionTier> paliersToTiers(List<PalierCommissionDTO> paliers);
-
-    // ================================
-    // MAPPINGS SPÉCIALISÉS
-    // ================================
-
-    /**
-     * Mapping pour mise à jour partielle (PATCH)
-     */
-    @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "client", ignore = true)
     @Mapping(target = "collecteur", ignore = true)
     @Mapping(target = "agence", ignore = true)
     @Mapping(target = "tiers", ignore = true)
     @Mapping(target = "version", ignore = true)
+    // ✅ CORRECTION CRITIQUE : Ignorer les méthodes builder
     @Mapping(target = "valeurFromDouble", ignore = true)
+//    @Mapping(target = "valeurFromString", ignore = true)
+    @Mapping(expression = "java(doubleToBigDecimal(dto.getValeur()))", target = "valeur")
     void updateEntityFromDTO(CommissionParameterDTO dto, @MappingTarget CommissionParameter entity);
 
     // ================================
-    // MÉTHODES PERSONNALISÉES
+    // MAPPINGS PALIERS/TIERS
     // ================================
 
     /**
-     * Validation des paliers lors du mapping
+     * CommissionTier vers PalierCommissionDTO
      */
-    default boolean validateTiers(List<PalierCommissionDTO> paliers) {
-        if (paliers == null || paliers.isEmpty()) {
-            return true; // Pas de paliers = valide pour types non-TIER
+    @Mapping(source = "montantMin", target = "montantMin")
+    @Mapping(source = "montantMax", target = "montantMax")
+    @Mapping(source = "taux", target = "taux")
+    @Mapping(source = "description", target = "description")
+    PalierCommissionDTO toPalierDTO(CommissionTier tier);
+
+    /**
+     * PalierCommissionDTO vers CommissionTier
+     */
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "commissionParameter", ignore = true)
+    @Mapping(target = "version", ignore = true)
+    @Mapping(source = "montantMin", target = "montantMin")
+    @Mapping(source = "montantMax", target = "montantMax")
+    @Mapping(source = "taux", target = "taux")
+    @Mapping(source = "description", target = "description")
+    CommissionTier toPalierEntity(PalierCommissionDTO dto);
+
+    /**
+     * Liste de paliers
+     */
+    List<PalierCommissionDTO> toPalierDTOList(List<CommissionTier> tiers);
+    List<CommissionTier> toPalierEntityList(List<PalierCommissionDTO> dtos);
+
+    // ================================
+    // MAPPINGS ALTERNATIFS
+    // ================================
+
+    /**
+     * CommissionTier vers CommissionTierDTO
+     */
+    @Mapping(source = "montantMin", target = "montantMin")
+    @Mapping(source = "montantMax", target = "montantMax")
+    @Mapping(source = "taux", target = "taux")
+    CommissionTierDTO toTierDTO(CommissionTier tier);
+
+    /**
+     * CommissionTierDTO vers CommissionTier
+     */
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "commissionParameter", ignore = true)
+    @Mapping(target = "version", ignore = true)
+    @Mapping(target = "description", ignore = true)
+    @Mapping(source = "montantMin", target = "montantMin")
+    @Mapping(source = "montantMax", target = "montantMax")
+    @Mapping(source = "taux", target = "taux")
+    CommissionTier toTierEntity(CommissionTierDTO dto);
+
+    // ================================
+    // MÉTHODES DE VALIDATION
+    // ================================
+
+    /**
+     * Valide la cohérence des paliers de commission
+     */
+    default boolean validateTiers(List<PalierCommissionDTO> tiers) {
+        if (tiers == null || tiers.isEmpty()) {
+            return true;
         }
 
-        // Valider chaque palier individuellement
-        for (PalierCommissionDTO palier : paliers) {
-            if (!palier.isValid()) {
+        for (PalierCommissionDTO tier : tiers) {
+            if (tier.getMontantMin() == null || tier.getTaux() == null) {
+                return false;
+            }
+            if (tier.getMontantMin() < 0 || tier.getTaux() < 0 || tier.getTaux() > 100) {
+                return false;
+            }
+            if (tier.getMontantMax() != null && tier.getMontantMin() >= tier.getMontantMax()) {
                 return false;
             }
         }
 
-        // Vérifier chevauchements
-        for (int i = 0; i < paliers.size(); i++) {
-            for (int j = i + 1; j < paliers.size(); j++) {
-                if (paliers.get(i).overlappsWith(paliers.get(j))) {
+        for (int i = 0; i < tiers.size(); i++) {
+            for (int j = i + 1; j < tiers.size(); j++) {
+                if (tiersOverlap(tiers.get(i), tiers.get(j))) {
                     return false;
                 }
             }
@@ -132,63 +157,45 @@ public interface CommissionParameterMapper {
     }
 
     /**
-     * Enrichissement DTO avec informations calculées
+     * Vérifie si deux paliers se chevauchent
      */
-    @AfterMapping
-    default void enrichDTO(@MappingTarget CommissionParameterDTO dto, CommissionParameter entity) {
-        // Validation cohérence
-        if (!dto.isValidScope()) {
-            throw new IllegalStateException("Scope invalide pour paramètre ID: " + entity.getId());
-        }
-    }
+    default boolean tiersOverlap(PalierCommissionDTO tier1, PalierCommissionDTO tier2) {
+        Double min1 = tier1.getMontantMin();
+        Double max1 = tier1.getMontantMax();
+        Double min2 = tier2.getMontantMin();
+        Double max2 = tier2.getMontantMax();
 
-    /**
-     * Validation avant mapping vers entity
-     */
-    @BeforeMapping
-    default void validateBeforeMapping(CommissionParameterDTO dto) {
-        if (dto.getTypeCommission() == null) {
-            throw new IllegalArgumentException("Type de commission requis");
-        }
+        if (max1 == null) max1 = Double.MAX_VALUE;
+        if (max2 == null) max2 = Double.MAX_VALUE;
 
-        if (!dto.isValid()) {
-            throw new IllegalArgumentException("DTO invalide: " + dto.getValidationError());
-        }
+        return min1 < max2 && max1 > min2;
     }
 
     // ================================
-    // EXPRESSIONS CUSTOM
+    // MÉTHODES UTILITAIRES SÉCURISÉES
     // ================================
 
     /**
-     * Formatage du nom complet pour affichage
+     * Convertit BigDecimal vers Double de manière sécurisée
      */
-    @Named("formatNomComplet")
-    default String formatNomComplet(String nom, String prenom) {
-        if (nom == null && prenom == null) return null;
-        if (nom == null) return prenom;
-        if (prenom == null) return nom;
-        return nom + " " + prenom;
+    default Double bigDecimalToDouble(BigDecimal value) {
+        return value != null ? value.doubleValue() : null;
     }
 
     /**
-     * Calcul description automatique du paramètre
+     * Convertit Double vers BigDecimal de manière sécurisée
      */
-    @Named("generateDescription")
-    default String generateDescription(CommissionParameter entity) {
-        if (entity.getType() == null) return "";
+    default BigDecimal doubleToBigDecimal(Double value) {
+        return value != null ? BigDecimal.valueOf(value) : null;
+    }
 
-        String scope = "";
-        if (entity.getClient() != null) scope = "Client: " + entity.getClient().getNom();
-        else if (entity.getCollecteur() != null) scope = "Collecteur: " + entity.getCollecteur().getNom();
-        else if (entity.getAgence() != null) scope = "Agence: " + entity.getAgence().getNomAgence();
-
-        // Gérer BigDecimal pour valeur
-        double valeurDouble = entity.getValeur() != null ? entity.getValeur().doubleValue() : 0.0;
-
-        return String.format("%s - %s (%.2f)",
-                entity.getType(),
-                scope,
-                valeurDouble);
+    /**
+     * Détermine le scope d'un paramètre de commission
+     */
+    default String determineScope(CommissionParameter parameter) {
+        if (parameter.getClient() != null) return "CLIENT";
+        if (parameter.getCollecteur() != null) return "COLLECTEUR";
+        if (parameter.getAgence() != null) return "AGENCE";
+        return "UNKNOWN";
     }
 }

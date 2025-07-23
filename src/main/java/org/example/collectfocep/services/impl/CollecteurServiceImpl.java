@@ -27,6 +27,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -91,7 +92,7 @@ public class CollecteurServiceImpl implements CollecteurService {
             // Définir l'agence managée
             collecteur.setAgence(agence);
 
-            // 🔥 CORRECTION CRITIQUE: UTILISER LE MOT DE PASSE DU DTO
+            // UTILISER LE MOT DE PASSE DU DTO
             if (dto.getPassword() != null && !dto.getPassword().trim().isEmpty()) {
                 log.info("✅ Utilisation du mot de passe fourni pour le collecteur");
                 collecteur.setPassword(passwordEncoder.encode(dto.getPassword()));
@@ -106,7 +107,7 @@ public class CollecteurServiceImpl implements CollecteurService {
             collecteur.setRole("COLLECTEUR");
             collecteur.setAncienneteEnMois(0);
             if (collecteur.getMontantMaxRetrait() == null) {
-                collecteur.setMontantMaxRetrait(100000.0); // Valeur par défaut
+                collecteur.setMontantMaxRetrait(BigDecimal.valueOf(100000.0)); // Valeur par défaut BigDecimal
             }
 
             // Validation
@@ -364,7 +365,7 @@ public class CollecteurServiceImpl implements CollecteurService {
 
     @Override
     @Transactional
-    public Collecteur updateMontantMaxRetrait(Long collecteurId, Double nouveauMontant, String justification) {
+    public Collecteur updateMontantMaxRetrait(Long collecteurId, BigDecimal nouveauMontant, String justification) {
         Collecteur collecteur = collecteurRepository.findById(collecteurId)
                 .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
 
@@ -515,7 +516,8 @@ public class CollecteurServiceImpl implements CollecteurService {
                     .montantEpargneMois(totalEpargne != null ? totalEpargne : 0.0)
                     .montantRetraitMois(totalRetraits != null ? totalRetraits : 0.0)
                     .transactionsMois(0L)
-                    .objectifMensuel(collecteur.getMontantMaxRetrait())
+                    .objectifMensuel(collecteur.getMontantMaxRetrait() != null ?
+                            collecteur.getMontantMaxRetrait().doubleValue() : 100000.0)
                     .progressionObjectif(calculerProgressionObjectif(totalEpargne, collecteur.getMontantMaxRetrait()))
                     .commissionsMois(0.0)
                     .commissionsAujourdhui(0.0)
@@ -580,9 +582,11 @@ public class CollecteurServiceImpl implements CollecteurService {
         return "N/A";
     }
 
-    private Double calculerProgressionObjectif(Double montantMois, Double objectif) {
-        if (objectif == null || objectif == 0) return 0.0;
+    private Double calculerProgressionObjectif(Double montantMois, BigDecimal objectifBD) {
+        if (objectifBD == null || objectifBD.compareTo(BigDecimal.ZERO) == 0) return 0.0;
         if (montantMois == null) return 0.0;
+
+        Double objectif = objectifBD.doubleValue();
         return (montantMois / objectif) * 100;
     }
 
@@ -673,7 +677,8 @@ public class CollecteurServiceImpl implements CollecteurService {
         Double moyenneParTransaction = nombreTransactions > 0 ? totalEpargne / nombreTransactions : 0.0;
 
         // 6. Performance vs objectifs
-        Double objectifMensuel = collecteur.getMontantMaxRetrait() != null ? collecteur.getMontantMaxRetrait() : 100000.0;
+        Double objectifMensuel = collecteur.getMontantMaxRetrait() != null ?
+                collecteur.getMontantMaxRetrait().doubleValue() : 100000.0;
         Double tauxRealisation = objectifMensuel > 0 ? (totalEpargne != null ? totalEpargne : 0.0) / objectifMensuel * 100 : 0.0;
 
         // Utiliser HashMap au lieu de Map.of()

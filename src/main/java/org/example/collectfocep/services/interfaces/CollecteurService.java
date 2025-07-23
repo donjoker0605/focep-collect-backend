@@ -5,6 +5,7 @@ import org.example.collectfocep.entities.Collecteur;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -54,7 +55,7 @@ public interface CollecteurService {
     /**
      * Met à jour le montant maximum de retrait
      */
-    Collecteur updateMontantMaxRetrait(Long collecteurId, Double nouveauMontant, String justification);
+    Collecteur updateMontantMaxRetrait(Long collecteurId, BigDecimal nouveauMontant, String justification);
 
     /**
      * Récupère un collecteur par ID
