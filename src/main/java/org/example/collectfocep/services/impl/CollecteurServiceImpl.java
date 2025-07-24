@@ -54,6 +54,7 @@ public class CollecteurServiceImpl implements CollecteurService {
     private final JournalMapper journalMapper;
     private final JournalService journalService;
     private final MouvementMapperV2 mouvementMapper;
+    private final CompteCollecteurRepository compteCollecteurRepository;
 
     // ================================
     // MÉTHODES PRINCIPALES - NOUVELLES ET SÉCURISÉES
@@ -362,7 +363,90 @@ public class CollecteurServiceImpl implements CollecteurService {
 
     @Override
     public CollecteurDTO convertToDTO(Collecteur collecteur) {
-        return collecteurMapper.toDTO(collecteur);
+        if (collecteur == null) return null;
+
+        // Mapping de base sans les collections lazy
+        CollecteurDTO dto = collecteurMapper.toDTO(collecteur);
+
+        // CALCUL OPTIMISÉ : Nombre de clients avec requête COUNT
+        if (dto != null && collecteur.getId() != null) {
+            try {
+                // Requête COUNT optimisée pour les clients
+                Long nombreClients = clientRepository.countByCollecteurId(collecteur.getId());
+                dto.setNombreClients(nombreClients != null ? nombreClients.intValue() : 0);
+
+                // Requête COUNT optimisée pour les comptes collecteur
+                Long nombreComptes = compteCollecteurRepository.countByCollecteurId(collecteur.getId());
+                dto.setNombreComptes(nombreComptes != null ? nombreComptes.intValue() : 0);
+
+                log.debug("Collecteur {} - {} clients, {} comptes",
+                        collecteur.getId(), dto.getNombreClients(), dto.getNombreComptes());
+
+            } catch (Exception e) {
+                log.warn("Erreur calcul nombres pour collecteur {}: {}",
+                        collecteur.getId(), e.getMessage());
+                // Valeurs par défaut en cas d'erreur
+                dto.setNombreClients(0);
+                dto.setNombreComptes(0);
+            }
+        }
+
+        return dto;
+    }
+
+    /**
+     *  Conversion avec calculs pour listes
+     * Optimisée pour traiter plusieurs collecteurs en une fois
+     */
+    public List<CollecteurDTO> convertToDTOList(List<Collecteur> collecteurs) {
+        if (collecteurs == null || collecteurs.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        // Extraire les IDs pour requêtes groupées
+        List<Long> collecteurIds = collecteurs.stream()
+                .map(Collecteur::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+
+        // Requêtes groupées pour tous les collecteurs
+        Map<Long, Long> nombreClientsMap = new HashMap<>();
+        Map<Long, Long> nombreComptesMap = new HashMap<>();
+
+        try {
+            // OPTIMISATION : Une seule requête pour tous les nombres de clients
+            List<Object[]> clientCounts = clientRepository.countByCollecteurIds(collecteurIds);
+            for (Object[] row : clientCounts) {
+                Long collecteurId = (Long) row[0];
+                Long count = (Long) row[1];
+                nombreClientsMap.put(collecteurId, count);
+            }
+
+            // OPTIMISATION : Une seule requête pour tous les nombres de comptes
+            List<Object[]> compteCounts = compteCollecteurRepository.countByCollecteurIds(collecteurIds);
+            for (Object[] row : compteCounts) {
+                Long collecteurId = (Long) row[0];
+                Long count = (Long) row[1];
+                nombreComptesMap.put(collecteurId, count);
+            }
+
+        } catch (Exception e) {
+            log.warn("Erreur lors du calcul groupé des nombres: {}", e.getMessage());
+        }
+
+        // Conversion avec injection des nombres calculés
+        return collecteurs.stream()
+                .map(collecteur -> {
+                    CollecteurDTO dto = collecteurMapper.toDTO(collecteur);
+                    if (dto != null && collecteur.getId() != null) {
+                        Long collecteurId = collecteur.getId();
+                        dto.setNombreClients(nombreClientsMap.getOrDefault(collecteurId, 0L).intValue());
+                        dto.setNombreComptes(nombreComptesMap.getOrDefault(collecteurId, 0L).intValue());
+                    }
+                    return dto;
+                })
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
     }
 
     @Override

@@ -61,7 +61,15 @@ public interface CompteCollecteurRepository extends JpaRepository<CompteCollecte
     // VÉRIFICATIONS EXISTENCE
     boolean existsByCollecteurAndTypeCompte(Collecteur collecteur, String typeCompte);
 
-    @Query("SELECT COUNT(c) FROM CompteCollecteur c " +
-            "WHERE c.collecteur.id = :collecteurId")
-    long countByCollecteurId(@Param("collecteurId") Long collecteurId);
+    /**
+     * Compte le nombre de comptes par collecteur (requête groupée optimisée)
+     */
+    @Query("SELECT cc.collecteur.id, COUNT(cc) FROM CompteCollecteur cc WHERE cc.collecteur.id IN :collecteurIds GROUP BY cc.collecteur.id")
+    List<Object[]> countByCollecteurIds(@Param("collecteurIds") List<Long> collecteurIds);
+
+    /**
+     * Compte les comptes liés à un collecteur (puisque la notion "actif" n'existe pas dans la table)
+     */
+    @Query("SELECT COUNT(cc) FROM CompteCollecteur cc WHERE cc.collecteur.id = :collecteurId")
+    Long countByCollecteurId(@Param("collecteurId") Long collecteurId);
 }
