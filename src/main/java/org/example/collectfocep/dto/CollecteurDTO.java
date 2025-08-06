@@ -2,10 +2,15 @@ package org.example.collectfocep.dto;
 
 import jakarta.validation.constraints.*;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
 @Data
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class CollecteurDTO {
@@ -35,23 +40,60 @@ public class CollecteurDTO {
     @Positive(message = "L'ID de l'agence doit être positif")
     private Long agenceId;
 
+    // BigDecimal au lieu de Double
     @NotNull(message = "Le montant maximum de retrait est obligatoire")
     @DecimalMin(value = "0.0", inclusive = true, message = "Le montant maximum doit être supérieur ou égal à 0")
     @DecimalMax(value = "1000000.0", message = "Le montant maximum ne peut pas dépasser 1,000,000")
-    private Double montantMaxRetrait;
+    private BigDecimal montantMaxRetrait;
 
+    @Builder.Default
     private Boolean active = true;
 
     @Min(value = 0, message = "L'ancienneté ne peut pas être négative")
     @Max(value = 480, message = "L'ancienneté ne peut pas dépasser 40 ans (480 mois)")
+    @Builder.Default
     private Integer ancienneteEnMois = 0;
 
-    // Getter/Setter pour convention JavaBean
+    // Champs existants
+    private LocalDateTime dateModificationMontantMax;
+    private String modifiePar;
+    private String agenceNom;
+    private Integer nombreClients;
+    private Integer nombreComptes;
+    private String fcmToken;
+    private LocalDateTime fcmTokenUpdatedAt;
+
+    // MÉTHODES UTILITAIRES CORRIGÉES
     public Boolean isActive() {
         return active;
     }
 
     public void setActive(Boolean active) {
         this.active = active;
+    }
+
+    public boolean isNouveauCollecteur() {
+        return ancienneteEnMois != null && ancienneteEnMois < 3;
+    }
+
+    public String getNomComplet() {
+        return (prenom != null ? prenom : "") + " " + (nom != null ? nom : "");
+    }
+
+    public boolean canPerformWithdrawals() {
+        return Boolean.TRUE.equals(active) &&
+                montantMaxRetrait != null &&
+                montantMaxRetrait.compareTo(BigDecimal.ZERO) > 0;
+    }
+
+    // NOUVELLES MÉTHODES pour compatibilité transition
+    @Deprecated(since = "2.0", forRemoval = true)
+    public Double getMontantMaxRetraitAsDouble() {
+        return montantMaxRetrait != null ? montantMaxRetrait.doubleValue() : null;
+    }
+
+    @Deprecated(since = "2.0", forRemoval = true)
+    public void setMontantMaxRetraitFromDouble(Double montant) {
+        this.montantMaxRetrait = montant != null ? BigDecimal.valueOf(montant) : null;
     }
 }

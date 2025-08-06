@@ -6,6 +6,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
+
 @Data
 @Builder
 @NoArgsConstructor
@@ -38,7 +40,7 @@ public class CollecteurCreateDTO {
 
     @NotNull(message = "Le montant maximum de retrait est obligatoire")
     @Positive(message = "Le montant doit être positif")
-    private Double montantMaxRetrait;
+    private BigDecimal montantMaxRetrait;
 
     @Builder.Default
     private Boolean active = true;
@@ -46,12 +48,23 @@ public class CollecteurCreateDTO {
     // L'agenceId sera assignée automatiquement côté backend
     private Long agenceId;
 
+    // Méthodes de compatibilité pour transition
+    @Deprecated(since = "2.0", forRemoval = true)
+    public Double getMontantMaxRetraitAsDouble() {
+        return montantMaxRetrait != null ? montantMaxRetrait.doubleValue() : null;
+    }
+
+    @Deprecated(since = "2.0", forRemoval = true)
+    public void setMontantMaxRetraitFromDouble(Double montant) {
+        this.montantMaxRetrait = montant != null ? BigDecimal.valueOf(montant) : null;
+    }
+
     /**
      * Constructeur pour compatibilité avec CollecteurServiceImpl
      */
     public CollecteurCreateDTO(String nom, String prenom, String numeroCni,
                                String adresseMail, String telephone,
-                               Long agenceId, Double montantMaxRetrait) {
+                               Long agenceId, BigDecimal montantMaxRetrait) {
         this.nom = nom;
         this.prenom = prenom;
         this.numeroCni = numeroCni;

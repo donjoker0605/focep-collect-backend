@@ -29,6 +29,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
@@ -192,7 +193,7 @@ public class CollecteurController {
         }
     }
 
-    // ✅ TON CODE EXISTANT - CONSERVÉ INTÉGRALEMENT
+    // CONSERVÉ INTÉGRALEMENT
     @PutMapping("/{id}/montant-max")
     @PreAuthorize("@securityService.canManageCollecteur(authentication, #id)")
     @Audited(action = "UPDATE_MONTANT_MAX", entityType = "Collecteur")
@@ -203,6 +204,7 @@ public class CollecteurController {
         log.info("Demande de modification du montant max de retrait pour le collecteur: {}", id);
 
         try {
+            // - getNouveauMontant() doit retourner BigDecimal
             Collecteur collecteur = collecteurService.updateMontantMaxRetrait(
                     id,
                     request.getNouveauMontant(),
@@ -482,7 +484,6 @@ public class CollecteurController {
         }
     }
 
-    // ✅ TES MÉTHODES HELPER EXISTANTES - CONSERVÉES INTÉGRALEMENT
 
     private CollecteurDashboardDTO buildDashboard(Collecteur collecteur) {
         log.info("🔨 Construction du dashboard pour collecteur: {}", collecteur.getId());
@@ -515,7 +516,9 @@ public class CollecteurController {
                     .montantEpargneMois(0.0)
                     .montantRetraitMois(0.0)
                     .transactionsMois(0L)
-                    .objectifMensuel(collecteur.getMontantMaxRetrait())
+                    // ✅ CORRECTION: Conversion BigDecimal → Double pour DTO
+                    .objectifMensuel(collecteur.getMontantMaxRetrait() != null ?
+                            collecteur.getMontantMaxRetrait().doubleValue() : 100000.0)
                     .progressionObjectif(0.0)
                     .commissionsMois(0.0)
                     .commissionsAujourdhui(0.0)
@@ -552,7 +555,6 @@ public class CollecteurController {
                     .collecteurPrenom(collecteur.getPrenom())
                     .totalClients(totalClients)
 
-                    // ✅ VALEURS TEMPORAIRES POUR ÉVITER LES ERREURS
                     .totalEpargne(0.0)
                     .totalRetraits(0.0)
                     .soldeTotal(0.0)
@@ -566,12 +568,12 @@ public class CollecteurController {
                     .montantEpargneMois(0.0)
                     .montantRetraitMois(0.0)
                     .transactionsMois(0L)
-                    .objectifMensuel(collecteur.getMontantMaxRetrait())
+                    .objectifMensuel(collecteur.getMontantMaxRetrait() != null ?
+                            collecteur.getMontantMaxRetrait().doubleValue() : 50000.0)
                     .progressionObjectif(0.0)
                     .commissionsMois(0.0)
                     .commissionsAujourdhui(0.0)
 
-                    // ✅ COLLECTIONS VIDES POUR ÉVITER LES ERREURS
                     .transactionsRecentes(List.of())
                     .clientsActifs(List.of())
                     .alertes(List.of())

@@ -3,9 +3,14 @@ package org.example.collectfocep.dto;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Builder;
 import lombok.Data;
+
 import java.time.LocalDateTime;
 import java.util.List;
 
+/**
+ * ✅ COLLECTEUR DASHBOARD DTO - CORRECTION TYPES COHÉRENTS
+ * Tous les montants en Double pour éviter les erreurs de conversion
+ */
 @Data
 @Builder
 public class CollecteurDashboardDTO {
@@ -19,7 +24,7 @@ public class CollecteurDashboardDTO {
     private Double totalRetraits;
     private Double soldeTotal;
 
-    // Statistiques du jour
+    // Statistiques du jour en Double (pas BigDecimal)
     private Long transactionsAujourdhui;
     private Double montantEpargneAujourdhui;
     private Double montantRetraitAujourdhui;

@@ -7,6 +7,7 @@ import org.example.collectfocep.entities.Agence;
 import org.example.collectfocep.entities.Client;
 import org.example.collectfocep.entities.Collecteur;
 import org.example.collectfocep.entities.CommissionParameter;
+import org.example.collectfocep.entities.CommissionType;
 import org.example.collectfocep.exceptions.ResourceNotFoundException;
 import org.example.collectfocep.mappers.CommissionParameterMapper;
 import org.example.collectfocep.repositories.AgenceRepository;
@@ -16,6 +17,7 @@ import org.example.collectfocep.repositories.CommissionParameterRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -38,8 +40,8 @@ public class CommissionParameterService {
     public CommissionParameter createCommissionParameter(CommissionParameterDTO dto) {
         log.info("Création paramètre commission: type={}, clientId={}", dto.getType(), dto.getClientId());
 
-        // ✅ CORRECTION : Vérifier que le type existe avant de comparer
-        if (dto.getType() != null && "TIER".equals(dto.getType().toString())) {
+        // Vérifier que le type existe avant de comparer
+        if (dto.getType() != null && CommissionType.TIER.equals(dto.getType())) {
             if (!mapper.validateTiers(dto.getPaliersCommission())) {
                 throw new IllegalArgumentException("Paliers de commission invalides");
             }
@@ -47,7 +49,7 @@ public class CommissionParameterService {
 
         CommissionParameter entity = mapper.toEntity(dto);
 
-        // ✅ AJOUT : Gérer les relations manuellement car ignorées dans le mapper
+        // Gérer les relations manuellement car ignorées dans le mapper
         if (dto.getClientId() != null) {
             Client client = clientRepository.findById(dto.getClientId())
                     .orElseThrow(() -> new ResourceNotFoundException("Client", "id", dto.getClientId()));
@@ -160,8 +162,8 @@ public class CommissionParameterService {
                 .orElseThrow(() -> new ResourceNotFoundException("Agence", "id", agenceId));
 
         CommissionParameter defaultParam = CommissionParameter.builder()
-                .type(org.example.collectfocep.entities.CommissionType.PERCENTAGE)
-                .valeur(5.0) // 5% par défaut
+                .type(CommissionType.PERCENTAGE)
+                .valeur(BigDecimal.valueOf(5.0)) // ✅ CORRECTION : BigDecimal au lieu de double
                 .codeProduit("DEFAULT_AGENCE")
                 .validFrom(LocalDate.now())
                 .active(true)
@@ -181,8 +183,8 @@ public class CommissionParameterService {
                 .orElseThrow(() -> new ResourceNotFoundException("Collecteur", "id", collecteurId));
 
         CommissionParameter defaultParam = CommissionParameter.builder()
-                .type(org.example.collectfocep.entities.CommissionType.PERCENTAGE)
-                .valeur(5.0) // 5% par défaut
+                .type(CommissionType.PERCENTAGE)
+                .valeur(BigDecimal.valueOf(5.0)) // ✅ CORRECTION : BigDecimal au lieu de double
                 .codeProduit("DEFAULT_COLLECTEUR")
                 .validFrom(LocalDate.now())
                 .active(true)
@@ -190,5 +192,53 @@ public class CommissionParameterService {
                 .build();
 
         return repository.save(defaultParam);
+    }
+
+    /**
+     * Créer paramètre avec BigDecimal directement
+     */
+    public CommissionParameter createParameterWithBigDecimal(
+            CommissionType type,
+            BigDecimal valeur,
+            Long clientId,
+            Long collecteurId,
+            Long agenceId) {
+
+        CommissionParameter.CommissionParameterBuilder builder = CommissionParameter.builder()
+                .type(type)
+                .valeur(valeur)
+                .validFrom(LocalDate.now())
+                .active(true);
+
+        // Associer l'entité appropriée
+        if (clientId != null) {
+            Client client = clientRepository.findById(clientId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Client", "id", clientId));
+            builder.client(client);
+        } else if (collecteurId != null) {
+            Collecteur collecteur = collecteurRepository.findById(collecteurId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Collecteur", "id", collecteurId));
+            builder.collecteur(collecteur);
+        } else if (agenceId != null) {
+            Agence agence = agenceRepository.findById(agenceId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Agence", "id", agenceId));
+            builder.agence(agence);
+        }
+
+        return repository.save(builder.build());
+    }
+
+    /**
+     * Obtenir tous paramètres actifs d'une agence
+     */
+    public List<CommissionParameter> getActiveParametersByAgence(Long agenceId) {
+        return repository.findActiveByAgenceId(agenceId);
+    }
+
+    /**
+     * Obtenir tous paramètres actifs d'un collecteur
+     */
+    public List<CommissionParameter> getActiveParametersByCollecteur(Long collecteurId) {
+        return repository.findActiveByCollecteurId(collecteurId);
     }
 }

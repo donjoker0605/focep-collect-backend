@@ -151,8 +151,12 @@ public class DashboardServiceImpl implements DashboardService {
                 .totalEpargne(totalEpargne)
                 .totalRetraits(totalRetraits)
                 .soldeTotal(soldeTotal)
-                .objectifMensuel(collecteur.getMontantMaxRetrait())
-                .progressionObjectif(calculerProgressionObjectif(montantEpargneMois, collecteur.getMontantMaxRetrait()))
+                // Conversion BigDecimal → Double pour DTO
+                .objectifMensuel(collecteur.getMontantMaxRetrait() != null ?
+                        collecteur.getMontantMaxRetrait().doubleValue() : 100000.0)
+                .progressionObjectif(calculerProgressionObjectif(montantEpargneMois,
+                        collecteur.getMontantMaxRetrait() != null ?
+                                collecteur.getMontantMaxRetrait().doubleValue() : 100000.0))
                 .transactionsAujourdhui(transactionsAujourdhui)
                 .montantEpargneAujourdhui(montantEpargneAujourdhui)
                 .montantRetraitAujourdhui(montantRetraitAujourdhui)
@@ -216,7 +220,9 @@ public class DashboardServiceImpl implements DashboardService {
     }
 
     private Double calculerProgressionObjectif(Double montantMois, Double objectif) {
-        if (objectif == null || objectif == 0) return 0.0;
+        if (objectif == null || objectif == 0.0) return 0.0;
+        if (montantMois == null) return 0.0;
+
         return (montantMois / objectif) * 100;
     }
 }

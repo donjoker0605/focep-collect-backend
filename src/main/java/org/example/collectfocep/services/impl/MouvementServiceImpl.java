@@ -27,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.exceptions.BusinessException;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -740,7 +741,8 @@ public class MouvementServiceImpl implements MouvementService {
     private void validateRetrait(CompteClient compteClient, Collecteur collecteur, double montant)
             throws SoldeInsuffisantException, MontantMaxRetraitException {
         log.debug("Validation du retrait: Client={}, Collecteur={}, Montant={}, SoldeClient={}, MontantMaxRetrait={}",
-                compteClient.getClient().getNom(), collecteur.getNom(), montant, compteClient.getSolde(), collecteur.getMontantMaxRetrait());
+                compteClient.getClient().getNom(), collecteur.getNom(), montant,
+                compteClient.getSolde(), collecteur.getMontantMaxRetrait());
 
         if (compteClient.getSolde() < montant) {
             log.warn("Solde insuffisant pour le retrait: Compte={}, Solde={}, Montant demandé={}",
@@ -751,12 +753,16 @@ public class MouvementServiceImpl implements MouvementService {
             );
         }
 
-        if (montant > collecteur.getMontantMaxRetrait()) {
+        // Conversion BigDecimal → double pour comparaison
+        BigDecimal montantMaxRetrait = collecteur.getMontantMaxRetrait();
+        double montantMaxRetraitDouble = montantMaxRetrait != null ? montantMaxRetrait.doubleValue() : 0.0;
+
+        if (montant > montantMaxRetraitDouble) {
             log.warn("Montant de retrait supérieur au maximum autorisé: Montant={}, Maximum={}",
-                    montant, collecteur.getMontantMaxRetrait());
+                    montant, montantMaxRetrait);
             throw new MontantMaxRetraitException(
-                    String.format("Le montant du retrait (%s) dépasse le montant maximal autorisé (%s)",
-                            montant, collecteur.getMontantMaxRetrait())
+                    String.format("Le montant du retrait (%.2f) dépasse le montant maximal autorisé (%.2f)",
+                            montant, montantMaxRetraitDouble)
             );
         }
 

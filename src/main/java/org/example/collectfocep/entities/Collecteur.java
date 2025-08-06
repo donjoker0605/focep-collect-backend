@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -32,9 +33,9 @@ public class Collecteur extends Utilisateur {
     @Builder.Default
     private Integer ancienneteEnMois = 0;
 
-    @Column(name = "montant_max_retrait", nullable = false)
+    @Column(name = "montant_max_retrait", precision = 15, scale = 2, nullable = false)
     @Builder.Default
-    private Double montantMaxRetrait = 50000.0;
+    private BigDecimal montantMaxRetrait = BigDecimal.valueOf(50000.0);
 
     @Column(name = "date_modification_montant")
     private LocalDateTime dateModificationMontantMax;
@@ -71,7 +72,9 @@ public class Collecteur extends Utilisateur {
     @Column(name = "fcm_token_updated_at")
     private LocalDateTime fcmTokenUpdatedAt;
 
-    // Méthodes utilitaires (gardez vos méthodes existantes)
+    // ================================
+    // MÉTHODES UTILITAIRES CORRIGÉES
+    // ================================
 
     public String getFcmToken() {
         return fcmToken;
@@ -118,5 +121,43 @@ public class Collecteur extends Utilisateur {
 
     public String getDisplayName() {
         return String.format("%s %s", this.getNom(), this.getPrenom());
+    }
+
+    // ================================
+    // MÉTHODES DE COMPATIBILITÉ (TRANSITION)
+    // ================================
+
+    /**
+     * Méthode de compatibilité pour retourner le montant en Double
+     * À utiliser uniquement pour les DTOs et interfaces qui attendent Double
+     */
+    @Deprecated(since = "2.0", forRemoval = true)
+    public Double getMontantMaxRetraitAsDouble() {
+        return montantMaxRetrait != null ? montantMaxRetrait.doubleValue() : null;
+    }
+
+    /**
+     * Méthode de compatibilité pour définir le montant depuis Double
+     * À utiliser uniquement pour la transition
+     */
+    @Deprecated(since = "2.0", forRemoval = true)
+    public void setMontantMaxRetraitFromDouble(Double montant) {
+        this.montantMaxRetrait = montant != null ? BigDecimal.valueOf(montant) : null;
+    }
+
+    /**
+     * Vérifie si le collecteur peut effectuer des retraits
+     */
+    public boolean canPerformWithdrawals() {
+        return Boolean.TRUE.equals(active) &&
+                montantMaxRetrait != null &&
+                montantMaxRetrait.compareTo(BigDecimal.ZERO) > 0;
+    }
+
+    /**
+     * Vérifie si le collecteur est nouveau (moins de 3 mois d'ancienneté)
+     */
+    public boolean isNouveauCollecteur() {
+        return ancienneteEnMois != null && ancienneteEnMois < 3;
     }
 }

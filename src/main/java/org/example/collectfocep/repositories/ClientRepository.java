@@ -279,6 +279,12 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
             "ORDER BY c.dateCreation DESC")
     List<Client> findActiveByCollecteur(@Param("collecteur") Collecteur collecteur, Pageable pageable);
 
+    /**
+     * Compte le nombre de clients par collecteur (requête groupée optimisée)
+     */
+    @Query("SELECT c.collecteur.id, COUNT(c) FROM Client c WHERE c.collecteur.id IN :collecteurIds GROUP BY c.collecteur.id")
+    List<Object[]> countByCollecteurIds(@Param("collecteurIds") List<Long> collecteurIds);
+
     // =====================================
     // MÉTHODES STATISTIQUES ET DATES
     // =====================================

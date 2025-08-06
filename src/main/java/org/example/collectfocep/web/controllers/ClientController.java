@@ -138,11 +138,16 @@ public class ClientController {
                 return;
             }
 
+            // Utiliser BigDecimal correctement
+            BigDecimal valeurParam = commissionDTO.getValeur() != null ?
+                    BigDecimal.valueOf(commissionDTO.getValeur()) :
+                    BigDecimal.ZERO;
+
             // Créer l'entité CommissionParameter
             CommissionParameter parameter = CommissionParameter.builder()
                     .client(client)
                     .type(commissionDTO.getType())
-                    .valeur(commissionDTO.getValeur() != null ? commissionDTO.getValeur() : 0.0)
+                    .valeur(valeurParam)
                     .active(commissionDTO.getActive() != null ? commissionDTO.getActive() : true)
                     .validFrom(commissionDTO.getValidFrom() != null ?
                             commissionDTO.getValidFrom() : LocalDate.now())
@@ -154,7 +159,7 @@ public class ClientController {
             log.info("✅ Paramètre commission créé: ID={}, Type={}, Valeur={}",
                     savedParameter.getId(), savedParameter.getType(), savedParameter.getValeur());
 
-            // 🔥 GESTION DES PALIERS POUR TYPE TIER
+            // GESTION DES PALIERS POUR TYPE TIER
             if (commissionDTO.getType() == CommissionType.TIER &&
                     commissionDTO.getPaliersCommission() != null && !commissionDTO.getPaliersCommission().isEmpty()) {
 
@@ -168,11 +173,9 @@ public class ClientController {
         }
     }
 
+
     /**
-     * Créer les paliers de commission
-     */
-    /**
-     * 🔥 VERSION FINALE CORRIGÉE: Créer les paliers de commission
+     * réer les paliers de commission
      */
     private void createCommissionTiers(CommissionParameter parameter, List<PalierCommissionDTO> tiersDTO) {
         try {
@@ -219,7 +222,7 @@ public class ClientController {
                         .taux(taux)
                         .build();
 
-                // Validation finale de l'entité
+                // Utiliser la méthode isValid() que nous avons ajoutée
                 if (!tier.isValid()) {
                     log.warn("⚠️ Palier {} invalide après création, ignoré", i + 1);
                     continue;
@@ -252,6 +255,7 @@ public class ClientController {
                     .build();
 
             for (CommissionTier existing : existingTiers) {
+                // Utiliser la méthode overlapsWith() que nous avons ajoutée
                 if (newTier.overlapsWith(existing)) {
                     log.warn("⚠️ Chevauchement détecté avec palier existant: {}",
                             existing.getRangeDescription());

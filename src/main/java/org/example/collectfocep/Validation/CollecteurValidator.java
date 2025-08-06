@@ -12,6 +12,7 @@ import org.springframework.validation.Errors;
 import org.springframework.validation.FieldError;
 import org.springframework.validation.Validator;
 
+import java.math.BigDecimal;
 import java.util.Set;
 
 @Component
@@ -20,11 +21,18 @@ public class CollecteurValidator implements Validator {
 
     private final CollecteurRepository collecteurRepository;
 
+    // ================================
+    // CONSTANTES DE VALIDATION CORRIGÉES
+    // ================================
+
     private static final int LONGUEUR_MIN_NOM = 2;
     private static final int LONGUEUR_MAX_NOM = 50;
     private static final int LONGUEUR_CNI = 13;
-    private static final double MONTANT_MAX_RETRAIT_MIN = 1000.0;
-    private static final double MONTANT_MAX_RETRAIT_MAX = 1000000.0;
+
+    // ✅ CORRECTION: Utiliser BigDecimal pour les montants
+    private static final BigDecimal MONTANT_MAX_RETRAIT_MIN = BigDecimal.valueOf(1000.0);
+    private static final BigDecimal MONTANT_MAX_RETRAIT_MAX = BigDecimal.valueOf(1000000.0);
+
     private static final String REGEX_EMAIL = "^[A-Za-z0-9+_.-]+@(.+)$";
     private static final String REGEX_TELEPHONE = "^[0-9]{9}$";
 
@@ -37,29 +45,46 @@ public class CollecteurValidator implements Validator {
     public void validate(Object target, Errors errors) {
         Collecteur collecteur = (Collecteur) target;
 
-        // Validation du montant maximum de retrait
-        if (collecteur.getMontantMaxRetrait() <= 0) {
+        // ================================
+        // VALIDATION DU MONTANT MAXIMUM DE RETRAIT - CORRIGÉE
+        // ================================
+
+        if (collecteur.getMontantMaxRetrait() == null) {
             errors.rejectValue("montantMaxRetrait",
-                    "montant.invalid",
-                    "Le montant maximum de retrait doit être positif");
-        } else if (collecteur.getMontantMaxRetrait() < MONTANT_MAX_RETRAIT_MIN) {
-            errors.rejectValue("montantMaxRetrait",
-                    "montant.trop.petit",
-                    String.format("Le montant maximum de retrait doit être supérieur à %s", MONTANT_MAX_RETRAIT_MIN));
-        } else if (collecteur.getMontantMaxRetrait() > MONTANT_MAX_RETRAIT_MAX) {
-            errors.rejectValue("montantMaxRetrait",
-                    "montant.trop.grand",
-                    String.format("Le montant maximum de retrait doit être inférieur à %s", MONTANT_MAX_RETRAIT_MAX));
+                    "montant.required",
+                    "Le montant maximum de retrait est obligatoire");
+        } else {
+            if (collecteur.getMontantMaxRetrait().compareTo(BigDecimal.ZERO) <= 0) {
+                errors.rejectValue("montantMaxRetrait",
+                        "montant.invalid",
+                        "Le montant maximum de retrait doit être positif");
+            } else if (collecteur.getMontantMaxRetrait().compareTo(MONTANT_MAX_RETRAIT_MIN) < 0) {
+                errors.rejectValue("montantMaxRetrait",
+                        "montant.trop.petit",
+                        String.format("Le montant maximum de retrait doit être supérieur à %s",
+                                MONTANT_MAX_RETRAIT_MIN.toString()));
+            } else if (collecteur.getMontantMaxRetrait().compareTo(MONTANT_MAX_RETRAIT_MAX) > 0) {
+                errors.rejectValue("montantMaxRetrait",
+                        "montant.trop.grand",
+                        String.format("Le montant maximum de retrait doit être inférieur à %s",
+                                MONTANT_MAX_RETRAIT_MAX.toString()));
+            }
         }
 
-        // Validation de l'ancienneté
-        if (collecteur.getAncienneteEnMois() < 0) {
+        // ================================
+        // VALIDATION DE L'ANCIENNETÉ - INCHANGÉE
+        // ================================
+
+        if (collecteur.getAncienneteEnMois() != null && collecteur.getAncienneteEnMois() < 0) {
             errors.rejectValue("ancienneteEnMois",
                     "anciennete.invalid",
                     "L'ancienneté ne peut pas être négative");
         }
 
-        // Validation du nom
+        // ================================
+        // VALIDATION DU NOM - INCHANGÉE
+        // ================================
+
         if (collecteur.getNom() == null || collecteur.getNom().trim().isEmpty()) {
             errors.rejectValue("nom",
                     "nom.required",
@@ -74,7 +99,10 @@ public class CollecteurValidator implements Validator {
                     String.format("Le nom ne peut pas dépasser %d caractères", LONGUEUR_MAX_NOM));
         }
 
-        // Validation du prénom
+        // ================================
+        // VALIDATION DU PRÉNOM - INCHANGÉE
+        // ================================
+
         if (collecteur.getPrenom() == null || collecteur.getPrenom().trim().isEmpty()) {
             errors.rejectValue("prenom",
                     "prenom.required",
@@ -89,7 +117,10 @@ public class CollecteurValidator implements Validator {
                     String.format("Le prénom ne peut pas dépasser %d caractères", LONGUEUR_MAX_NOM));
         }
 
-        // Validation du numéro CNI
+        // ================================
+        // VALIDATION DU NUMÉRO CNI - INCHANGÉE
+        // ================================
+
         if (collecteur.getNumeroCni() == null || collecteur.getNumeroCni().trim().isEmpty()) {
             errors.rejectValue("numeroCni",
                     "numeroCni.required",
@@ -100,7 +131,10 @@ public class CollecteurValidator implements Validator {
                     String.format("Le numéro de CNI doit contenir exactement %d chiffres", LONGUEUR_CNI));
         }
 
-        // Validation de l'email
+        // ================================
+        // VALIDATION DE L'EMAIL - INCHANGÉE
+        // ================================
+
         if (collecteur.getAdresseMail() == null || collecteur.getAdresseMail().trim().isEmpty()) {
             errors.rejectValue("adresseMail",
                     "email.required",
@@ -116,7 +150,10 @@ public class CollecteurValidator implements Validator {
                     "Cette adresse email est déjà utilisée");
         }
 
-        // Validation du téléphone
+        // ================================
+        // VALIDATION DU TÉLÉPHONE - INCHANGÉE
+        // ================================
+
         if (collecteur.getTelephone() == null || collecteur.getTelephone().trim().isEmpty()) {
             errors.rejectValue("telephone",
                     "telephone.required",
@@ -127,14 +164,20 @@ public class CollecteurValidator implements Validator {
                     "Le numéro de téléphone doit contenir 9 chiffres");
         }
 
-        // Validation de l'agence
+        // ================================
+        // VALIDATION DE L'AGENCE - INCHANGÉE
+        // ================================
+
         if (collecteur.getAgence() == null) {
             errors.rejectValue("agence",
                     "agence.required",
                     "L'agence est obligatoire");
         }
 
-        // Validation du mot de passe (à la création)
+        // ================================
+        // VALIDATION DU MOT DE PASSE - INCHANGÉE
+        // ================================
+
         if (collecteur.getId() == null &&
                 (collecteur.getPassword() == null || collecteur.getPassword().trim().isEmpty())) {
             errors.rejectValue("password",
@@ -142,7 +185,10 @@ public class CollecteurValidator implements Validator {
                     "Le mot de passe est obligatoire à la création");
         }
 
-        // Validation du rôle
+        // ================================
+        // VALIDATION DU RÔLE - INCHANGÉE
+        // ================================
+
         if (collecteur.getRole() == null || collecteur.getRole().trim().isEmpty()) {
             errors.rejectValue("role",
                     "role.required",
@@ -179,5 +225,25 @@ public class CollecteurValidator implements Validator {
 
             throw new ValidationException(message);
         }
+    }
+
+    // ================================
+    // MÉTHODES UTILITAIRES POUR BigDecimal
+    // ================================
+
+    /**
+     * Valide un montant BigDecimal dans une plage donnée
+     */
+    public boolean isValidAmount(BigDecimal amount, BigDecimal min, BigDecimal max) {
+        if (amount == null) return false;
+        return amount.compareTo(min) >= 0 && amount.compareTo(max) <= 0;
+    }
+
+    /**
+     * Formate un montant BigDecimal pour les messages d'erreur
+     */
+    public String formatAmount(BigDecimal amount) {
+        if (amount == null) return "0";
+        return String.format("%,.0f FCFA", amount.doubleValue());
     }
 }

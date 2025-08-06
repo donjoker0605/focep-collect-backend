@@ -3,6 +3,7 @@ package org.example.collectfocep.entities;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -17,12 +18,19 @@ public class HistoriqueMontantMax {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "collecteur_id")
     private Collecteur collecteur;
 
-    private Double ancienMontant;
+    @Column(name = "ancien_montant", precision = 15, scale = 2)
+    private BigDecimal ancienMontant;
+
+    @Column(name = "date_modification")
     private LocalDateTime dateModification;
+
+    @Column(name = "modifie_par")
     private String modifiePar;
+
+    @Column(name = "justification", length = 500)
     private String justification;
 }

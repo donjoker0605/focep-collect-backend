@@ -1,97 +1,189 @@
 package org.example.collectfocep.entities;
 
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-import lombok.experimental.SuperBuilder;
+import jakarta.validation.constraints.*;
+import lombok.*;
 
+/**
+ * ✅ CORRECTION: Extension de CommissionTier avec méthodes manquantes
+ * Entité pour les paliers de commission (type TIER)
+ * Permet de définir des taux différents selon des tranches de montant
+ */
 @Entity
-@Table(name = "commission_tiers")
+@Table(name = "commission_tier")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-@SuperBuilder
+@Builder
 public class CommissionTier {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(name = "montant_min", nullable = false)
-    private Double montantMin; // Changé de double vers Double pour cohérence
+    @NotNull(message = "Le montant minimum est requis")
+    @Min(value = 0, message = "Le montant minimum doit être positif")
+    private Double montantMin;
 
-    // 🔥 CORRECTION: Permettre que montantMax soit null pour les paliers "illimités"
-    @Column(name = "montant_max", nullable = true)
-    private Double montantMax; // Changé de double vers Double et nullable = true
+    @Column(name = "montant_max", nullable = false)
+    @NotNull(message = "Le montant maximum est requis")
+    @Min(value = 1, message = "Le montant maximum doit être positif")
+    private Double montantMax;
 
-    @Column(nullable = false)
-    private Double taux; // Changé de double vers Double pour cohérence
+    @Column(name = "taux", nullable = false)
+    @NotNull(message = "Le taux est requis")
+    @DecimalMin(value = "0.0", message = "Le taux doit être positif")
+    @DecimalMax(value = "100.0", message = "Le taux ne peut pas dépasser 100%")
+    private Double taux;
+
+    @Column(name = "description")
+    private String description;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "commission_parameter_id")
+    @JoinColumn(name = "commission_parameter_id", nullable = false)
     private CommissionParameter commissionParameter;
 
-    // Méthodes utilitaires
+    @Version
+    private Long version;
 
-    /**
-     * Vérifie si ce palier est applicable pour un montant donné
-     */
+    // ✅ MÉTHODES MÉTIER EXISTANTES
+    @PrePersist
+    @PreUpdate
+    private void validate() {
+        if (montantMin != null && montantMax != null && montantMin >= montantMax) {
+            throw new IllegalArgumentException(
+                    String.format("Le montant minimum (%.2f) doit être inférieur au montant maximum (%.2f)",
+                            montantMin, montantMax));
+        }
+    }
+
     public boolean isApplicableFor(Double montant) {
         if (montant == null) return false;
+        return montant >= montantMin && montant <= montantMax;
+    }
 
-        boolean minOk = montant >= montantMin;
-        boolean maxOk = montantMax == null || montant <= montantMax;
+    public boolean isApplicableFor(java.math.BigDecimal montant) {
+        if (montant == null) return false;
+        return isApplicableFor(montant.doubleValue());
+    }
 
-        return minOk && maxOk;
+    public String getRangeDescription() {
+        return String.format("%.2f - %.2f FCFA (%.2f%%)", montantMin, montantMax, taux);
+    }
+
+    // ✅ NOUVELLES MÉTHODES MANQUANTES POUR TON CODE
+
+    /**
+     * Valide si ce palier est cohérent
+     * Utilisée dans ClientController
+     */
+    public boolean isValid() {
+        if (montantMin == null || montantMax == null || taux == null) {
+            return false;
+        }
+
+        if (montantMin < 0 || taux < 0 || taux > 100) {
+            return false;
+        }
+
+        if (montantMax <= montantMin) {
+            return false;
+        }
+
+        return true;
     }
 
     /**
      * Vérifie si ce palier chevauche avec un autre
+     * Utilisée dans ClientController pour validation
      */
     public boolean overlapsWith(CommissionTier other) {
         if (other == null) return false;
+        if (this.montantMin == null || this.montantMax == null) return false;
+        if (other.montantMin == null || other.montantMax == null) return false;
 
-        // Si l'un des paliers n'a pas de max, on doit vérifier différemment
-        if (this.montantMax == null && other.montantMax == null) {
-            // Deux paliers illimités ne peuvent coexister
-            return true;
-        }
+        // Deux intervalles [a,b] et [c,d] se chevauchent si :
+        // max(a,c) < min(b,d)
+        double maxStart = Math.max(this.montantMin, other.montantMin);
+        double minEnd = Math.min(this.montantMax, other.montantMax);
 
-        if (this.montantMax == null) {
-            // Ce palier est illimité, il chevauche si l'autre commence avant son minimum
-            return other.montantMin < this.montantMin ||
-                    (other.montantMax != null && other.montantMax > this.montantMin);
-        }
-
-        if (other.montantMax == null) {
-            // L'autre palier est illimité
-            return this.montantMin < other.montantMin || this.montantMax > other.montantMin;
-        }
-
-        // Cas standard: aucun des deux n'est illimité
-        return this.montantMin < other.montantMax && this.montantMax > other.montantMin;
+        return maxStart < minEnd;
     }
 
     /**
-     * Représentation textuelle du palier
+     * Vérifie si ce palier est adjacent à un autre (pour validation continuité)
      */
-    public String getRangeDescription() {
-        if (montantMax == null) {
-            return String.format("%.0f FCFA et plus", montantMin);
-        }
-        return String.format("%.0f - %.0f FCFA", montantMin, montantMax);
+    public boolean isAdjacentTo(CommissionTier other) {
+        if (other == null) return false;
+        if (this.montantMax == null || other.montantMin == null) return false;
+
+        // Tolérance pour les comparaisons de doubles
+        double tolerance = 0.01;
+        return Math.abs(this.montantMax - other.montantMin) <= tolerance;
     }
 
     /**
-     * Validation de la cohérence du palier
+     * Compare ce palier avec un autre pour le tri
      */
-    public boolean isValid() {
-        if (montantMin == null || montantMin < 0) return false;
-        if (taux == null || taux < 0 || taux > 100) return false;
-        if (montantMax != null && montantMax <= montantMin) return false;
+    public int compareByRange(CommissionTier other) {
+        if (other == null) return 1;
+        if (this.montantMin == null && other.montantMin == null) return 0;
+        if (this.montantMin == null) return -1;
+        if (other.montantMin == null) return 1;
 
-        return true;
+        return Double.compare(this.montantMin, other.montantMin);
+    }
+
+    /**
+     * Calcule la commission pour un montant donné dans ce palier
+     */
+    public java.math.BigDecimal calculateCommissionFor(java.math.BigDecimal montant) {
+        if (montant == null || !isApplicableFor(montant)) {
+            return java.math.BigDecimal.ZERO;
+        }
+
+        return montant.multiply(java.math.BigDecimal.valueOf(taux))
+                .divide(java.math.BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Version double pour compatibilité
+     */
+    public Double calculateCommissionFor(Double montant) {
+        if (montant == null || !isApplicableFor(montant)) {
+            return 0.0;
+        }
+
+        return (montant * taux) / 100.0;
+    }
+
+    /**
+     * Représentation textuelle pour debugging
+     */
+    @Override
+    public String toString() {
+        return String.format("CommissionTier{id=%d, range=[%.2f-%.2f], taux=%.2f%%}",
+                id, montantMin, montantMax, taux);
+    }
+
+    /**
+     * Égalité basée sur la plage de montants
+     */
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof CommissionTier)) return false;
+
+        CommissionTier that = (CommissionTier) o;
+        return Double.compare(that.montantMin, montantMin) == 0 &&
+                Double.compare(that.montantMax, montantMax) == 0 &&
+                Double.compare(that.taux, taux) == 0;
+    }
+
+    @Override
+    public int hashCode() {
+        return java.util.Objects.hash(montantMin, montantMax, taux);
     }
 }

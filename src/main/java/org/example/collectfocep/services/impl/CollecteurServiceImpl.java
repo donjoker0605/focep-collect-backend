@@ -1,4 +1,3 @@
-// src/main/java/org/example/collectfocep/services/impl/CollecteurServiceImpl.java
 package org.example.collectfocep.services.impl;
 
 import jakarta.persistence.EntityManager;
@@ -27,6 +26,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -54,8 +54,15 @@ public class CollecteurServiceImpl implements CollecteurService {
     private final JournalMapper journalMapper;
     private final JournalService journalService;
     private final MouvementMapperV2 mouvementMapper;
+    private final CompteCollecteurRepository compteCollecteurRepository;
 
-    // MÉTHODE PRINCIPALE DE CRÉATION
+    // ================================
+    // MÉTHODES PRINCIPALES - NOUVELLES ET SÉCURISÉES
+    // ================================
+
+    /**
+     * MÉTHODE PRINCIPALE DE CRÉATION
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Collecteur saveCollecteur(CollecteurCreateDTO dto) {
@@ -91,7 +98,7 @@ public class CollecteurServiceImpl implements CollecteurService {
             // Définir l'agence managée
             collecteur.setAgence(agence);
 
-            // 🔥 CORRECTION CRITIQUE: UTILISER LE MOT DE PASSE DU DTO
+            // UTILISER LE MOT DE PASSE DU DTO
             if (dto.getPassword() != null && !dto.getPassword().trim().isEmpty()) {
                 log.info("✅ Utilisation du mot de passe fourni pour le collecteur");
                 collecteur.setPassword(passwordEncoder.encode(dto.getPassword()));
@@ -105,8 +112,9 @@ public class CollecteurServiceImpl implements CollecteurService {
             collecteur.setActive(true);
             collecteur.setRole("COLLECTEUR");
             collecteur.setAncienneteEnMois(0);
+
             if (collecteur.getMontantMaxRetrait() == null) {
-                collecteur.setMontantMaxRetrait(100000.0); // Valeur par défaut
+                collecteur.setMontantMaxRetrait(BigDecimal.valueOf(100000.0));
             }
 
             // Validation
@@ -129,25 +137,9 @@ public class CollecteurServiceImpl implements CollecteurService {
         }
     }
 
-    // Générer un mot de passe temporaire
-    private String generateTemporaryPassword() {
-        String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-        StringBuilder password = new StringBuilder();
-
-        // Assurer au moins une majuscule, une minuscule et un chiffre
-        password.append("C"); // Majuscule
-        password.append("p"); // Minuscule
-        password.append("1"); // Chiffre
-
-        // Ajouter 5 caractères aléatoires
-        for (int i = 0; i < 5; i++) {
-            password.append(chars.charAt((int) (Math.random() * chars.length())));
-        }
-
-        return password.toString();
-    }
-
-    //  Réinitialiser le mot de passe par l'admin
+    /**
+     * Réinitialiser le mot de passe par l'admin
+     */
     @Override
     @Transactional
     public void resetCollecteurPassword(Long collecteurId, String newPassword) {
@@ -157,7 +149,7 @@ public class CollecteurServiceImpl implements CollecteurService {
             Collecteur collecteur = collecteurRepository.findById(collecteurId)
                     .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
 
-            // ✅ VÉRIFICATION DE SÉCURITÉ
+            // VÉRIFICATION DE SÉCURITÉ
             if (!securityService.hasPermissionForCollecteur(collecteur.getId())) {
                 throw new UnauthorizedException("Accès non autorisé à ce collecteur");
             }
@@ -179,27 +171,6 @@ public class CollecteurServiceImpl implements CollecteurService {
             throw new CollecteurServiceException("Erreur lors de la réinitialisation: " + e.getMessage(), e);
         }
     }
-
-    // Valider un mot de passe
-    private void validatePassword(String password) {
-        if (password == null || password.trim().isEmpty()) {
-            throw new IllegalArgumentException("Le mot de passe ne peut pas être vide");
-        }
-
-        if (password.length() < 6) {
-            throw new IllegalArgumentException("Le mot de passe doit avoir au moins 6 caractères");
-        }
-
-        if (password.length() > 128) {
-            throw new IllegalArgumentException("Le mot de passe ne peut pas dépasser 128 caractères");
-        }
-
-        // Vérifier qu'il contient au moins une lettre
-        if (!password.matches(".*[a-zA-Z].*")) {
-            throw new IllegalArgumentException("Le mot de passe doit contenir au moins une lettre");
-        }
-    }
-
 
     /**
      * RÉCUPÉRER LES COLLECTEURS FILTRÉS PAR AGENCE DE L'ADMIN CONNECTÉ
@@ -245,7 +216,7 @@ public class CollecteurServiceImpl implements CollecteurService {
                 throw new UnauthorizedException("Accès non autorisé à ce collecteur");
             }
 
-            // ✅ BASCULER LE STATUT
+            // BASCULER LE STATUT
             boolean newStatus = !collecteur.getActive();
             collecteur.setActive(newStatus);
 
@@ -272,7 +243,7 @@ public class CollecteurServiceImpl implements CollecteurService {
             Collecteur collecteur = getCollecteurById(collecteurId)
                     .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
 
-            // ✅ VÉRIFICATION DE SÉCURITÉ
+            // VÉRIFICATION DE SÉCURITÉ
             if (!securityService.hasPermissionForCollecteur(collecteur.getId())) {
                 throw new UnauthorizedException("Accès non autorisé à ce collecteur");
             }
@@ -331,7 +302,7 @@ public class CollecteurServiceImpl implements CollecteurService {
                 throw new BusinessException("Un collecteur avec cet email existe déjà");
             }
 
-            // 🔥 GESTION DU CHANGEMENT DE MOT DE PASSE
+            // GESTION DU CHANGEMENT DE MOT DE PASSE
             if (dto.getNewPassword() != null && !dto.getNewPassword().trim().isEmpty()) {
                 log.info("🔑 Changement de mot de passe demandé pour le collecteur: {}", id);
                 validatePassword(dto.getNewPassword());
@@ -360,11 +331,13 @@ public class CollecteurServiceImpl implements CollecteurService {
         }
     }
 
-    // CONSERVER TES MÉTHODES EXISTANTES INTACTES
+    // ================================
+    // MÉTHODES EXISTANTES CONSERVÉES
+    // ================================
 
     @Override
     @Transactional
-    public Collecteur updateMontantMaxRetrait(Long collecteurId, Double nouveauMontant, String justification) {
+    public Collecteur updateMontantMaxRetrait(Long collecteurId, BigDecimal nouveauMontant, String justification) {
         Collecteur collecteur = collecteurRepository.findById(collecteurId)
                 .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
 
@@ -390,7 +363,90 @@ public class CollecteurServiceImpl implements CollecteurService {
 
     @Override
     public CollecteurDTO convertToDTO(Collecteur collecteur) {
-        return collecteurMapper.toDTO(collecteur);
+        if (collecteur == null) return null;
+
+        // Mapping de base sans les collections lazy
+        CollecteurDTO dto = collecteurMapper.toDTO(collecteur);
+
+        // CALCUL OPTIMISÉ : Nombre de clients avec requête COUNT
+        if (dto != null && collecteur.getId() != null) {
+            try {
+                // Requête COUNT optimisée pour les clients
+                Long nombreClients = clientRepository.countByCollecteurId(collecteur.getId());
+                dto.setNombreClients(nombreClients != null ? nombreClients.intValue() : 0);
+
+                // Requête COUNT optimisée pour les comptes collecteur
+                Long nombreComptes = compteCollecteurRepository.countByCollecteurId(collecteur.getId());
+                dto.setNombreComptes(nombreComptes != null ? nombreComptes.intValue() : 0);
+
+                log.debug("Collecteur {} - {} clients, {} comptes",
+                        collecteur.getId(), dto.getNombreClients(), dto.getNombreComptes());
+
+            } catch (Exception e) {
+                log.warn("Erreur calcul nombres pour collecteur {}: {}",
+                        collecteur.getId(), e.getMessage());
+                // Valeurs par défaut en cas d'erreur
+                dto.setNombreClients(0);
+                dto.setNombreComptes(0);
+            }
+        }
+
+        return dto;
+    }
+
+    /**
+     *  Conversion avec calculs pour listes
+     * Optimisée pour traiter plusieurs collecteurs en une fois
+     */
+    public List<CollecteurDTO> convertToDTOList(List<Collecteur> collecteurs) {
+        if (collecteurs == null || collecteurs.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        // Extraire les IDs pour requêtes groupées
+        List<Long> collecteurIds = collecteurs.stream()
+                .map(Collecteur::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+
+        // Requêtes groupées pour tous les collecteurs
+        Map<Long, Long> nombreClientsMap = new HashMap<>();
+        Map<Long, Long> nombreComptesMap = new HashMap<>();
+
+        try {
+            // OPTIMISATION : Une seule requête pour tous les nombres de clients
+            List<Object[]> clientCounts = clientRepository.countByCollecteurIds(collecteurIds);
+            for (Object[] row : clientCounts) {
+                Long collecteurId = (Long) row[0];
+                Long count = (Long) row[1];
+                nombreClientsMap.put(collecteurId, count);
+            }
+
+            // OPTIMISATION : Une seule requête pour tous les nombres de comptes
+            List<Object[]> compteCounts = compteCollecteurRepository.countByCollecteurIds(collecteurIds);
+            for (Object[] row : compteCounts) {
+                Long collecteurId = (Long) row[0];
+                Long count = (Long) row[1];
+                nombreComptesMap.put(collecteurId, count);
+            }
+
+        } catch (Exception e) {
+            log.warn("Erreur lors du calcul groupé des nombres: {}", e.getMessage());
+        }
+
+        // Conversion avec injection des nombres calculés
+        return collecteurs.stream()
+                .map(collecteur -> {
+                    CollecteurDTO dto = collecteurMapper.toDTO(collecteur);
+                    if (dto != null && collecteur.getId() != null) {
+                        Long collecteurId = collecteur.getId();
+                        dto.setNombreClients(nombreClientsMap.getOrDefault(collecteurId, 0L).intValue());
+                        dto.setNombreComptes(nombreComptesMap.getOrDefault(collecteurId, 0L).intValue());
+                    }
+                    return dto;
+                })
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -426,17 +482,6 @@ public class CollecteurServiceImpl implements CollecteurService {
     @Override
     public boolean hasActiveOperations(Collecteur collecteur) {
         return collecteur.getClients() != null && !collecteur.getClients().isEmpty();
-    }
-
-    private void sauvegarderHistoriqueMontantMax(Collecteur collecteur, String justification) {
-        HistoriqueMontantMax historique = HistoriqueMontantMax.builder()
-                .collecteur(collecteur)
-                .ancienMontant(collecteur.getMontantMaxRetrait())
-                .dateModification(LocalDateTime.now())
-                .modifiePar(securityService.getCurrentUsername())
-                .justification(justification)
-                .build();
-        historiqueRepository.save(historique);
     }
 
     @Override
@@ -506,8 +551,8 @@ public class CollecteurServiceImpl implements CollecteurService {
                     .journalActuel(journalActuel)
                     .lastUpdate(LocalDateTime.now())
                     .transactionsAujourdhui(0L)
-                    .montantEpargneAujourdhui(0.0)
-                    .montantRetraitAujourdhui(0.0)
+                    .montantEpargneAujourdhui(0.0) // ✅ CORRIGÉ: Double au lieu de BigDecimal
+                    .montantRetraitAujourdhui(0.0) // ✅ CORRIGÉ: Double au lieu de BigDecimal
                     .nouveauxClientsAujourdhui(0L)
                     .montantEpargneSemaine(0.0)
                     .montantRetraitSemaine(0.0)
@@ -515,7 +560,8 @@ public class CollecteurServiceImpl implements CollecteurService {
                     .montantEpargneMois(totalEpargne != null ? totalEpargne : 0.0)
                     .montantRetraitMois(totalRetraits != null ? totalRetraits : 0.0)
                     .transactionsMois(0L)
-                    .objectifMensuel(collecteur.getMontantMaxRetrait())
+                    .objectifMensuel(collecteur.getMontantMaxRetrait() != null ?
+                            collecteur.getMontantMaxRetrait().doubleValue() : 100000.0)
                     .progressionObjectif(calculerProgressionObjectif(totalEpargne, collecteur.getMontantMaxRetrait()))
                     .commissionsMois(0.0)
                     .commissionsAujourdhui(0.0)
@@ -527,131 +573,6 @@ public class CollecteurServiceImpl implements CollecteurService {
             log.error("Erreur lors du calcul des statistiques dashboard", e);
             throw new BusinessException("Erreur lors du calcul des statistiques: " + e.getMessage());
         }
-    }
-
-    // CONSERVER TES MÉTHODES HELPER INTACTES
-    private CollecteurDashboardDTO.MouvementDTO mapToCollecteurDashboardMouvementDTO(Mouvement mouvement) {
-        return CollecteurDashboardDTO.MouvementDTO.builder()
-                .id(mouvement.getId())
-                .type(determinerTypeMouvement(mouvement))
-                .montant(mouvement.getMontant())
-                .date(mouvement.getDateOperation() != null ? mouvement.getDateOperation() : LocalDateTime.now())
-                .clientNom(obtenirNomClient(mouvement))
-                .clientPrenom(obtenirPrenomClient(mouvement))
-                .statut("VALIDE")
-                .build();
-    }
-
-    private CollecteurDashboardDTO.JournalDTO mapToCollecteurDashboardJournalDTO(Journal journal, Double soldeActuel) {
-        return CollecteurDashboardDTO.JournalDTO.builder()
-                .id(journal.getId())
-                .statut(journal.getStatut())
-                .dateDebut(journal.getDateDebut().atStartOfDay())
-                .dateFin(journal.getDateFin().atStartOfDay())
-                .soldeInitial(0.0)
-                .soldeActuel(soldeActuel)
-                .nombreTransactions(0L)
-                .build();
-    }
-
-    private String determinerTypeMouvement(Mouvement mouvement) {
-        if (mouvement.getLibelle() != null) {
-            String libelle = mouvement.getLibelle().toLowerCase();
-            if (libelle.contains("épargne") || libelle.contains("depot")) {
-                return "EPARGNE";
-            } else if (libelle.contains("retrait")) {
-                return "RETRAIT";
-            }
-        }
-        return mouvement.getSens() != null ? mouvement.getSens().toUpperCase() : "INCONNU";
-    }
-
-    private String obtenirNomClient(Mouvement mouvement) {
-        if (mouvement.getClient() != null) {
-            return mouvement.getClient().getNom();
-        }
-        return "N/A";
-    }
-
-    private String obtenirPrenomClient(Mouvement mouvement) {
-        if (mouvement.getClient() != null) {
-            return mouvement.getClient().getPrenom();
-        }
-        return "N/A";
-    }
-
-    private Double calculerProgressionObjectif(Double montantMois, Double objectif) {
-        if (objectif == null || objectif == 0) return 0.0;
-        if (montantMois == null) return 0.0;
-        return (montantMois / objectif) * 100;
-    }
-
-    // CONSERVER TES MÉTHODES DEPRECATED POUR COMPATIBILITÉ
-    @Override
-    @Deprecated
-    public Collecteur saveCollecteur(CollecteurDTO dto, Long agenceId) {
-        CollecteurCreateDTO createDTO = new CollecteurCreateDTO();
-        createDTO.setNom(dto.getNom());
-        createDTO.setPrenom(dto.getPrenom());
-        createDTO.setNumeroCni(dto.getNumeroCni());
-        createDTO.setAdresseMail(dto.getAdresseMail());
-        createDTO.setTelephone(dto.getTelephone());
-        createDTO.setAgenceId(agenceId);
-        createDTO.setMontantMaxRetrait(dto.getMontantMaxRetrait());
-
-        return saveCollecteur(createDTO);
-    }
-
-    @Override
-    @Deprecated
-    public Collecteur saveCollecteur(Collecteur collecteur) {
-        return collecteurRepository.saveAndFlush(collecteur);
-    }
-
-    @Override
-    @Deprecated
-    public Collecteur convertToEntity(CollecteurDTO dto) {
-        CollecteurCreateDTO createDTO = new CollecteurCreateDTO();
-        createDTO.setNom(dto.getNom());
-        createDTO.setPrenom(dto.getPrenom());
-        createDTO.setNumeroCni(dto.getNumeroCni());
-        createDTO.setAdresseMail(dto.getAdresseMail());
-        createDTO.setTelephone(dto.getTelephone());
-        createDTO.setAgenceId(dto.getAgenceId());
-        createDTO.setMontantMaxRetrait(dto.getMontantMaxRetrait());
-        return collecteurMapper.toEntity(createDTO);
-    }
-
-    @Override
-    @Deprecated
-    public void updateCollecteurFromDTO(Collecteur collecteur, CollecteurDTO dto) {
-        CollecteurUpdateDTO updateDTO = new CollecteurUpdateDTO();
-        updateDTO.setNom(dto.getNom());
-        updateDTO.setPrenom(dto.getPrenom());
-        updateDTO.setTelephone(dto.getTelephone());
-        updateDTO.setMontantMaxRetrait(dto.getMontantMaxRetrait());
-        updateDTO.setActive(dto.isActive());
-
-        collecteurMapper.updateEntityFromDTO(updateDTO, collecteur);
-    }
-
-    @Override
-    @Deprecated
-    public Collecteur updateCollecteur(Collecteur collecteur) {
-        return collecteurRepository.saveAndFlush(collecteur);
-    }
-
-    @Override
-    @Deprecated
-    public Collecteur updateCollecteur(Long id, CollecteurDTO dto) {
-        CollecteurUpdateDTO updateDTO = new CollecteurUpdateDTO();
-        updateDTO.setNom(dto.getNom());
-        updateDTO.setPrenom(dto.getPrenom());
-        updateDTO.setTelephone(dto.getTelephone());
-        updateDTO.setMontantMaxRetrait(dto.getMontantMaxRetrait());
-        updateDTO.setActive(dto.isActive());
-
-        return updateCollecteur(id, updateDTO);
     }
 
     /**
@@ -682,7 +603,8 @@ public class CollecteurServiceImpl implements CollecteurService {
         Double moyenneParTransaction = nombreTransactions > 0 ? totalEpargne / nombreTransactions : 0.0;
 
         // 6. Performance vs objectifs
-        Double objectifMensuel = collecteur.getMontantMaxRetrait() != null ? collecteur.getMontantMaxRetrait() : 100000.0;
+        Double objectifMensuel = collecteur.getMontantMaxRetrait() != null ?
+                collecteur.getMontantMaxRetrait().doubleValue() : 100000.0;
         Double tauxRealisation = objectifMensuel > 0 ? (totalEpargne != null ? totalEpargne : 0.0) / objectifMensuel * 100 : 0.0;
 
         // Utiliser HashMap au lieu de Map.of()
@@ -776,7 +698,145 @@ public class CollecteurServiceImpl implements CollecteurService {
         log.info("✅ Statut collecteur {} mis à jour: {}", collecteurId, active);
     }
 
-    // Méthodes utilitaires privées
+    // ================================
+    // MÉTHODES UTILITAIRES PRIVÉES
+    // ================================
+
+    /**
+     * Génère un mot de passe temporaire sécurisé
+     */
+    private String generateTemporaryPassword() {
+        String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        StringBuilder password = new StringBuilder();
+
+        // Assurer au moins une majuscule, une minuscule et un chiffre
+        password.append("C"); // Majuscule
+        password.append("p"); // Minuscule
+        password.append("1"); // Chiffre
+
+        // Ajouter 5 caractères aléatoires
+        for (int i = 0; i < 5; i++) {
+            password.append(chars.charAt((int) (Math.random() * chars.length())));
+        }
+
+        return password.toString();
+    }
+
+    /**
+     * Valide un mot de passe selon les règles métier
+     */
+    private void validatePassword(String password) {
+        if (password == null || password.trim().isEmpty()) {
+            throw new IllegalArgumentException("Le mot de passe ne peut pas être vide");
+        }
+
+        if (password.length() < 6) {
+            throw new IllegalArgumentException("Le mot de passe doit avoir au moins 6 caractères");
+        }
+
+        if (password.length() > 128) {
+            throw new IllegalArgumentException("Le mot de passe ne peut pas dépasser 128 caractères");
+        }
+
+        // Vérifier qu'il contient au moins une lettre
+        if (!password.matches(".*[a-zA-Z].*")) {
+            throw new IllegalArgumentException("Le mot de passe doit contenir au moins une lettre");
+        }
+    }
+
+    /**
+     * Sauvegarde l'historique des modifications de montant maximum
+     */
+    private void sauvegarderHistoriqueMontantMax(Collecteur collecteur, String justification) {
+        HistoriqueMontantMax historique = HistoriqueMontantMax.builder()
+                .collecteur(collecteur)
+                .ancienMontant(collecteur.getMontantMaxRetrait())
+                .dateModification(LocalDateTime.now())
+                .modifiePar(securityService.getCurrentUsername())
+                .justification(justification)
+                .build();
+        historiqueRepository.save(historique);
+    }
+
+    /**
+     * Mappe un mouvement vers le DTO dashboard
+     */
+    private CollecteurDashboardDTO.MouvementDTO mapToCollecteurDashboardMouvementDTO(Mouvement mouvement) {
+        return CollecteurDashboardDTO.MouvementDTO.builder()
+                .id(mouvement.getId())
+                .type(determinerTypeMouvement(mouvement))
+                .montant(mouvement.getMontant())
+                .date(mouvement.getDateOperation() != null ? mouvement.getDateOperation() : LocalDateTime.now())
+                .clientNom(obtenirNomClient(mouvement))
+                .clientPrenom(obtenirPrenomClient(mouvement))
+                .statut("VALIDE")
+                .build();
+    }
+
+    /**
+     * Mappe un journal vers le DTO dashboard
+     */
+    private CollecteurDashboardDTO.JournalDTO mapToCollecteurDashboardJournalDTO(Journal journal, Double soldeActuel) {
+        return CollecteurDashboardDTO.JournalDTO.builder()
+                .id(journal.getId())
+                .statut(journal.getStatut())
+                .dateDebut(journal.getDateDebut().atStartOfDay())
+                .dateFin(journal.getDateFin().atStartOfDay())
+                .soldeInitial(0.0)
+                .soldeActuel(soldeActuel)
+                .nombreTransactions(0L)
+                .build();
+    }
+
+    /**
+     * Détermine le type d'un mouvement
+     */
+    private String determinerTypeMouvement(Mouvement mouvement) {
+        if (mouvement.getLibelle() != null) {
+            String libelle = mouvement.getLibelle().toLowerCase();
+            if (libelle.contains("épargne") || libelle.contains("depot")) {
+                return "EPARGNE";
+            } else if (libelle.contains("retrait")) {
+                return "RETRAIT";
+            }
+        }
+        return mouvement.getSens() != null ? mouvement.getSens().toUpperCase() : "INCONNU";
+    }
+
+    /**
+     * Obtient le nom du client d'un mouvement
+     */
+    private String obtenirNomClient(Mouvement mouvement) {
+        if (mouvement.getClient() != null) {
+            return mouvement.getClient().getNom();
+        }
+        return "N/A";
+    }
+
+    /**
+     * Obtient le prénom du client d'un mouvement
+     */
+    private String obtenirPrenomClient(Mouvement mouvement) {
+        if (mouvement.getClient() != null) {
+            return mouvement.getClient().getPrenom();
+        }
+        return "N/A";
+    }
+
+    /**
+     * Calcule la progression vers l'objectif
+     */
+    private Double calculerProgressionObjectif(Double montantMois, BigDecimal objectifBD) {
+        if (objectifBD == null || objectifBD.compareTo(BigDecimal.ZERO) == 0) return 0.0;
+        if (montantMois == null) return 0.0;
+
+        Double objectif = objectifBD.doubleValue();
+        return (montantMois / objectif) * 100;
+    }
+
+    /**
+     * Calcule la tendance d'évolution
+     */
     private String calculerTendance(List<Map<String, Object>> evolution) {
         if (evolution.size() < 3) return "STABLE";
 
@@ -793,6 +853,9 @@ public class CollecteurServiceImpl implements CollecteurService {
         return "STABLE";
     }
 
+    /**
+     * Calcule le ranking d'un collecteur dans son agence
+     */
     private Integer calculateCollecteurRanking(Long collecteurId, LocalDate dateDebut, LocalDate dateFin) {
         // Récupérer l'agence du collecteur
         Collecteur collecteur = getCollecteurById(collecteurId).orElse(null);
@@ -810,5 +873,66 @@ public class CollecteurServiceImpl implements CollecteurService {
         }
 
         return rankings.size();
+    }
+
+    // ================================
+    // MÉTHODES DEPRECATED POUR COMPATIBILITÉ
+    // ================================
+
+    @Override
+    @Deprecated
+    public Collecteur saveCollecteur(CollecteurDTO dto, Long agenceId) {
+        CollecteurCreateDTO createDTO = CollecteurCreateDTO.builder()
+                .nom(dto.getNom())
+                .prenom(dto.getPrenom())
+                .numeroCni(dto.getNumeroCni())
+                .adresseMail(dto.getAdresseMail())
+                .telephone(dto.getTelephone())
+                .agenceId(agenceId)
+                .montantMaxRetrait(dto.getMontantMaxRetrait())
+                .password("TempPass123") // Mot de passe temporaire
+                .build();
+
+        return saveCollecteur(createDTO);
+    }
+
+    @Override
+    @Deprecated
+    public Collecteur saveCollecteur(Collecteur collecteur) {
+        return collecteurRepository.saveAndFlush(collecteur);
+    }
+
+    @Override
+    @Deprecated
+    public Collecteur convertToEntity(CollecteurDTO dto) {
+        // UTILISONS directement le mapper pour CollecteurDTO
+        return collecteurMapper.toEntity(dto);
+    }
+
+    @Override
+    @Deprecated
+    public void updateCollecteurFromDTO(Collecteur collecteur, CollecteurDTO dto) {
+        // UTILISONS directement le mapper pour CollecteurDTO
+        collecteurMapper.updateEntityFromDTO(dto, collecteur);
+    }
+
+    @Override
+    @Deprecated
+    public Collecteur updateCollecteur(Collecteur collecteur) {
+        return collecteurRepository.saveAndFlush(collecteur);
+    }
+
+    @Override
+    @Deprecated
+    public Collecteur updateCollecteur(Long id, CollecteurDTO dto) {
+        CollecteurUpdateDTO updateDTO = CollecteurUpdateDTO.builder()
+                .nom(dto.getNom())
+                .prenom(dto.getPrenom())
+                .telephone(dto.getTelephone())
+                .montantMaxRetrait(dto.getMontantMaxRetrait())
+                .active(dto.getActive())
+                .build();
+
+        return updateCollecteur(id, updateDTO);
     }
 }

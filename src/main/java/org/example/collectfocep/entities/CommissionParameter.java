@@ -1,7 +1,9 @@
 package org.example.collectfocep.entities;
 
 import jakarta.persistence.*;
+import jakarta.validation.constraints.*;
 import lombok.*;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -11,15 +13,23 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@Table(name = "commission_parameter")
 public class CommissionParameter {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "type", nullable = false)
+    @NotNull(message = "Le type de commission est requis")
     private CommissionType type;
 
-    private double valeur;
+    @Column(name = "valeur", precision = 15, scale = 4)
+    @DecimalMin(value = "0.0", message = "La valeur ne peut pas être négative")
+    private BigDecimal valeur;
+
+    @Column(name = "code_produit", length = 50)
     private String codeProduit;
 
     @Column(name = "valid_from")
@@ -29,25 +39,28 @@ public class CommissionParameter {
     private LocalDate validTo;
 
     @Column(name = "is_active")
-    private boolean active;
+    @Builder.Default
+    private Boolean active = true;
 
     @Version
     private Long version;
 
-    @ManyToOne
+    // Relations hiérarchiques (Client > Collecteur > Agence)
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "client_id")
     private Client client;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "collecteur_id")
     private Collecteur collecteur;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "agence_id")
     private Agence agence;
 
-    @OneToMany(mappedBy = "commissionParameter", cascade = CascadeType.ALL)
+    @OneToMany(mappedBy = "commissionParameter", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<CommissionTier> tiers;
+
     
     /**
      * Méthode de compatibilité pour récupérer la valeur personnalisée
@@ -55,5 +68,6 @@ public class CommissionParameter {
      */
     public java.math.BigDecimal getValeurPersonnalisee() {
         return java.math.BigDecimal.valueOf(this.valeur);
+
     }
 }
