@@ -28,8 +28,8 @@ public class CommissionDistributionEngine {
     private final CompteRepository compteRepository;
     private final CollecteurRepository collecteurRepository;
     private final CompteAttenteRepository compteAttenteRepository;
-    private final CompteRemunerationRepository compteRemunerationRepository;
-    private final CompteChargeRepository compteChargeRepository;
+    private final CompteSalaireCollecteurRepository compteSalaireCollecteurRepository;
+    private final CompteChargeCollecteRepository compteChargeCollecteRepository;
 
     /**
      * Distribue les commissions calculées selon les règles métier
@@ -138,7 +138,7 @@ public class CommissionDistributionEngine {
 
         // Récupération des comptes
         CompteAttente compteAttente = findOrCreateCompteAttente(collecteur);
-        CompteRemuneration compteRemuneration = findOrCreateCompteRemuneration(collecteur);
+        CompteSalaireCollecteur compteRemuneration = findOrCreateCompteSalaireCollecteur(collecteur);
 
         BigDecimal totalCommissions = BigDecimal.valueOf(distribution.getTotalCommissions());
         BigDecimal remunerationCollecteur = distribution.getRemunerationCollecteur();
@@ -169,7 +169,7 @@ public class CommissionDistributionEngine {
 
             // Complément depuis le compte de charge
             BigDecimal deficit = remunerationCollecteur.subtract(totalCommissions);
-            CompteCharge compteCharge = findOrCreateCompteCharge(collecteur);
+            CompteChargeCollecte compteCharge = findOrCreateCompteChargeCollecte(collecteur.getAgence());
 
             mouvements.add(createMouvement(
                     compteCharge, compteRemuneration, deficit,
@@ -243,14 +243,14 @@ public class CommissionDistributionEngine {
                 .orElseThrow(() -> new RuntimeException("Compte d'attente non trouvé pour collecteur: " + collecteur.getId()));
     }
 
-    private CompteRemuneration findOrCreateCompteRemuneration(Collecteur collecteur) {
-        return compteRemunerationRepository.findFirstByCollecteur(collecteur)
-                .orElseThrow(() -> new RuntimeException("Compte rémunération non trouvé pour collecteur: " + collecteur.getId()));
+    private CompteSalaireCollecteur findOrCreateCompteSalaireCollecteur(Collecteur collecteur) {
+        return compteSalaireCollecteurRepository.findFirstByCollecteur(collecteur)
+                .orElseThrow(() -> new RuntimeException("Compte salaire collecteur non trouvé pour collecteur: " + collecteur.getId()));
     }
 
-    private CompteCharge findOrCreateCompteCharge(Collecteur collecteur) {
-        return compteChargeRepository.findFirstByCollecteur(collecteur)
-                .orElseThrow(() -> new RuntimeException("Compte de charge non trouvé pour collecteur: " + collecteur.getId()));
+    private CompteChargeCollecte findOrCreateCompteChargeCollecte(Agence agence) {
+        return compteChargeCollecteRepository.findFirstByAgence(agence)
+                .orElseThrow(() -> new RuntimeException("Compte de charge collecte non trouvé pour agence: " + agence.getId()));
     }
 
     private Compte findCompteProduitEMF() {

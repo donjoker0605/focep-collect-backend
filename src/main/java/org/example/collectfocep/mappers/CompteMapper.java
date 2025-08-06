@@ -28,15 +28,15 @@ public interface CompteMapper {
         } else if (compte instanceof CompteManquant) {
             return ((CompteManquant) compte).getCollecteur() != null ?
                     ((CompteManquant) compte).getCollecteur().getId() : null;
-        } else if (compte instanceof CompteRemuneration) {
-            return ((CompteRemuneration) compte).getCollecteur() != null ?
-                    ((CompteRemuneration) compte).getCollecteur().getId() : null;
+        } else if (compte instanceof CompteSalaireCollecteur) {
+            return ((CompteSalaireCollecteur) compte).getCollecteur() != null ?
+                    ((CompteSalaireCollecteur) compte).getCollecteur().getId() : null;
         } else if (compte instanceof CompteAttente) {
             return ((CompteAttente) compte).getCollecteur() != null ?
                     ((CompteAttente) compte).getCollecteur().getId() : null;
-        } else if (compte instanceof CompteCharge) {
-            return ((CompteCharge) compte).getCollecteur() != null ?
-                    ((CompteCharge) compte).getCollecteur().getId() : null;
+        } else if (compte instanceof CompteChargeCollecte) {
+            // CompteChargeCollecte n'a pas de collecteur, il appartient à une agence
+            return null;
         }else if(compte instanceof CompteSysteme) {
             return null;
         }
@@ -53,20 +53,30 @@ public interface CompteMapper {
             collecteur = ((CompteServiceEntity) compte).getCollecteur();
         } else if (compte instanceof CompteManquant) {
             collecteur = ((CompteManquant) compte).getCollecteur();
-        } else if (compte instanceof CompteRemuneration) {
-            collecteur = ((CompteRemuneration) compte).getCollecteur();
+        } else if (compte instanceof CompteSalaireCollecteur) {
+            collecteur = ((CompteSalaireCollecteur) compte).getCollecteur();
         } else if (compte instanceof CompteAttente) {
             collecteur = ((CompteAttente) compte).getCollecteur();
-        } else if (compte instanceof CompteCharge) {
-            collecteur = ((CompteCharge) compte).getCollecteur();
+        } else if (compte instanceof CompteChargeCollecte) {
+            // CompteChargeCollecte n'a pas de collecteur, il appartient à une agence
+            collecteur = null;
         }
 
         if (collecteur != null && collecteur.getNom() != null && collecteur.getPrenom() != null) {
             return collecteur.getNom() + " " + collecteur.getPrenom();
         }
+        
+        // Gestion des comptes spéciaux
         if (compte instanceof CompteSysteme){
             return "Système";
+        } else if (compte instanceof CompteChargeCollecte) {
+            Agence agence = ((CompteChargeCollecte) compte).getAgence();
+            return agence != null ? "Agence " + agence.getNom() : "Agence Inconnue";
+        } else if (compte instanceof CompteAgence) {
+            Agence agence = ((CompteAgence) compte).getAgence();
+            return agence != null ? "Agence " + agence.getNom() : "Agence Inconnue";
         }
+        
         return null;
     }
 }

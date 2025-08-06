@@ -24,8 +24,8 @@ public class CompteAdapterService {
     private final CompteServiceRepository compteServiceRepository;
     private final CompteManquantRepository compteManquantRepository;
     private final CompteAttenteRepository compteAttenteRepository;
-    private final CompteRemunerationRepository compteRemunerationRepository;
-    private final CompteChargeRepository compteChargeRepository;
+    private final CompteSalaireCollecteurRepository compteSalaireCollecteurRepository;
+    private final CompteChargeCollecteRepository compteChargeCollecteRepository;
 
     // Repository adapteur
     private final CompteCollecteurRepository compteCollecteurRepository;
@@ -106,10 +106,10 @@ public class CompteAdapterService {
     }
 
     /**
-     * ✅ ADAPTATION: CompteRemuneration → CompteCollecteur
+     * ✅ ADAPTATION: CompteSalaireCollecteur → CompteCollecteur
      */
     private CompteCollecteur adaptFromRemunerationEntity(Collecteur collecteur) {
-        Optional<CompteRemuneration> remunerationEntity = compteRemunerationRepository
+        Optional<CompteSalaireCollecteur> remunerationEntity = compteSalaireCollecteurRepository
                 .findFirstByCollecteur(collecteur);
 
         if (remunerationEntity.isPresent()) {
@@ -120,10 +120,10 @@ public class CompteAdapterService {
     }
 
     /**
-     * ✅ ADAPTATION: CompteCharge → CompteCollecteur
+     * ✅ ADAPTATION: CompteChargeCollecte → CompteCollecteur
      */
     private CompteCollecteur adaptFromChargeEntity(Collecteur collecteur) {
-        Optional<CompteCharge> chargeEntity = compteChargeRepository
+        Optional<CompteChargeCollecte> chargeEntity = compteChargeCollecteRepository
                 .findFirstByCollecteur(collecteur);
 
         if (chargeEntity.isPresent()) {

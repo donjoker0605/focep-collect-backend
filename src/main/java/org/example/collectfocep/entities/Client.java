@@ -80,8 +80,19 @@ public class Client {
     @Column(name = "date_maj_coordonnees")
     private LocalDateTime dateMajCoordonnees;
 
+    // Relation bidirectionnelle avec CompteClient
+    @OneToOne(mappedBy = "client", fetch = FetchType.LAZY)
+    private CompteClient compteClient;
+
     public Boolean getValide() {
         return this.valide;
+    }
+    
+    /**
+     * Récupère le solde du client depuis son compte
+     */
+    public Double getSolde() {
+        return compteClient != null ? compteClient.getSolde() : 0.0;
     }
 
     public String getNumeroCompte() {

@@ -37,7 +37,7 @@ public class ClientDTO {
 
     private String photoPath;
 
-    // 🔥 NOUVEAU : Gestion statut actif/inactif
+    // Gestion statut actif/inactif
     private Boolean valide = true;
 
     @NotNull(message = "L'ID du collecteur est obligatoire")
@@ -65,10 +65,10 @@ public class ClientDTO {
 
     private LocalDateTime dateMajCoordonnees;
 
-    // 🔥 NOUVEAUX CHAMPS COMMISSION - Utilise les DTOs existants
+    // NOUVEAUX CHAMPS COMMISSION - Utilise les DTOs existants
     private CommissionParameterDTO commissionParameter;
 
-    // 🔥 MÉTHODES UTILITAIRES
+    // MÉTHODES UTILITAIRES
     public boolean hasLocation() {
         return latitude != null && longitude != null;
     }

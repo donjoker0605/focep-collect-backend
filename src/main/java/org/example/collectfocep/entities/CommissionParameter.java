@@ -48,4 +48,12 @@ public class CommissionParameter {
 
     @OneToMany(mappedBy = "commissionParameter", cascade = CascadeType.ALL)
     private List<CommissionTier> tiers;
+    
+    /**
+     * Méthode de compatibilité pour récupérer la valeur personnalisée
+     * (alias pour getValeur())
+     */
+    public java.math.BigDecimal getValeurPersonnalisee() {
+        return java.math.BigDecimal.valueOf(this.valeur);
+    }
 }

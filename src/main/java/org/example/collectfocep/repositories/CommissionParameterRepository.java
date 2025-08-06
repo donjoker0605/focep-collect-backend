@@ -22,7 +22,6 @@ public interface CommissionParameterRepository extends JpaRepository<CommissionP
     Optional<CommissionParameter> findByCollecteur(Collecteur collecteur);
     Optional<CommissionParameter> findByAgence(Agence agence);
 
-
     @Query("SELECT cp FROM CommissionParameter cp WHERE cp.collecteur.id = :collecteurId AND cp.active = true")
     List<CommissionParameter> findActiveByCollecteurId(@Param("collecteurId") Long collecteurId);
 
@@ -81,4 +80,9 @@ public interface CommissionParameterRepository extends JpaRepository<CommissionP
         ORDER BY cp.validFrom DESC
         """)
     Optional<CommissionParameter> findActiveCommissionParameterByAgence(@Param("agenceId") Long agenceId);
+
+    // Méthodes de compatibilité pour CommissionOrchestrator
+    Optional<CommissionParameter> findByClientId(Long clientId);
+    Optional<CommissionParameter> findByCollecteurId(Long collecteurId);  
+    Optional<CommissionParameter> findByAgenceId(Long agenceId);
 }

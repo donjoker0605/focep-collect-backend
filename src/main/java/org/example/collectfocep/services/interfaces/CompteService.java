@@ -52,9 +52,9 @@ public interface CompteService {
     CompteAttente findAttenteAccount(Collecteur collecteur);
 
     /**
-     * Trouve le compte rémunération d'un collecteur
+     * Trouve le compte salaire d'un collecteur
      */
-    CompteRemuneration findRemunerationAccount(Collecteur collecteur);
+    CompteSalaireCollecteur findSalaireAccount(Collecteur collecteur);
 
     /**
      * Met à jour le solde d'un compte

@@ -32,9 +32,9 @@ public class CompteServiceImpl implements CompteService {
     private final CompteLiaisonRepository compteLiaisonRepository;
     private final CompteServiceRepository compteServiceRepository;
     private final CompteManquantRepository compteManquantRepository;
-    private final CompteRemunerationRepository compteRemunerationRepository;
+    private final CompteSalaireCollecteurRepository compteSalaireCollecteurRepository;
     private final CompteAttenteRepository compteAttenteRepository;
-    private final CompteChargeRepository compteChargeRepository;
+    private final CompteChargeCollecteRepository compteChargeCollecteRepository;
     private final CollecteurRepository collecteurRepository;
     private final CompteClientRepository compteClientRepository;
     private final ClientRepository clientRepository;
@@ -105,8 +105,8 @@ public class CompteServiceImpl implements CompteService {
     }
 
     private void createCompteRemuneration(Collecteur collecteur, String codeAgence, String collecteurIdFormatted) {
-        if (!compteRemunerationRepository.existsByCollecteur(collecteur)) {
-            CompteRemuneration compteRemuneration = CompteRemuneration.builder()
+        if (!compteSalaireCollecteurRepository.existsByCollecteur(collecteur)) {
+            CompteSalaireCollecteur compteRemuneration = CompteSalaireCollecteur.builder()
                     .collecteur(collecteur)
                     .typeCompte("REMUNERATION")
                     .nomCompte("Compte Rémunération " + collecteur.getNom())
@@ -115,7 +115,7 @@ public class CompteServiceImpl implements CompteService {
                     .version(0L)
                     .build();
 
-            CompteRemuneration saved = compteRemunerationRepository.saveAndFlush(compteRemuneration);
+            CompteSalaireCollecteur saved = compteSalaireCollecteurRepository.saveAndFlush(compteRemuneration);
             entityManager.refresh(saved);
             log.info("Compte REMUNERATION créé pour le collecteur: {}", collecteur.getId());
         }
@@ -139,17 +139,17 @@ public class CompteServiceImpl implements CompteService {
     }
 
     private void createCompteCharge(Collecteur collecteur, String codeAgence, String collecteurIdFormatted) {
-        if (!compteChargeRepository.existsByCollecteur(collecteur)) {
-            CompteCharge compteCharge = CompteCharge.builder()
-                    .collecteur(collecteur)
-                    .typeCompte("CHARGE")
-                    .nomCompte("Compte Charge " + collecteur.getNom())
+        if (!compteChargeCollecteRepository.existsByCollecteur(collecteur)) {
+            CompteChargeCollecte compteCharge = CompteChargeCollecte.builder()
+                    .agence(collecteur.getAgence())
+                    .typeCompte("CHARGE_COLLECTE")
+                    .nomCompte("Compte Charge Collecte - " + collecteur.getAgence().getNom())
                     .numeroCompte("376" + codeAgence + collecteurIdFormatted)
                     .solde(0.0)
                     .version(0L)
                     .build();
 
-            CompteCharge saved = compteChargeRepository.saveAndFlush(compteCharge);
+            CompteChargeCollecte saved = compteChargeCollecteRepository.saveAndFlush(compteCharge);
             entityManager.refresh(saved);
             log.info("Compte CHARGE créé pour le collecteur: {}", collecteur.getId());
         }
@@ -217,8 +217,8 @@ public class CompteServiceImpl implements CompteService {
 
     @Override
     public CompteCollecteur findSalaryAccount(Collecteur collecteur) {
-        // Utiliser CompteRemunerationRepository directement
-        Optional<CompteRemuneration> compteRemuneration = compteRemunerationRepository.findFirstByCollecteur(collecteur);
+        // Utiliser CompteSalaireCollecteurRepository directement
+        Optional<CompteSalaireCollecteur> compteRemuneration = compteSalaireCollecteurRepository.findFirstByCollecteur(collecteur);
 
         if (compteRemuneration.isPresent()) {
             return convertToCompteCollecteur(compteRemuneration.get(), collecteur);
@@ -247,7 +247,7 @@ public class CompteServiceImpl implements CompteService {
 
     @Override
     public Compte findChargeAccount(Collecteur collecteur) {
-        Optional<CompteCharge> compteCharge = compteChargeRepository.findFirstByCollecteur(collecteur);
+        Optional<CompteChargeCollecte> compteCharge = compteChargeCollecteRepository.findFirstByCollecteur(collecteur);
 
         if (compteCharge.isPresent()) {
             return compteCharge.get();
@@ -276,9 +276,9 @@ public class CompteServiceImpl implements CompteService {
         comptes.addAll(compteCollecteurRepository.findByCollecteur(collecteur));
         comptes.addAll(compteServiceRepository.findAllByCollecteur(collecteur));
         comptes.addAll(compteManquantRepository.findAllByCollecteur(collecteur));
-        comptes.addAll(compteRemunerationRepository.findAllByCollecteur(collecteur));
+        comptes.addAll(compteSalaireCollecteurRepository.findAllByCollecteur(collecteur));
         comptes.addAll(compteAttenteRepository.findAllByCollecteur(collecteur));
-        comptes.addAll(compteChargeRepository.findAllByCollecteur(collecteur));
+        comptes.addAll(compteChargeCollecteRepository.findAllByCollecteur(collecteur));
 
         return comptes;
     }
@@ -292,9 +292,9 @@ public class CompteServiceImpl implements CompteService {
         comptes.addAll(compteCollecteurRepository.findByCollecteur(collecteur));
         compteServiceRepository.findAllByCollecteur(collecteur).forEach(comptes::add);
         comptes.addAll(compteManquantRepository.findAllByCollecteur(collecteur));
-        comptes.addAll(compteRemunerationRepository.findAllByCollecteur(collecteur));
+        comptes.addAll(compteSalaireCollecteurRepository.findAllByCollecteur(collecteur));
         comptes.addAll(compteAttenteRepository.findAllByCollecteur(collecteur));
-        comptes.addAll(compteChargeRepository.findAllByCollecteur(collecteur));
+        comptes.addAll(compteChargeCollecteRepository.findAllByCollecteur(collecteur));
 
         int start = (int) pageable.getOffset();
         int end = Math.min((start + pageable.getPageSize()), comptes.size());
@@ -419,10 +419,10 @@ public class CompteServiceImpl implements CompteService {
     }
 
     @Override
-    public CompteRemuneration findRemunerationAccount(Collecteur collecteur) {
-        log.debug("Recherche du compte rémunération pour collecteur ID={}", collecteur.getId());
+    public CompteSalaireCollecteur findSalaireAccount(Collecteur collecteur) {
+        log.debug("Recherche du compte salaire pour collecteur ID={}", collecteur.getId());
 
-        return compteRemunerationRepository.findFirstByCollecteur(collecteur)
+        return compteSalaireCollecteurRepository.findFirstByCollecteur(collecteur)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Compte rémunération non trouvé pour le collecteur: " + collecteur.getId()));
     }
@@ -465,8 +465,8 @@ public class CompteServiceImpl implements CompteService {
             return true;
         }
 
-        // Vérifier dans CompteCharge (autorise négatif)
-        if (compteChargeRepository.findById(compteId).isPresent()) {
+        // Vérifier dans CompteChargeCollecte (autorise négatif)
+        if (compteChargeCollecteRepository.findById(compteId).isPresent()) {
             return true;
         }
 
@@ -526,7 +526,7 @@ public class CompteServiceImpl implements CompteService {
 
     @Override
     public boolean hasCompteRemuneration(Collecteur collecteur) {
-        return compteRemunerationRepository.existsByCollecteur(collecteur);
+        return compteSalaireCollecteurRepository.existsByCollecteur(collecteur);
     }
 
     @Override
@@ -539,8 +539,8 @@ public class CompteServiceImpl implements CompteService {
         compteServiceRepository.findAllByCollecteur(collecteur).forEach(comptes::add);
         compteManquantRepository.findAllByCollecteur(collecteur).forEach(comptes::add);
         compteAttenteRepository.findAllByCollecteur(collecteur).forEach(comptes::add);
-        compteRemunerationRepository.findAllByCollecteur(collecteur).forEach(comptes::add);
-        compteChargeRepository.findAllByCollecteur(collecteur).forEach(comptes::add);
+        compteSalaireCollecteurRepository.findAllByCollecteur(collecteur).forEach(comptes::add);
+        compteChargeCollecteRepository.findAllByCollecteur(collecteur).forEach(comptes::add);
 
         return comptes;
     }
@@ -645,13 +645,13 @@ public class CompteServiceImpl implements CompteService {
             return;
         }
 
-        Optional<CompteRemuneration> compteRemuneration = compteRemunerationRepository.findById(compteId);
+        Optional<CompteSalaireCollecteur> compteRemuneration = compteSalaireCollecteurRepository.findById(compteId);
         if (compteRemuneration.isPresent()) {
-            CompteRemuneration compte = compteRemuneration.get();
+            CompteSalaireCollecteur compte = compteRemuneration.get();
             Double ancienSolde = compte.getSolde();
             compte.setSolde(nouveauSolde);
-            compteRemunerationRepository.save(compte);
-            log.info("✅ Solde CompteRemuneration mis à jour: {} → {} pour compte {}", ancienSolde, nouveauSolde, compteId);
+            compteSalaireCollecteurRepository.save(compte);
+            log.info("✅ Solde CompteSalaireCollecteur mis à jour: {} → {} pour compte {}", ancienSolde, nouveauSolde, compteId);
             return;
         }
 
@@ -683,7 +683,7 @@ public class CompteServiceImpl implements CompteService {
             return compteAttente.get().getSolde();
         }
 
-        Optional<CompteRemuneration> compteRemuneration = compteRemunerationRepository.findById(compteId);
+        Optional<CompteSalaireCollecteur> compteRemuneration = compteSalaireCollecteurRepository.findById(compteId);
         if (compteRemuneration.isPresent()) {
             return compteRemuneration.get().getSolde();
         }
@@ -713,12 +713,12 @@ public class CompteServiceImpl implements CompteService {
                             .map(CompteAttente::getSolde)
                             .orElse(0.0);
                 case "REMUNERATION":
-                    return compteRemunerationRepository.findFirstByCollecteur(collecteur)
-                            .map(CompteRemuneration::getSolde)
+                    return compteSalaireCollecteurRepository.findFirstByCollecteur(collecteur)
+                            .map(CompteSalaireCollecteur::getSolde)
                             .orElse(0.0);
                 case "CHARGE":
-                    return compteChargeRepository.findFirstByCollecteur(collecteur)
-                            .map(CompteCharge::getSolde)
+                    return compteChargeCollecteRepository.findFirstByCollecteur(collecteur)
+                            .map(CompteChargeCollecte::getSolde)
                             .orElse(0.0);
                 default:
                     throw new IllegalArgumentException("Type de compte non supporté: " + typeCompte);
@@ -760,17 +760,17 @@ public class CompteServiceImpl implements CompteService {
                     break;
 
                 case "REMUNERATION":
-                    CompteRemuneration compteRemuneration = compteRemunerationRepository.findFirstByCollecteur(collecteur)
+                    CompteSalaireCollecteur compteRemuneration = compteSalaireCollecteurRepository.findFirstByCollecteur(collecteur)
                             .orElseThrow(() -> new ResourceNotFoundException("Compte rémunération non trouvé"));
                     compteRemuneration.setSolde(nouveauSolde);
-                    compteRemunerationRepository.save(compteRemuneration);
+                    compteSalaireCollecteurRepository.save(compteRemuneration);
                     break;
 
                 case "CHARGE":
-                    CompteCharge compteCharge = compteChargeRepository.findFirstByCollecteur(collecteur)
+                    CompteChargeCollecte compteCharge = compteChargeCollecteRepository.findFirstByCollecteur(collecteur)
                             .orElseThrow(() -> new ResourceNotFoundException("Compte charge non trouvé"));
                     compteCharge.setSolde(nouveauSolde);
-                    compteChargeRepository.save(compteCharge);
+                    compteChargeCollecteRepository.save(compteCharge);
                     break;
 
                 default:
