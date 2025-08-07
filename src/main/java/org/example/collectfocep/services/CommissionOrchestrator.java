@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.entities.*;
 import org.example.collectfocep.repositories.*;
+import org.example.collectfocep.services.CommissionCalculatorService;
 import org.example.collectfocep.services.impl.MouvementServiceImpl;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,6 +37,8 @@ public class CommissionOrchestrator {
     private final CommissionParameterRepository parameterRepository;
     private final ClientRepository clientRepository;
     private final CollecteurRepository collecteurRepository;
+    private final MouvementRepository mouvementRepository;
+    private final CompteClientRepository compteClientRepository;
 
     /**
      * Lance le calcul de commission complet pour un collecteur sur une période
@@ -199,9 +202,24 @@ public class CommissionOrchestrator {
     }
 
     private BigDecimal calculateMontantEpargne(Long clientId, LocalDate dateDebut, LocalDate dateFin) {
-        // TODO: Implémenter le calcul réel basé sur les mouvements d'épargne
-        // Ceci est un placeholder - tu devras adapter selon ta structure
-        return BigDecimal.valueOf(100000); // Temporaire pour les tests
+        log.debug("Calcul montant épargne - Client: {}, Période: {} à {}", 
+                clientId, dateDebut, dateFin);
+        
+        LocalDateTime startDateTime = dateDebut.atStartOfDay();
+        LocalDateTime endDateTime = dateFin.atTime(23, 59, 59);
+        
+        // Somme des mouvements d'épargne (CREDIT) pour le client sur la période
+        Double totalEpargne = mouvementRepository.sumAmountByClientAndPeriod(
+                clientId, startDateTime, endDateTime);
+        
+        if (totalEpargne == null) {
+            totalEpargne = 0.0;
+        }
+        
+        BigDecimal result = BigDecimal.valueOf(totalEpargne);
+        log.debug("Montant épargne calculé - Client {}: {}", clientId, result);
+        
+        return result;
     }
 
     private Collecteur getCollecteur(Long collecteurId) {
@@ -210,11 +228,15 @@ public class CommissionOrchestrator {
     }
 
     private CompteClient getCompteClient(Long clientId) {
-        // TODO: Récupération du compte client réel
-        // Placeholder temporaire
-        CompteClient compte = new CompteClient();
-        compte.setId(clientId);
-        return compte;
+        log.debug("Récupération compte client: {}", clientId);
+        
+        // Récupérer le client d'abord
+        Client client = clientRepository.findById(clientId)
+                .orElseThrow(() -> new RuntimeException("Client non trouvé: " + clientId));
+        
+        return compteClientRepository.findByClient(client)
+                .orElseThrow(() -> new RuntimeException(
+                        "Compte client non trouvé pour client: " + clientId));
     }
 
     private Mouvement createMouvement(Compte source, Compte destination, BigDecimal montant, String libelle) {

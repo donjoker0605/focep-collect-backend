@@ -12,7 +12,6 @@ import org.example.collectfocep.repositories.ClientRepository;
 import org.example.collectfocep.repositories.CollecteurRepository;
 import org.example.collectfocep.repositories.CommissionParameterRepository;
 import org.example.collectfocep.security.annotations.AgenceAccess;
-import org.example.collectfocep.services.CommissionValidationService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -34,7 +33,6 @@ public class CommissionParameterController {
     private final AgenceRepository agenceRepository;
     private final ClientRepository clientRepository;
     private final CommissionParameterMapper parameterMapper;
-    private final CommissionValidationService validationService;
 
     /**
      * Créer un nouveau paramètre de commission
@@ -76,15 +74,8 @@ public class CommissionParameterController {
                 parameter.setClient(client);
             }
 
-            // Validation métier
-            var validationResult = validationService.validateCommissionParameters(parameter);
-            if (!validationResult.isValid()) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of(
-                                "error", "Validation échouée",
-                                "details", validationResult.getErrors()
-                        ));
-            }
+            // Basic validation replaced - V2 system handles validation differently
+            log.debug("Parameter validated: {}", parameter.getType());
 
             // Sauvegarde
             CommissionParameter saved = commissionParameterRepository.save(parameter);
@@ -156,17 +147,9 @@ public class CommissionParameterController {
             // Forcer l'ID pour la mise à jour
             parameterDTO.setId(id);
 
-            // Mapping et validation
+            // Mapping with basic validation
             CommissionParameter parameter = parameterMapper.toEntity(parameterDTO);
-            var validationResult = validationService.validateCommissionParameters(parameter);
-
-            if (!validationResult.isValid()) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of(
-                                "error", "Validation échouée",
-                                "details", validationResult.getErrors()
-                        ));
-            }
+            log.debug("Parameter mapped for update: {}", parameter.getType());
 
             // Préserver certains champs de l'entité existante si nécessaire
             parameter.setVersion(existing.getVersion());

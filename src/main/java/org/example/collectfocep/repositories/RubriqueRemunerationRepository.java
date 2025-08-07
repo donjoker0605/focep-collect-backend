@@ -15,9 +15,10 @@ public interface RubriqueRemunerationRepository extends JpaRepository<RubriqueRe
     /**
      * Récupère les rubriques actives pour un collecteur donné
      */
-    @Query(value = "SELECT * FROM rubrique_remuneration r " +
+    @Query(value = "SELECT DISTINCT r.* FROM rubrique_remuneration r " +
+           "INNER JOIN rubrique_collecteurs rc ON r.id = rc.rubrique_id " +
            "WHERE r.active = true " +
-           "AND :collecteurId IN (SELECT value FROM JSON_TABLE(r.collecteur_ids, '$[*]' COLUMNS (value BIGINT PATH '$')) AS jt) " +
+           "AND rc.collecteur_id = :collecteurId " +
            "AND r.date_application <= :currentDate " +
            "AND (r.delai_jours IS NULL OR DATE_ADD(r.date_application, INTERVAL r.delai_jours DAY) >= :currentDate) " +
            "ORDER BY r.date_application ASC", nativeQuery = true)
@@ -43,4 +44,11 @@ public interface RubriqueRemunerationRepository extends JpaRepository<RubriqueRe
     List<RubriqueRemuneration> findExpiringRubriques(
             @Param("currentDate") LocalDate currentDate,
             @Param("expirationDate") LocalDate expirationDate);
+
+    /**
+     * Alias pour la compatibilité
+     */
+    default List<RubriqueRemuneration> findActiveRubriquesByCollecteurId(Long collecteurId) {
+        return findActiveRubriquesByCollecteur(collecteurId, LocalDate.now());
+    }
 }

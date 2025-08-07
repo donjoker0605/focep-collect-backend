@@ -18,6 +18,8 @@ public class CompteSpecialiseService {
 
     private final CompteRepository compteRepository;
     private final CompteAgenceRepository compteAgenceRepository;
+    private final AgenceRepository agenceRepository;
+    private final CollecteurRepository collecteurRepository;
     
     /**
      * Récupère ou crée le C.P.C.C (Compte Passage Commission Collecte) pour une agence
@@ -80,8 +82,22 @@ public class CompteSpecialiseService {
     }
 
     /**
-     * Récupère le C.S.C (Compte Salaire Collecteur) pour un collecteur
+     * Récupère ou crée le C.S.C (Compte Salaire Collecteur) pour un collecteur
      */
+    @Transactional
+    public CompteSalaireCollecteur getOrCreateCSC(Long collecteurId) {
+        log.debug("Récupération C.S.C pour collecteur: {}", collecteurId);
+        
+        return compteRepository.findByCollecteurIdAndTypeCompte(collecteurId, "SALAIRE_COLLECTEUR")
+                .map(compte -> (CompteSalaireCollecteur) compte)
+                .orElseGet(() -> createCSC(collecteurId));
+    }
+
+    /**
+     * Récupère le C.S.C (Compte Salaire Collecteur) pour un collecteur
+     * @deprecated Utiliser getOrCreateCSC à la place
+     */
+    @Deprecated
     @Transactional(readOnly = true)
     public CompteSalaireCollecteur getCSC(Long collecteurId) {
         log.debug("Récupération C.S.C pour collecteur: {}", collecteurId);
@@ -161,10 +177,28 @@ public class CompteSpecialiseService {
         return compteRepository.save(ct);
     }
 
+    private CompteSalaireCollecteur createCSC(Long collecteurId) {
+        log.info("Création C.S.C pour collecteur: {}", collecteurId);
+        
+        Collecteur collecteur = getCollecteurById(collecteurId);
+        
+        CompteSalaireCollecteur csc = CompteSalaireCollecteur.builder()
+                .collecteur(collecteur)
+                .numeroCompte(generateNumeroCompte("CSC", collecteurId))
+                .solde(0.0)
+                .build();
+                
+        return compteRepository.save(csc);
+    }
+
     private Agence getAgenceById(Long agenceId) {
-        return compteAgenceRepository.findById(agenceId)
-                .map(CompteAgence::getAgence)
+        return agenceRepository.findById(agenceId)
                 .orElseThrow(() -> new RuntimeException("Agence non trouvée: " + agenceId));
+    }
+
+    private Collecteur getCollecteurById(Long collecteurId) {
+        return collecteurRepository.findById(collecteurId)
+                .orElseThrow(() -> new RuntimeException("Collecteur non trouvé: " + collecteurId));
     }
 
     private String generateNumeroCompte(String prefix, Long agenceId) {

@@ -64,10 +64,37 @@ public class CommissionParameter {
     
     /**
      * Méthode de compatibilité pour récupérer la valeur personnalisée
-     * (alias pour getValeur())
      */
-    public java.math.BigDecimal getValeurPersonnalisee() {
-        return java.math.BigDecimal.valueOf(this.valeur);
+    public BigDecimal getValeurPersonnalisee() {
+        return this.valeur;
+    }
 
+    /**
+     * Trouve le palier applicable pour un montant donné
+     */
+    public CommissionTier findApplicableTier(BigDecimal montant) {
+        if (tiers == null || tiers.isEmpty() || montant == null) {
+            return null;
+        }
+
+        double montantDouble = montant.doubleValue();
+        for (CommissionTier tier : tiers) {
+            if (tier.getMontantMin() != null && montantDouble >= tier.getMontantMin()) {
+                if (tier.getMontantMax() == null || montantDouble <= tier.getMontantMax()) {
+                    return tier;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Détermine le scope du paramètre (CLIENT, COLLECTEUR, AGENCE)
+     */
+    public String getScope() {
+        if (client != null) return "CLIENT";
+        if (collecteur != null) return "COLLECTEUR";
+        if (agence != null) return "AGENCE";
+        return "UNKNOWN";
     }
 }

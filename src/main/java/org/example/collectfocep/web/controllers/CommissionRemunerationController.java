@@ -1,12 +1,16 @@
 package org.example.collectfocep.web.controllers;
 
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.example.collectfocep.services.*;
+import org.example.collectfocep.services.CommissionOrchestrator;
+import org.example.collectfocep.services.ExcelReportGenerator;
+import org.example.collectfocep.services.RemunerationProcessor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
@@ -112,9 +116,15 @@ public class CommissionRemunerationController {
                         .body(ErrorResponse.of("COMMISSION_FAILED", commissionResult.getErrorMessage()));
             }
 
-            // 2. Rémunération basée sur S calculé
+            // 2. Rémunération basée sur S calculé avec validation de période
+            String effectuePar = SecurityContextHolder.getContext().getAuthentication().getName();
             RemunerationProcessor.RemunerationResult remunerationResult = 
-                    remunerationProcessor.processRemuneration(collecteurId, commissionResult.getMontantSCollecteur());
+                    remunerationProcessor.processRemunerationWithPeriod(
+                            collecteurId, 
+                            commissionResult.getMontantSCollecteur(), 
+                            dateDebut, 
+                            dateFin,
+                            effectuePar);
 
             if (!remunerationResult.isSuccess()) {
                 return ResponseEntity.badRequest()
@@ -222,6 +232,55 @@ public class CommissionRemunerationController {
         } catch (IOException e) {
             log.error("Erreur génération rapport rémunération Excel: {}", e.getMessage(), e);
             return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * Récupère l'historique des rémunérations d'un collecteur
+     */
+    @GetMapping("/collecteur/{collecteurId}/historique-remuneration")
+    public ResponseEntity<?> getHistoriqueRemuneration(@PathVariable Long collecteurId) {
+        
+        log.info("Récupération historique rémunération collecteur: {}", collecteurId);
+        
+        try {
+            var historique = remunerationProcessor.getHistoriqueRemuneration(collecteurId);
+            return ResponseEntity.ok(historique);
+            
+        } catch (Exception e) {
+            log.error("Erreur récupération historique: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError()
+                    .body(ErrorResponse.of("INTERNAL_ERROR", "Erreur système"));
+        }
+    }
+    
+    /**
+     * Vérifie si une rémunération existe déjà pour une période
+     */
+    @GetMapping("/collecteur/{collecteurId}/verifier-periode")
+    public ResponseEntity<?> verifierPeriodeRemuneration(
+            @PathVariable Long collecteurId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateDebut,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFin) {
+        
+        log.info("Vérification période rémunération - Collecteur: {}, Période: {} à {}", 
+                collecteurId, dateDebut, dateFin);
+        
+        try {
+            boolean existe = remunerationProcessor.remunerationExistsPourPeriode(collecteurId, dateDebut, dateFin);
+            
+            return ResponseEntity.ok().body(java.util.Map.of(
+                "collecteurId", collecteurId,
+                "dateDebut", dateDebut,
+                "dateFin", dateFin,
+                "remunerationExiste", existe,
+                "message", existe ? "Une rémunération existe déjà sur cette période" : "Période disponible"
+            ));
+            
+        } catch (Exception e) {
+            log.error("Erreur vérification période: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError()
+                    .body(ErrorResponse.of("INTERNAL_ERROR", "Erreur système"));
         }
     }
 

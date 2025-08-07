@@ -45,9 +45,7 @@ public interface CommissionParameterMapper {
     @Mapping(target = "agence", ignore = true)
     @Mapping(target = "tiers", ignore = true)
     @Mapping(target = "version", ignore = true)
-    // ✅ CORRECTION CRITIQUE : Ignorer explicitement toutes les méthodes builder
-    @Mapping(target = "valeurFromDouble", ignore = true)
-    @Mapping(target = "valeurFromString", ignore = true)
+    // ✅ CORRECTION CRITIQUE : Ces propriétés n'existent pas dans l'entité
     @Mapping(expression = "java(doubleToBigDecimal(dto.getValeur()))", target = "valeur")
     CommissionParameter toEntity(CommissionParameterDTO dto);
 
@@ -60,9 +58,7 @@ public interface CommissionParameterMapper {
     @Mapping(target = "agence", ignore = true)
     @Mapping(target = "tiers", ignore = true)
     @Mapping(target = "version", ignore = true)
-    // ✅ CORRECTION CRITIQUE : Ignorer les méthodes builder
-    @Mapping(target = "valeurFromDouble", ignore = true)
-//    @Mapping(target = "valeurFromString", ignore = true)
+    //  Ces propriétés n'existent pas dans l'entité
     @Mapping(expression = "java(doubleToBigDecimal(dto.getValeur()))", target = "valeur")
     void updateEntityFromDTO(CommissionParameterDTO dto, @MappingTarget CommissionParameter entity);
 

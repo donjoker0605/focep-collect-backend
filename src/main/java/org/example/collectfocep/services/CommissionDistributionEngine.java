@@ -245,7 +245,20 @@ public class CommissionDistributionEngine {
 
     private CompteSalaireCollecteur findOrCreateCompteSalaireCollecteur(Collecteur collecteur) {
         return compteSalaireCollecteurRepository.findFirstByCollecteur(collecteur)
-                .orElseThrow(() -> new RuntimeException("Compte salaire collecteur non trouvé pour collecteur: " + collecteur.getId()));
+                .orElseGet(() -> {
+                    // Créer automatiquement le compte salaire manquant
+                    log.info("Création compte salaire pour collecteur: {}", collecteur.getId());
+                    
+                    CompteSalaireCollecteur compteSalaire = CompteSalaireCollecteur.builder()
+                            .nomCompte("Compte Salaire - " + collecteur.getNom() + " " + collecteur.getPrenom())
+                            .numeroCompte("SAL-" + collecteur.getId() + "-" + System.currentTimeMillis())
+                            .typeCompte("COMPTE_SALAIRE_COLLECTEUR")
+                            .solde(0.0)
+                            .collecteur(collecteur)
+                            .build();
+                            
+                    return compteSalaireCollecteurRepository.save(compteSalaire);
+                });
     }
 
     private CompteChargeCollecte findOrCreateCompteChargeCollecte(Agence agence) {

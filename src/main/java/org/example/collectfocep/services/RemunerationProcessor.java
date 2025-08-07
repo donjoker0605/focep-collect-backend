@@ -1,8 +1,11 @@
 package org.example.collectfocep.services;
 
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.entities.*;
+import org.example.collectfocep.repositories.CollecteurRepository;
+import org.example.collectfocep.repositories.HistoriqueRemunerationRepository;
 import org.example.collectfocep.repositories.RubriqueRemunerationRepository;
 import org.example.collectfocep.services.impl.MouvementServiceImpl;
 import org.springframework.stereotype.Service;
@@ -26,6 +29,48 @@ public class RemunerationProcessor {
     private final RubriqueRemunerationRepository rubriqueRepository;
     private final CompteSpecialiseService compteSpecialiseService;
     private final MouvementServiceImpl mouvementService;
+    private final HistoriqueRemunerationRepository historiqueRemunerationRepository;
+    private final CollecteurRepository collecteurRepository;
+
+    /**
+     * Traite la rémunération complète d'un collecteur avec validation de période
+     * 
+     * @param collecteurId ID du collecteur
+     * @param S Somme des commissions collectées du collecteur pour la période
+     * @param dateDebutPeriode Date de début de la période
+     * @param dateFinPeriode Date de fin de la période  
+     * @param effectuePar Utilisateur qui effectue la rémunération
+     * @return Résultat détaillé de la rémunération
+     */
+    @Transactional
+    public RemunerationResult processRemunerationWithPeriod(
+            Long collecteurId, 
+            BigDecimal S, 
+            LocalDate dateDebutPeriode, 
+            LocalDate dateFinPeriode,
+            String effectuePar) {
+        
+        log.info("Début rémunération collecteur {} - Période: {} à {}, S: {}", 
+                 collecteurId, dateDebutPeriode, dateFinPeriode, S);
+
+        // 1. Validation de la période (empêcher les doubles rémunérations)
+        if (historiqueRemunerationRepository.existsOverlappingPeriod(collecteurId, dateDebutPeriode, dateFinPeriode)) {
+            String message = String.format("Une rémunération existe déjà pour le collecteur %d sur la période %s - %s", 
+                                          collecteurId, dateDebutPeriode, dateFinPeriode);
+            log.warn(message);
+            return RemunerationResult.failure(collecteurId, message);
+        }
+
+        // 2. Processus de rémunération standard
+        RemunerationResult result = processRemuneration(collecteurId, S);
+        
+        if (result.isSuccess()) {
+            // 3. Enregistrement dans l'historique
+            saveHistorique(collecteurId, S, result, dateDebutPeriode, dateFinPeriode, effectuePar);
+        }
+
+        return result;
+    }
 
     /**
      * Traite la rémunération complète d'un collecteur selon la spec FOCEP
@@ -50,7 +95,7 @@ public class RemunerationProcessor {
         // 1. Récupération des comptes
         ComptePassageCommissionCollecte comptePCCC = compteSpecialiseService.getOrCreateCPCC(agenceId);
         CompteChargeCollecte compteCCC = compteSpecialiseService.getOrCreateCCC(agenceId);
-        CompteSalaireCollecteur compteCSC = compteSpecialiseService.getCSC(collecteurId);
+        CompteSalaireCollecteur compteCSC = compteSpecialiseService.getOrCreateCSC(collecteurId);
 
         // 2. Récupération des rubriques actives pour ce collecteur
         List<RubriqueRemuneration> rubriques = rubriqueRepository.findActiveRubriquesByCollecteur(
@@ -171,10 +216,64 @@ public class RemunerationProcessor {
                 .build();
     }
 
+    /**
+     * Sauvegarde l'historique de la rémunération
+     */
+    private void saveHistorique(Long collecteurId, BigDecimal S, RemunerationResult result, 
+                               LocalDate dateDebut, LocalDate dateFin, String effectuePar) {
+        try {
+            Collecteur collecteur = collecteurRepository.findById(collecteurId)
+                    .orElseThrow(() -> new RuntimeException("Collecteur non trouvé: " + collecteurId));
+
+            HistoriqueRemuneration historique = HistoriqueRemuneration.builder()
+                    .collecteur(collecteur)
+                    .dateDebutPeriode(dateDebut)
+                    .dateFinPeriode(dateFin)
+                    .montantSInitial(result.getMontantSInitial())
+                    .totalRubriquesVi(result.getTotalRubriqueVi() != null ? result.getTotalRubriqueVi() : BigDecimal.ZERO)
+                    .montantEmf(result.getMontantEMF() != null ? result.getMontantEMF() : BigDecimal.ZERO)
+                    .montantTva(calculateTVA(S))
+                    .dateRemuneration(LocalDateTime.now())
+                    .effectuePar(effectuePar)
+                    .details(String.format("Rémunération période %s - %s, %d mouvements effectués", 
+                                          dateDebut, dateFin, result.getMouvements().size()))
+                    .build();
+
+            historiqueRemunerationRepository.save(historique);
+            log.info("Historique rémunération sauvegardé pour collecteur {}", collecteurId);
+        } catch (Exception e) {
+            log.error("Erreur lors de la sauvegarde de l'historique pour collecteur {}: {}", collecteurId, e.getMessage());
+        }
+    }
+
+    /**
+     * Récupère l'historique des rémunérations d'un collecteur
+     */
+    public List<HistoriqueRemuneration> getHistoriqueRemuneration(Long collecteurId) {
+        return historiqueRemunerationRepository.findByCollecteurOrderByDateDesc(collecteurId);
+    }
+
+    /**
+     * Vérifie si une rémunération existe déjà sur une période
+     */
+    public boolean remunerationExistsPourPeriode(Long collecteurId, LocalDate dateDebut, LocalDate dateFin) {
+        return historiqueRemunerationRepository.existsOverlappingPeriod(collecteurId, dateDebut, dateFin);
+    }
+
+    private BigDecimal calculateTVA(BigDecimal S) {
+        BigDecimal tauxTVA = BigDecimal.valueOf(0.1925); // 19,25%
+        return S.multiply(tauxTVA).setScale(2, java.math.RoundingMode.HALF_UP);
+    }
+
     private Long getAgenceIdByCollecteur(Long collecteurId) {
-        // TODO: Implémenter la récupération réelle de l'agenceId
-        // Ceci est un placeholder - tu devras adapter selon ta structure
-        return 1L; // Temporaire
+        try {
+            Collecteur collecteur = collecteurRepository.findById(collecteurId)
+                    .orElseThrow(() -> new RuntimeException("Collecteur non trouvé: " + collecteurId));
+            return collecteur.getAgence().getId();
+        } catch (Exception e) {
+            log.warn("Erreur récupération agenceId pour collecteur {}: {}", collecteurId, e.getMessage());
+            return 1L; // Fallback temporaire
+        }
     }
 
     /**

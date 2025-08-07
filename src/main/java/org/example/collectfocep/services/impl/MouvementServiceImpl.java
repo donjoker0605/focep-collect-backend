@@ -47,7 +47,6 @@ public class MouvementServiceImpl implements MouvementService {
     private final ClientRepository clientRepository;
     private final JournalRepository journalRepository;
     private final CompteService compteService;
-    private final CommissionService commissionService;
     private final TransactionService transactionService;
     private final ClientAccountInitializationService clientAccountInitializationService;
     private final SystemAccountService systemAccountService;
@@ -78,7 +77,6 @@ public class MouvementServiceImpl implements MouvementService {
             JournalService journalService,
             JournalRepository journalRepository,
             CompteService compteService,
-            CommissionService commissionService,
             TransactionService transactionService,
             ClientAccountInitializationService clientAccountInitializationService,
             Counter epargneCounter,
@@ -96,7 +94,6 @@ public class MouvementServiceImpl implements MouvementService {
         this.journalRepository = journalRepository;
         this.journalService = journalService;
         this.compteService = compteService;
-        this.commissionService = commissionService;
         this.transactionService = transactionService;
         this.clientAccountInitializationService = clientAccountInitializationService;
         this.epargneCounter = epargneCounter;
@@ -559,115 +556,13 @@ public class MouvementServiceImpl implements MouvementService {
             rollbackFor = {BusinessException.class, Exception.class}
     )
     private void appliquerCommissions(Mouvement mouvement) {
-        log.info("Début application des commissions pour mouvement ID={}", mouvement.getId());
-
-        transactionService.executeInTransaction(status -> {
-            try {
-                log.debug("Application des commissions pour le mouvement: {}", mouvement.getId());
-
-                double tvaRate = 0.1925;
-                double montantCommission = commissionService.calculerCommission(mouvement);
-                double tva = montantCommission * tvaRate;
-                double netCommission = montantCommission - tva;
-
-                log.debug("Calcul commission: Mouvement={}, Montant={}, Commission={}, TVA={}, Net={}",
-                        mouvement.getId(), mouvement.getMontant(), montantCommission, tva, netCommission);
-
-                // Récupération ou création des comptes nécessaires
-                systemAccountService.ensureSystemAccountsExist();
-
-                Compte compteAttente = compteRepository.findByTypeCompte("ATTENTE")
-                        .orElseGet(() -> {
-                            log.warn("Compte d'attente système non trouvé, création en cours...");
-                            return systemAccountService.ensureSystemCompteExists("ATTENTE", "Compte Attente Système", "ATT-SYS");
-                        });
-
-                Compte compteTaxe = compteRepository.findByTypeCompte("TAXE")
-                        .orElseGet(() -> {
-                            log.warn("Compte taxe système non trouvé, création en cours...");
-                            return systemAccountService.ensureSystemCompteExists("TAXE", "Compte Taxe Système", "TAXE-SYS");
-                        });
-
-                Compte compteProduit = compteRepository.findByTypeCompte("PRODUIT")
-                        .orElseGet(() -> {
-                            log.warn("Compte produit système non trouvé, création en cours...");
-                            return systemAccountService.ensureSystemCompteExists("PRODUIT", "Compte Produit FOCEP", "PROD-SYS");
-                        });
-
-                // Si le mouvement est lié à un collecteur, utiliser son compte d'attente personnel
-                CompteCollecteur compteAttenteCollecteur = null;
-                if (mouvement.getCompteDestination() instanceof CompteClient) {
-                    Client client = ((CompteClient) mouvement.getCompteDestination()).getClient();
-                    if (client != null && client.getCollecteur() != null) {
-                        compteAttenteCollecteur = collecteurAccountService.ensureCompteAttenteExists(client.getCollecteur());
-                        if (compteAttenteCollecteur != null) {
-                            compteAttente = compteAttenteCollecteur;
-                            log.debug("Utilisation du compte d'attente du collecteur: ID={}, Solde={}",
-                                    compteAttente.getId(), compteAttente.getSolde());
-                        }
-                    }
-                }
-
-                // Répartition des fonds
-                compteAttente.setSolde(compteAttente.getSolde() + netCommission);
-                compteTaxe.setSolde(compteTaxe.getSolde() + tva);
-
-                // FOCEP reçoit 30% de la commission nette
-                double partFOCEP = netCommission * 0.3;
-                compteProduit.setSolde(compteProduit.getSolde() + partFOCEP);
-
-                log.debug("Répartition: Attente (+{} → {}), Taxe (+{} → {}), Produit (+{} → {})",
-                        netCommission, compteAttente.getSolde(),
-                        tva, compteTaxe.getSolde(),
-                        partFOCEP, compteProduit.getSolde());
-
-                // Enregistrer les mouvements de commission
-                Mouvement mouvementAttente = creerMouvementCommission(
-                        mouvement.getCompteSource(),
-                        compteAttente,
-                        netCommission,
-                        "Commission sur " + mouvement.getLibelle(),
-                        mouvement.getJournal()
-                );
-
-                Mouvement mouvementTva = creerMouvementCommission(
-                        mouvement.getCompteSource(),
-                        compteTaxe,
-                        tva,
-                        "TVA sur commission - " + mouvement.getLibelle(),
-                        mouvement.getJournal()
-                );
-
-                Mouvement mouvementProduit = creerMouvementCommission(
-                        compteAttente,
-                        compteProduit,
-                        partFOCEP,
-                        "Part FOCEP sur commission - " + mouvement.getLibelle(),
-                        mouvement.getJournal()
-                );
-
-                // Mise à jour des comptes
-                compteRepository.save(compteAttente);
-                compteRepository.save(compteTaxe);
-                compteRepository.save(compteProduit);
-
-                // Enregistrer les mouvements de commission
-                mouvementRepository.save(mouvementAttente);
-                mouvementRepository.save(mouvementTva);
-                mouvementRepository.save(mouvementProduit);
-
-                log.info("Commissions appliquées avec succès pour mouvement ID={}: Commission={}, TVA={}, Part FOCEP={}",
-                        mouvement.getId(), montantCommission, tva, partFOCEP);
-
-                return null;
-            } catch (Exception e) {
-                log.error("Erreur lors de l'application des commissions - Mouvement: {}, Erreur: {}",
-                        mouvement.getId(), e.getMessage(), e);
-                status.setRollbackOnly();
-                throw new BusinessException("Erreur lors de l'application des commissions",
-                        "COMMISSION_ERROR", e.getMessage());
-            }
-        });
+        log.info("Mouvement ID={} enregistré - Commission sera calculée via le système V2 en batch", mouvement.getId());
+        
+        // V2 SYSTEM: Les commissions sont maintenant calculées en batch via CommissionOrchestrator
+        // Cette méthode conserve la signature pour compatibilité mais ne fait plus de calcul immédiat
+        
+        log.debug("Commission différée pour traitement batch V2 - Mouvement: {}, Montant: {}", 
+                mouvement.getId(), mouvement.getMontant());
     }
 
     /**

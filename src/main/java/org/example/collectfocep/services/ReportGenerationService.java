@@ -11,7 +11,6 @@ import org.example.collectfocep.exceptions.ResourceNotFoundException;
 import org.example.collectfocep.repositories.ClientRepository;
 import org.example.collectfocep.repositories.CollecteurRepository;
 import org.example.collectfocep.repositories.MouvementRepository;
-import org.example.collectfocep.services.impl.CommissionService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,7 +29,6 @@ public class ReportGenerationService {
     private final MouvementRepository mouvementRepository;
     private final CollecteurRepository collecteurRepository;
     private final ClientRepository clientRepository;
-    private final CommissionService commissionService;
 
     /**
      * Génère un rapport mensuel pour un collecteur selon le format décrit dans le cahier des charges

@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mvn clean:*)",
+      "Bash(find:*)",
+      "Bash(mvn:*)",
+      "Bash(java:*)",
+      "Bash(timeout 30 mvn:*)",
+      "Bash(curl:*)",
+      "Bash(powershell:*)",
+      "Bash(rm:*)",
+      "Bash(sed:*)",
+      "Bash(grep:*)",
+      "Bash(npm start:*)",
+      "Bash(npm run validate:*)",
+      "Bash(npx expo start:*)",
+      "Bash(node:*)"
+    ],
+    "deny": []
+  }
+}

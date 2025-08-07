@@ -56,7 +56,6 @@ public class CommissionCalculationEngine {
                     AND m.compte_destination = cc.id 
                     AND (
                         m.type_mouvement IN ('EPARGNE', 'DEPOT_EPARGNE', 'VERSEMENT_EPARGNE')
-                        OR m.categorie_operation IN ('DEPOT_EPARGNE', 'VERSEMENT_EPARGNE')
                         OR (m.libelle LIKE '%épargne%' COLLATE utf8mb4_general_ci 
                             OR m.libelle LIKE '%versement%' COLLATE utf8mb4_general_ci
                             OR m.libelle LIKE '%Épargne%' COLLATE utf8mb4_general_ci

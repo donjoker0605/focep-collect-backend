@@ -30,15 +30,15 @@ public class Mouvement {
     @Column(nullable = false)
     private String sens; // "debit" ou "credit"
 
-    // ✅ UNE SEULE DATE : dateOperation
+    // dateOperation
     @Column(name = "date_operation", nullable = false)
     private LocalDateTime dateOperation;
 
-    // ✅ TYPE DE MOUVEMENT
+    // TYPE DE MOUVEMENT
     @Column(name = "type_mouvement")
     private String typeMouvement; // "EPARGNE" ou "RETRAIT"
 
-    // ✅ RELATIONS
+    // RELATIONS
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "client_id")
     @JsonIgnoreProperties({"mouvements", "collecteur", "agence"})

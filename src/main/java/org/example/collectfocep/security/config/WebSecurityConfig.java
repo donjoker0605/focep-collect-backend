@@ -71,6 +71,10 @@ public class WebSecurityConfig {
                         .requestMatchers("/api/commission-parameters/**").hasAnyAuthority("ROLE_ADMIN", "ROLE_SUPER_ADMIN")
                         .requestMatchers("/api/transfers/**").hasAnyAuthority("ROLE_ADMIN", "ROLE_SUPER_ADMIN")
                         .requestMatchers("/api/reports/**").hasAnyAuthority("ROLE_ADMIN", "ROLE_SUPER_ADMIN")
+                        
+                        // API V2 - ENDPOINTS COMMISSION ET REMUNERATION
+                        .requestMatchers("/api/v2/rubriques-remuneration/**").hasAnyAuthority("ROLE_ADMIN", "ROLE_SUPER_ADMIN")
+                        .requestMatchers("/api/v2/commission-remuneration/**").hasAnyAuthority("ROLE_ADMIN", "ROLE_SUPER_ADMIN", "ROLE_COLLECTEUR")
 
                         // ENDPOINTS SUPER ADMIN UNIQUEMENT
                         .requestMatchers("/api/agences/**").hasAuthority("ROLE_SUPER_ADMIN")

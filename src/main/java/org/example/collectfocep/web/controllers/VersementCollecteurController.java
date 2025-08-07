@@ -106,7 +106,7 @@ public class VersementCollecteurController {
         log.info("📊 API: GET /admin/versements/collecteur/{}/comptes", collecteurId);
 
         try {
-            Collecteur collecteur = collecteurRepository.findById(collecteurId)
+            Collecteur collecteur = collecteurRepository.findByIdWithAgence(collecteurId)
                     .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé"));
 
             // Récupérer tous les comptes
