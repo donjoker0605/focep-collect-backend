@@ -120,10 +120,10 @@ public class WebSecurityConfig {
         configuration.setAllowedOrigins(Arrays.asList(
                 "http://localhost:19006",
                 "http://localhost:8081",
-                "http://192.168.91.233:19006",
-                "http://192.168.91.233:8081",
-                "http://192.168.91.233:8080",
-                "exp://192.168.91.233:8081",
+                "http://192.168.89.44:19006",
+                "http://192.168.89.44:8081",
+                "http://192.168.89.44:8080",
+                "exp://192.168.89.44:8081",
                 "http://10.0.2.2:8080",
                 "http://127.0.0.1:8081"
         ));

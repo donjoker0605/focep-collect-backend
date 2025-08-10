@@ -8,6 +8,10 @@ import org.example.collectfocep.exceptions.UnauthorizedException;
 import org.example.collectfocep.security.service.SecurityService;
 import org.example.collectfocep.services.CompteTransferService;
 import org.example.collectfocep.util.ApiResponse;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -123,27 +127,66 @@ public class CompteTransferController {
     @PreAuthorize("hasRole('ADMIN') or hasRole('SUPER_ADMIN')")
     public ResponseEntity<ApiResponse<Object>> getAllTransfers(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) Long collecteurId,
+            @RequestParam(required = false) Boolean interAgence,
+            Authentication authentication) {
 
-        log.info("Récupération de tous les transferts - page: {}, size: {}", page, size);
+        log.info("Récupération des transferts - page: {}, size: {}, collecteurId: {}, interAgence: {}", 
+                page, size, collecteurId, interAgence);
 
         try {
-            // TODO: Implémenter la récupération paginée des transferts
-            // Pour l'instant, retourner une liste vide
+            // Vérifier les permissions pour le collecteur si spécifié
+            if (collecteurId != null && !securityService.canManageCollecteur(authentication, collecteurId)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(ApiResponse.error("FORBIDDEN", "Accès refusé au collecteur spécifié"));
+            }
+
+            // Créer la pageable
+            PageRequest pageRequest = PageRequest.of(page, size, 
+                Sort.by("dateTransfert").descending());
+
+            // Utiliser le service pour récupérer les transferts
+            Page<org.example.collectfocep.entities.TransfertCompte> transfersPage = 
+                compteTransferService.getAllTransfers(pageRequest, collecteurId, interAgence);
+
+            // Mapper vers des DTOs simplifiés pour la liste
+            java.util.List<Map<String, Object>> transferDTOs = transfersPage.getContent().stream()
+                .map(transfer -> {
+                    Map<String, Object> dto = new HashMap<>();
+                    dto.put("id", transfer.getId());
+                    dto.put("dateTransfert", transfer.getDateTransfert());
+                    dto.put("sourceCollecteurId", transfer.getSourceCollecteurId());
+                    dto.put("targetCollecteurId", transfer.getTargetCollecteurId());
+                    dto.put("nombreComptes", transfer.getNombreComptes());
+                    dto.put("montantTotal", transfer.getMontantTotal());
+                    dto.put("montantCommissions", transfer.getMontantCommissions());
+                    dto.put("isInterAgence", transfer.getIsInterAgence());
+                    dto.put("statut", transfer.getStatut());
+                    return dto;
+                })
+                .collect(java.util.stream.Collectors.toList());
+
+            // Créer la réponse paginée
             Map<String, Object> result = new HashMap<>();
-            result.put("content", java.util.List.of());
-            result.put("totalElements", 0);
-            result.put("totalPages", 0);
+            result.put("content", transferDTOs);
+            result.put("totalElements", transfersPage.getTotalElements());
+            result.put("totalPages", transfersPage.getTotalPages());
             result.put("currentPage", page);
             result.put("size", size);
+            result.put("first", transfersPage.isFirst());
+            result.put("last", transfersPage.isLast());
 
             return ResponseEntity.ok(
-                    ApiResponse.success(result, "Liste des transferts récupérée")
+                    ApiResponse.success(result, 
+                        String.format("Récupéré %d transferts sur %d total", 
+                            transferDTOs.size(), transfersPage.getTotalElements()))
             );
+
         } catch (Exception e) {
             log.error("Erreur lors de la récupération des transferts", e);
             return ResponseEntity.badRequest()
-                    .body(ApiResponse.error("Erreur: " + e.getMessage()));
+                    .body(ApiResponse.error("TRANSFER_FETCH_ERROR", "Erreur: " + e.getMessage()));
         }
     }
 }

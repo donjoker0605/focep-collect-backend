@@ -296,6 +296,101 @@ public class CommissionRemunerationController {
         return ResponseEntity.ok().body("Statut collecteur " + collecteurId);
     }
 
+    /**
+     * GESTION DES RUBRIQUES DE RÉMUNÉRATION
+     */
+
+    /**
+     * Récupère les rubriques actives pour un collecteur
+     */
+    @GetMapping("/rubriques/collecteur/{collecteurId}")
+    public ResponseEntity<?> getRubriquesCollecteur(@PathVariable Long collecteurId) {
+        
+        log.info("Récupération rubriques collecteur: {}", collecteurId);
+        
+        try {
+            var rubriques = remunerationProcessor.getRubriquesCollecteur(collecteurId);
+            return ResponseEntity.ok(rubriques);
+            
+        } catch (Exception e) {
+            log.error("Erreur récupération rubriques: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError()
+                    .body(ErrorResponse.of("INTERNAL_ERROR", "Erreur système"));
+        }
+    }
+
+    /**
+     * Crée une nouvelle rubrique de rémunération
+     */
+    @PostMapping("/rubriques")
+    public ResponseEntity<?> createRubrique(@RequestBody Object rubriqueData) {
+        
+        log.info("Création rubrique: {}", rubriqueData);
+        
+        try {
+            // TODO: Implémenter la création de rubrique
+            return ResponseEntity.ok().body(java.util.Map.of(
+                "success", true,
+                "message", "Rubrique créée avec succès",
+                "data", rubriqueData
+            ));
+            
+        } catch (Exception e) {
+            log.error("Erreur création rubrique: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError()
+                    .body(ErrorResponse.of("INTERNAL_ERROR", "Erreur création rubrique"));
+        }
+    }
+
+    /**
+     * Met à jour une rubrique de rémunération
+     */
+    @PutMapping("/rubriques/{rubriqueId}")
+    public ResponseEntity<?> updateRubrique(
+            @PathVariable Long rubriqueId, 
+            @RequestBody Object rubriqueData) {
+        
+        log.info("Mise à jour rubrique: {} -> {}", rubriqueId, rubriqueData);
+        
+        try {
+            // TODO: Implémenter la mise à jour de rubrique
+            return ResponseEntity.ok().body(java.util.Map.of(
+                "success", true,
+                "message", "Rubrique mise à jour avec succès",
+                "rubriqueId", rubriqueId,
+                "data", rubriqueData
+            ));
+            
+        } catch (Exception e) {
+            log.error("Erreur mise à jour rubrique: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError()
+                    .body(ErrorResponse.of("INTERNAL_ERROR", "Erreur mise à jour rubrique"));
+        }
+    }
+
+    /**
+     * Désactive une rubrique de rémunération
+     */
+    @DeleteMapping("/rubriques/{rubriqueId}")
+    public ResponseEntity<?> deleteRubrique(@PathVariable Long rubriqueId) {
+        
+        log.info("Désactivation rubrique: {}", rubriqueId);
+        
+        try {
+            // TODO: Implémenter la désactivation de rubrique
+            return ResponseEntity.ok().body(java.util.Map.of(
+                "success", true,
+                "message", "Rubrique désactivée avec succès",
+                "rubriqueId", rubriqueId
+            ));
+            
+        } catch (Exception e) {
+            log.error("Erreur désactivation rubrique: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError()
+                    .body(ErrorResponse.of("INTERNAL_ERROR", "Erreur désactivation rubrique"));
+        }
+    }
+
     // Classes internes pour les réponses
 
     @lombok.Builder

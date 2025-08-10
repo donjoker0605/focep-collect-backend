@@ -1,5 +1,8 @@
 package org.example.collectfocep.web.controllers;
 
+
+
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.aspects.LogActivity;
@@ -14,10 +17,11 @@ import org.example.collectfocep.mappers.MouvementMapperV2;
 import org.example.collectfocep.repositories.*;
 import org.example.collectfocep.security.annotations.Audited;
 import org.example.collectfocep.security.service.SecurityService;
+import org.example.collectfocep.services.GeolocationService;
 import org.example.collectfocep.services.interfaces.ClientService;
 import org.example.collectfocep.services.interfaces.CompteService;
-import org.example.collectfocep.services.GeolocationService;
 import org.example.collectfocep.util.ApiResponse;
+import org.springframework.core.env.Environment;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -27,11 +31,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.core.env.Environment;
-import java.util.Arrays;
-
-import jakarta.validation.Valid;
 
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
@@ -315,6 +317,122 @@ public class ClientController {
     }
 
     /**
+     * 🔥 NOUVEAU: Endpoint admin pour accéder aux clients d'un collecteur spécifique et configurer leurs commissions
+     */
+    @GetMapping("/admin/collecteur/{collecteurId}/clients")
+    @PreAuthorize("@securityService.canManageCollecteur(authentication, #collecteurId)")
+    public ResponseEntity<ApiResponse<List<ClientDTO>>> getCollecteurClientsForAdmin(
+            @PathVariable Long collecteurId,
+            Authentication authentication) {
+
+        log.info("🔧 [ADMIN-COMMISSION] Admin {} accède aux clients du collecteur {} pour configuration commissions",
+                authentication.getName(), collecteurId);
+
+        try {
+            // Vérifier les permissions explicitement
+            boolean canManage = securityService.canManageCollecteur(authentication, collecteurId);
+            log.info("🎯 [ADMIN-COMMISSION] Permissions vérifiées: canManage={} pour collecteur={}", canManage, collecteurId);
+
+            if (!canManage) {
+                log.warn("❌ [ADMIN-COMMISSION] Accès refusé aux clients du collecteur {} pour admin {}",
+                        collecteurId, authentication.getName());
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(ApiResponse.error("ACCESS_DENIED", "Accès refusé aux clients de ce collecteur"));
+            }
+
+            // Récupérer les clients avec leurs paramètres de commission
+            List<Client> clients = clientService.findByCollecteurId(collecteurId);
+            List<ClientDTO> dtos = clients.stream()
+                    .map(client -> {
+                        ClientDTO dto = clientMapper.toDTO(client);
+                        // Ajouter les paramètres de commission existants
+                        CommissionParameterDTO commissionParam = getEffectiveCommissionParameter(client);
+                        dto.setCommissionParameter(commissionParam);
+                        return dto;
+                    })
+                    .toList();
+
+            log.info("✅ [ADMIN-COMMISSION] Récupéré {} clients avec paramètres commission pour collecteur {}",
+                    dtos.size(), collecteurId);
+
+            ApiResponse<List<ClientDTO>> response = ApiResponse.success(dtos,
+                    String.format("Récupéré %d clients avec paramètres commission", dtos.size()));
+            response.addMeta("collecteurId", collecteurId);
+            response.addMeta("adminUser", authentication.getName());
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            log.error("❌ [ADMIN-COMMISSION] Erreur lors de la récupération des clients du collecteur {}: {}",
+                    collecteurId, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("ADMIN_CLIENT_FETCH_ERROR", "Erreur lors de la récupération: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * 🔥 NOUVEAU: Endpoint admin pour configurer les paramètres de commission d'un client
+     */
+    @PutMapping("/admin/client/{clientId}/commission")
+    @PreAuthorize("@securityService.canManageClient(authentication, #clientId)")
+    @LogActivity(action = "UPDATE_CLIENT_COMMISSION", entityType = "CLIENT", description = "Configuration paramètres commission client")
+    public ResponseEntity<ApiResponse<CommissionParameterDTO>> configureClientCommission(
+            @PathVariable Long clientId,
+            @Valid @RequestBody CommissionParameterDTO commissionDTO,
+            Authentication authentication) {
+
+        log.info("🔧 [ADMIN-COMMISSION] Configuration commission client {} par admin {}",
+                clientId, authentication.getName());
+
+        try {
+            // Vérifier que le client existe
+            Client client = clientService.getClientById(clientId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Client non trouvé avec l'ID: " + clientId));
+
+            // Supprimer les anciens paramètres de commission pour ce client
+            commissionParameterRepository.findActiveCommissionParameter(clientId)
+                    .ifPresent(oldParam -> {
+                        oldParam.setActive(false);
+                        commissionParameterRepository.save(oldParam);
+                        log.info("🔄 [ADMIN-COMMISSION] Ancien paramètre commission désactivé pour client {}", clientId);
+                    });
+
+            // Créer le nouveau paramètre
+            CommissionParameter newParameter = CommissionParameter.builder()
+                    .client(client)
+                    .type(commissionDTO.getType())
+                    .valeur(commissionDTO.getValeur() != null ? 
+                            BigDecimal.valueOf(commissionDTO.getValeur()) : BigDecimal.ZERO)
+                    .active(true)
+                    .validFrom(commissionDTO.getValidFrom() != null ? 
+                            commissionDTO.getValidFrom() : LocalDate.now())
+                    .validTo(commissionDTO.getValidTo())
+                    .build();
+
+            CommissionParameter savedParameter = commissionParameterRepository.save(newParameter);
+
+            // Créer les paliers si type TIER
+            if (commissionDTO.getType() == CommissionType.TIER && 
+                commissionDTO.getPaliersCommission() != null && !commissionDTO.getPaliersCommission().isEmpty()) {
+                createCommissionTiers(savedParameter, commissionDTO.getPaliersCommission());
+            }
+
+            CommissionParameterDTO responseDTO = commissionParameterMapper.toDTO(savedParameter);
+
+            log.info("✅ [ADMIN-COMMISSION] Paramètres commission configurés pour client {} par admin {}",
+                    clientId, authentication.getName());
+
+            return ResponseEntity.ok(ApiResponse.success(responseDTO, "Paramètres de commission configurés avec succès"));
+
+        } catch (Exception e) {
+            log.error("❌ [ADMIN-COMMISSION] Erreur configuration commission client {}: {}",
+                    clientId, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("COMMISSION_CONFIG_ERROR", "Erreur: " + e.getMessage()));
+        }
+    }
+
+    /**
      * endpoint pour les admins qui liste tous leurs clients
      */
     @GetMapping("/admin/my-clients")
@@ -447,11 +565,13 @@ public class ClientController {
             Client existingClient = clientService.getClientById(id)
                     .orElseThrow(() -> new ResourceNotFoundException("Client non trouvé avec l'ID: " + id));
 
-            Long currentCollecteurId = securityService.getCurrentUserId();
-            if (!existingClient.getCollecteur().getId().equals(currentCollecteurId)) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                        .body(ApiResponse.error("UNAUTHORIZED", "Vous ne pouvez modifier que vos propres clients"));
-            }
+            // SUPPRESSION de la validation supplémentaire - @PreAuthorize fait déjà le contrôle d'accès
+            // La méthode canManageClient() dans SecurityService gère maintenant:
+            // - Admins: accès via relations admin-collecteur spécifiques  
+            // - Collecteurs: accès uniquement à leurs propres clients
+            // - Super Admins: accès complet
+            log.info("✅ [SECURITY] Accès client autorisé via @PreAuthorize canManageClient pour: {}", 
+                    SecurityContextHolder.getContext().getAuthentication().getName());
 
             // MISE À JOUR SÉLECTIVE (collecteur ne peut modifier que certains champs)
             updateAllowedFieldsOnly(existingClient, clientUpdateDTO);
@@ -500,6 +620,30 @@ public class ClientController {
             existingClient.setDateMajCoordonnees(LocalDateTime.now());
         }
 
+        // STATUT ACTIF - Modifiable par admin seulement
+        if (updateDTO.getValide() != null) {
+            // Vérifier si c'est un admin
+            if (securityService.hasRole("ROLE_ADMIN") || securityService.hasRole("ROLE_SUPER_ADMIN")) {
+                existingClient.setValide(updateDTO.getValide());
+                log.info("👑 [ADMIN] Statut client mis à jour: {} -> {}", 
+                        existingClient.getId(), updateDTO.getValide());
+            } else {
+                log.warn("⚠️ Tentative de modification du statut par un non-admin ignorée");
+            }
+        }
+
+        // PARAMÈTRES DE COMMISSION - Traitement spécial pour admin
+        if (updateDTO.hasCommissionParameter()) {
+            // Vérifier si c'est un admin
+            if (securityService.hasRole("ROLE_ADMIN") || securityService.hasRole("ROLE_SUPER_ADMIN")) {
+                updateClientCommissionParameter(existingClient, updateDTO.getCommissionParameter());
+                log.info("👑 [ADMIN] Paramètres de commission mis à jour pour client: {}", 
+                        existingClient.getId());
+            } else {
+                log.warn("⚠️ Tentative de modification de commission par un non-admin ignorée");
+            }
+        }
+
         // Champs que le collecteur NE PEUT PAS modifier :
         // - nom, prenom (seulement admin)
         // - agenceId, collecteurId (sécurité)
@@ -509,6 +653,56 @@ public class ClientController {
         log.info("✅ Mise à jour sélective effectuée pour client: {}", existingClient.getId());
     }
 
+    /**
+     * 💰 NOUVELLE MÉTHODE : Mettre à jour les paramètres de commission d'un client
+     */
+    private void updateClientCommissionParameter(Client client, CommissionParameterDTO commissionDTO) {
+        try {
+            log.info("💰 Mise à jour paramètres commission pour client: {} {}", 
+                    client.getPrenom(), client.getNom());
+
+            if (commissionDTO == null) {
+                log.warn("⚠️ Paramètres de commission null - aucune action");
+                return;
+            }
+
+            // Désactiver l'ancien paramètre s'il existe
+            commissionParameterRepository.findActiveCommissionParameter(client.getId())
+                    .ifPresent(oldParam -> {
+                        oldParam.setActive(false);
+                        commissionParameterRepository.save(oldParam);
+                        log.info("🔄 Ancien paramètre commission désactivé pour client {}", client.getId());
+                    });
+
+            // Créer le nouveau paramètre
+            CommissionParameter newParameter = CommissionParameter.builder()
+                    .client(client)
+                    .type(commissionDTO.getType())
+                    .valeur(commissionDTO.getValeur() != null ? 
+                            BigDecimal.valueOf(commissionDTO.getValeur()) : BigDecimal.ZERO)
+                    .active(commissionDTO.getActive() != null ? commissionDTO.getActive() : true)
+                    .validFrom(commissionDTO.getValidFrom() != null ? 
+                            commissionDTO.getValidFrom() : LocalDate.now())
+                    .validTo(commissionDTO.getValidTo())
+                    .build();
+
+            CommissionParameter savedParameter = commissionParameterRepository.save(newParameter);
+            log.info("✅ Nouveau paramètre commission créé: ID={}, Type={}, Valeur={}", 
+                    savedParameter.getId(), savedParameter.getType(), savedParameter.getValeur());
+
+            // Créer les paliers si type TIER
+            if (commissionDTO.getType() == CommissionType.TIER && 
+                commissionDTO.getPaliersCommission() != null && 
+                !commissionDTO.getPaliersCommission().isEmpty()) {
+                createCommissionTiers(savedParameter, commissionDTO.getPaliersCommission());
+                log.info("📊 Paliers de commission créés pour client {}", client.getId());
+            }
+
+        } catch (Exception e) {
+            log.error("❌ Erreur mise à jour paramètres commission: {}", e.getMessage(), e);
+            throw new BusinessException("Erreur lors de la mise à jour des paramètres de commission: " + e.getMessage());
+        }
+    }
 
     // Endpoint pour supprimer un client
     @DeleteMapping("/{id}")
@@ -547,6 +741,7 @@ public class ClientController {
 
     @GetMapping("/{id}/with-transactions")
     @PreAuthorize("@securityService.canManageClient(authentication, #id)")
+    @Transactional(readOnly = true)
     public ResponseEntity<ApiResponse<ClientDetailDTO>> getClientWithTransactions(@PathVariable Long id) {
         log.info("🔍 Récupération du client avec transactions: {}", id);
 

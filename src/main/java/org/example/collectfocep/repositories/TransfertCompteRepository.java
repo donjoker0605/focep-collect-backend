@@ -15,5 +15,5 @@ public interface TransfertCompteRepository extends JpaRepository<TransfertCompte
 
     List<TransfertCompte> findByDateTransfertBetween(LocalDateTime debut, LocalDateTime fin);
 
-    List<TransfertCompte> findByIsInterAgence(boolean isInterAgence);
+    List<TransfertCompte> findByInterAgence(boolean interAgence);
 }

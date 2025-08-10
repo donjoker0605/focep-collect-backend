@@ -7,7 +7,10 @@ public enum NotificationType {
     CONNEXION_ECHEC("Échec de connexion"),
     TRANSACTION_SUSPECTE("Transaction suspecte"),
     NOUVEAU_CLIENT("Nouveau client"),
-    RETRAIT_IMPORTANT("Retrait important");
+    RETRAIT_IMPORTANT("Retrait important"),
+    COLLECTEUR_INACTIF("Collecteur inactif"),
+    TRANSACTION_CRITIQUE("Transaction critique"),
+    RAPPORT_HEBDOMADAIRE("Rapport hebdomadaire");
 
     private final String description;
 

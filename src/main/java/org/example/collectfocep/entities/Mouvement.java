@@ -113,4 +113,14 @@ public class Mouvement {
 
         return this.sens != null ? this.sens.toUpperCase() : "INCONNU";
     }
+
+    // Méthode utilitaire pour obtenir l'ID du collecteur
+    public Long getCollecteurId() {
+        if (this.collecteur != null) {
+            return this.collecteur.getId();
+        } else if (this.client != null && this.client.getCollecteur() != null) {
+            return this.client.getCollecteur().getId();
+        }
+        return null;
+    }
 }

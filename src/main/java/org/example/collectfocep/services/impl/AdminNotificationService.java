@@ -842,11 +842,257 @@ public class AdminNotificationService {
     }
 
     // Nettoyage automatique
+    /**
+     * 🔍 Surveillance proactive des situations critiques (toutes les 30 minutes)
+     */
+    @Scheduled(cron = "0 */30 * * * ?") // Toutes les 30 minutes
+    @Transactional
+    public void monitorCriticalSituations() {
+        try {
+            log.debug("🔍 Début surveillance situations critiques");
+            
+            // 1. Surveiller les collecteurs inactifs
+            monitorInactiveCollecteurs();
+            
+            // 2. Surveiller les soldes anormaux
+            monitorAbnormalBalances();
+            
+            // 3. Surveiller les transactions suspectes
+            monitorSuspiciousTransactions();
+            
+            // 4. Surveiller les erreurs système
+            monitorSystemErrors();
+            
+            log.debug("✅ Surveillance situations critiques terminée");
+            
+        } catch (Exception e) {
+            log.error("❌ Erreur surveillance critique: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 📊 Génération hebdomadaire de rapports de notification (tous les lundis à 6h)
+     */
+    @Scheduled(cron = "0 0 6 * * MON") // Tous les lundis à 6h du matin
+    @Transactional(readOnly = true)
+    public void generateWeeklyNotificationReport() {
+        try {
+            log.info("📊 Génération rapport hebdomadaire notifications");
+            
+            LocalDateTime weekStart = LocalDateTime.now().minusWeeks(1).withHour(0).withMinute(0);
+            LocalDateTime weekEnd = LocalDateTime.now().withHour(0).withMinute(0);
+            
+            List<Admin> admins = adminRepository.findAll();
+            
+            for (Admin admin : admins) {
+                generateAdminWeeklyReport(admin.getId(), weekStart, weekEnd);
+            }
+            
+            log.info("✅ Rapports hebdomadaires générés pour {} admins", admins.size());
+            
+        } catch (Exception e) {
+            log.error("❌ Erreur génération rapport hebdomadaire: {}", e.getMessage(), e);
+        }
+    }
+
     @Scheduled(cron = "0 0 2 * * ?") // Tous les jours à 2h du matin
     @Transactional
     public void cleanupOldNotifications() {
         LocalDateTime cutoff = LocalDateTime.now().minusDays(90);
         int deleted = notificationRepository.deleteOldReadNotifications(cutoff);
         log.info("🧹 Nettoyage automatique: {} notifications supprimées", deleted);
+    }
+
+    // ===================================================
+    // MÉTHODES DE SURVEILLANCE PROACTIVE
+    // ===================================================
+
+    /**
+     * Surveille les collecteurs inactifs depuis plus de 24h
+     */
+    private void monitorInactiveCollecteurs() {
+        try {
+            LocalDateTime threshold = LocalDateTime.now().minusHours(SEUIL_INACTIVITE_HEURES);
+            
+            List<Collecteur> inactiveCollecteurs = collecteurRepository.findInactiveSince(threshold);
+            
+            for (Collecteur collecteur : inactiveCollecteurs) {
+                // Vérifier si on n'a pas déjà envoyé cette notification récemment
+                if (isInCooldown(collecteur.getId(), NotificationType.COLLECTEUR_INACTIF)) {
+                    continue;
+                }
+                
+                Long adminId = findResponsibleAdmin(collecteur.getId());
+                if (adminId != null) {
+                    createCriticalNotification(adminId, collecteur.getId(), 
+                        NotificationType.COLLECTEUR_INACTIF,
+                        "Collecteur inactif détecté",
+                        String.format("Le collecteur %s %s n'a pas eu d'activité depuis %d heures", 
+                            collecteur.getNom(), collecteur.getPrenom(), SEUIL_INACTIVITE_HEURES));
+                    
+                    markNotificationSent(collecteur.getId(), NotificationType.COLLECTEUR_INACTIF);
+                }
+            }
+            
+        } catch (Exception e) {
+            log.error("❌ Erreur surveillance collecteurs inactifs: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Surveille les soldes anormaux (négatifs ou très élevés)
+     */
+    private void monitorAbnormalBalances() {
+        try {
+            // Détecter les soldes négatifs
+            List<Object[]> negativeBalances = mouvementRepository.findClientsWithNegativeBalances();
+            
+            for (Object[] result : negativeBalances) {
+                Long clientId = (Long) result[0];
+                Double balance = (Double) result[1];
+                Long collecteurId = (Long) result[2];
+                
+                if (isInCooldown(collecteurId, NotificationType.SOLDE_NEGATIF)) {
+                    continue;
+                }
+                
+                Long adminId = findResponsibleAdmin(collecteurId);
+                if (adminId != null) {
+                    createCriticalNotification(adminId, collecteurId,
+                        NotificationType.SOLDE_NEGATIF,
+                        "Solde client négatif détecté",
+                        String.format("Le client ID %d a un solde négatif de %.2f FCFA", clientId, balance));
+                    
+                    markNotificationSent(collecteurId, NotificationType.SOLDE_NEGATIF);
+                }
+            }
+            
+        } catch (Exception e) {
+            log.error("❌ Erreur surveillance soldes anormaux: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Surveille les transactions suspectes (montants très élevés)
+     */
+    private void monitorSuspiciousTransactions() {
+        try {
+            LocalDateTime since = LocalDateTime.now().minusHours(1);
+            double threshold = SEUIL_TRANSACTION_CRITIQUE_DEFAULT;
+            
+            List<Mouvement> largeTransactions = mouvementRepository.findLargeTransactionsSince(since, threshold);
+            
+            for (Mouvement transaction : largeTransactions) {
+                if (transaction.getCollecteurId() != null) {
+                    if (isInCooldown(transaction.getCollecteurId(), NotificationType.TRANSACTION_CRITIQUE)) {
+                        continue;
+                    }
+                    
+                    Long adminId = findResponsibleAdmin(transaction.getCollecteurId());
+                    if (adminId != null) {
+                        createCriticalNotification(adminId, transaction.getCollecteurId(),
+                            NotificationType.TRANSACTION_CRITIQUE,
+                            "Transaction importante détectée",
+                            String.format("Transaction de %.2f FCFA effectuée par le collecteur ID %d", 
+                                transaction.getMontant(), transaction.getCollecteurId()));
+                        
+                        markNotificationSent(transaction.getCollecteurId(), NotificationType.TRANSACTION_CRITIQUE);
+                    }
+                }
+            }
+            
+        } catch (Exception e) {
+            log.error("❌ Erreur surveillance transactions suspectes: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Surveille les erreurs système
+     */
+    private void monitorSystemErrors() {
+        try {
+            LocalDateTime since = LocalDateTime.now().minusMinutes(30);
+            
+            // Cette méthode peut être étendue pour monitorer différents types d'erreurs système
+            // Pour l'instant, on log juste qu'elle est appelée
+            log.debug("🔍 Surveillance erreurs système depuis: {}", since);
+            
+        } catch (Exception e) {
+            log.error("❌ Erreur surveillance erreurs système: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Génère un rapport hebdomadaire pour un admin
+     */
+    private void generateAdminWeeklyReport(Long adminId, LocalDateTime weekStart, LocalDateTime weekEnd) {
+        try {
+            List<AdminNotification> weekNotifications = notificationRepository
+                .findByAdminIdAndDateCreationBetween(adminId, weekStart, weekEnd);
+            
+            if (weekNotifications.isEmpty()) {
+                return;
+            }
+            
+            long criticalCount = weekNotifications.stream()
+                .mapToLong(n -> n.getPriority() == Priority.CRITIQUE ? 1 : 0)
+                .sum();
+            
+            long unreadCount = weekNotifications.stream()
+                .mapToLong(n -> n.isRead() ? 0 : 1)
+                .sum();
+            
+            String reportMessage = String.format(
+                "Rapport hebdomadaire: %d notifications reçues, dont %d critiques. %d notifications non lues.",
+                weekNotifications.size(), criticalCount, unreadCount);
+            
+            AdminNotification weeklyReport = AdminNotification.builder()
+                .adminId(adminId)
+                .type(NotificationType.RAPPORT_HEBDOMADAIRE)
+                .priority(Priority.INFORMATIF)
+                .title("Rapport hebdomadaire des notifications")
+                .message(reportMessage)
+                .dateCreation(LocalDateTime.now())
+                .lu(false)
+                .groupedCount(1)
+                .emailSent(false)
+                .build();
+            
+            notificationRepository.save(weeklyReport);
+            
+        } catch (Exception e) {
+            log.error("❌ Erreur génération rapport admin {}: {}", adminId, e.getMessage());
+        }
+    }
+
+    /**
+     * Méthode utilitaire pour créer une notification critique
+     */
+    private void createCriticalNotification(Long adminId, Long collecteurId, NotificationType type,
+                                          String title, String message) {
+        try {
+            AdminNotification notification = AdminNotification.builder()
+                .adminId(adminId)
+                .collecteurId(collecteurId)
+                .type(type)
+                .priority(Priority.CRITIQUE)
+                .title(title)
+                .message(message)
+                .dateCreation(LocalDateTime.now())
+                .lu(false)
+                .groupedCount(1)
+                .emailSent(false)
+                .build();
+            
+            notificationRepository.save(notification);
+            
+            // Envoi email asynchrone pour notification critique
+            CompletableFuture.runAsync(() -> sendCriticalNotification(adminId, notification));
+            
+            log.info("🚨 Notification critique créée: {} pour admin {}", type, adminId);
+            
+        } catch (Exception e) {
+            log.error("❌ Erreur création notification critique: {}", e.getMessage());
+        }
     }
 }

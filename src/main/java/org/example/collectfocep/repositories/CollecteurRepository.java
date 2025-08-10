@@ -236,4 +236,16 @@ public interface CollecteurRepository extends JpaRepository<Collecteur, Long> {
     @Query("SELECT c FROM Collecteur c WHERE c.fcmToken IS NOT NULL")
     List<Collecteur> findCollecteursWithFCMToken();
 
+    /**
+     * 🔥 MÉTHODES POUR LE SYSTÈME D'ANCIENNETÉ
+     */
+    @Query("SELECT c FROM Collecteur c ORDER BY c.ancienneteEnMois DESC NULLS LAST")
+    List<Collecteur> findAllByOrderByAncienneteEnMoisDesc();
+
+    /**
+     * Trouve les collecteurs inactifs depuis une date donnée
+     */
+    @Query("SELECT c FROM Collecteur c WHERE c.active = false AND c.dateModificationMontantMax < :date")
+    List<Collecteur> findInactiveSince(@Param("date") LocalDateTime date);
+
 }

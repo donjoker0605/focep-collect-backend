@@ -14,14 +14,14 @@ public interface RubriqueRemunerationRepository extends JpaRepository<RubriqueRe
 
     /**
      * Récupère les rubriques actives pour un collecteur donné
+     * ✅ CORRIGÉ: Utilisation de JPQL avec MEMBER OF pour éviter les erreurs de sérialisation
+     * Note: La vérification du délai est faite en Java pour éviter les complexités SQL
      */
-    @Query(value = "SELECT DISTINCT r.* FROM rubrique_remuneration r " +
-           "INNER JOIN rubrique_collecteurs rc ON r.id = rc.rubrique_id " +
+    @Query("SELECT DISTINCT r FROM RubriqueRemuneration r " +
            "WHERE r.active = true " +
-           "AND rc.collecteur_id = :collecteurId " +
-           "AND r.date_application <= :currentDate " +
-           "AND (r.delai_jours IS NULL OR DATE_ADD(r.date_application, INTERVAL r.delai_jours DAY) >= :currentDate) " +
-           "ORDER BY r.date_application ASC", nativeQuery = true)
+           "AND :collecteurId MEMBER OF r.collecteurIds " +
+           "AND r.dateApplication <= :currentDate " +
+           "ORDER BY r.dateApplication ASC")
     List<RubriqueRemuneration> findActiveRubriquesByCollecteur(
             @Param("collecteurId") Long collecteurId,
             @Param("currentDate") LocalDate currentDate);
@@ -46,9 +46,15 @@ public interface RubriqueRemunerationRepository extends JpaRepository<RubriqueRe
             @Param("expirationDate") LocalDate expirationDate);
 
     /**
-     * Alias pour la compatibilité
+     * Alias pour la compatibilité avec filtrage des rubriques expirées
+     * ✅ CORRIGÉ: Filtre aussi les rubriques expirées en Java
      */
     default List<RubriqueRemuneration> findActiveRubriquesByCollecteurId(Long collecteurId) {
-        return findActiveRubriquesByCollecteur(collecteurId, LocalDate.now());
+        List<RubriqueRemuneration> allRubriques = findActiveRubriquesByCollecteur(collecteurId, LocalDate.now());
+        
+        // Filtrer les rubriques expirées
+        return allRubriques.stream()
+                .filter(RubriqueRemuneration::isCurrentlyValid)
+                .toList();
     }
 }

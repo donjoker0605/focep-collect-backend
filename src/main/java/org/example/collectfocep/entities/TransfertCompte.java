@@ -40,8 +40,20 @@ public class TransfertCompte {
     private String createdBy;
 
     @Column(name = "is_inter_agence")
-    private boolean isInterAgence;
+    private boolean interAgence;
+
+    @Column(name = "statut")
+    private String statut;
 
     @OneToMany(mappedBy = "transfert", cascade = CascadeType.ALL)
     private List<Mouvement> mouvements;
+
+    // Méthodes personnalisées pour compatibilité avec le code existant
+    public boolean getIsInterAgence() {
+        return this.interAgence;
+    }
+
+    public void setIsInterAgence(boolean interAgence) {
+        this.interAgence = interAgence;
+    }
 }

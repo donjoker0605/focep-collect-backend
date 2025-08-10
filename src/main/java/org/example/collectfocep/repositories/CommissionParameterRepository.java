@@ -82,7 +82,15 @@ public interface CommissionParameterRepository extends JpaRepository<CommissionP
     Optional<CommissionParameter> findActiveCommissionParameterByAgence(@Param("agenceId") Long agenceId);
 
     // Méthodes de compatibilité pour CommissionOrchestrator
-    Optional<CommissionParameter> findByClientId(Long clientId);
-    Optional<CommissionParameter> findByCollecteurId(Long collecteurId);  
-    Optional<CommissionParameter> findByAgenceId(Long agenceId);
+    default Optional<CommissionParameter> findByClientId(Long clientId) {
+        return findActiveCommissionParameter(clientId);
+    }
+    
+    default Optional<CommissionParameter> findByCollecteurId(Long collecteurId) {
+        return findActiveCommissionParameterByCollecteur(collecteurId);
+    }
+    
+    default Optional<CommissionParameter> findByAgenceId(Long agenceId) {
+        return findActiveCommissionParameterByAgence(agenceId);
+    }
 }

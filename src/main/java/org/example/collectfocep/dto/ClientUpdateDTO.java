@@ -6,8 +6,6 @@ import lombok.Builder;
 import lombok.AllArgsConstructor;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
-
 /**
  * DTO spécialisé pour les mises à jour de client par un collecteur
  * Contient SEULEMENT les champs que le collecteur peut modifier
@@ -53,6 +51,14 @@ public class ClientUpdateDTO {
     private String adresseComplete;
 
     // ============================================
+    // PARAMÈTRES DE COMMISSION (modifiable par admin)
+    // ============================================
+    
+    private CommissionParameterDTO commissionParameter;
+    
+    private Boolean valide; // Statut actif/inactif (admin seulement)
+
+    // ============================================
     // CHAMPS NON MODIFIABLES PAR LE COLLECTEUR
     // ============================================
 
@@ -72,6 +78,13 @@ public class ClientUpdateDTO {
      */
     public boolean hasCoordinates() {
         return latitude != null && longitude != null;
+    }
+
+    /**
+     * Vérifie si des paramètres de commission sont fournis
+     */
+    public boolean hasCommissionParameter() {
+        return commissionParameter != null;
     }
 
     /**

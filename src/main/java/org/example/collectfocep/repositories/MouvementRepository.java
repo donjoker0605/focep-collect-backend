@@ -656,12 +656,14 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
                                        @Param("dateLimit") LocalDateTime dateLimit);
 
     /**
-     * Somme par client et période
+     * Somme épargne par client et période (CORRIGÉ - était 'CREDIT' au lieu de 'epargne')
+     * ⚠️ CRITIQUE: Cette requête était défectueuse et cherchait 'CREDIT' qui n'existe pas
+     * ✅ CORRIGÉE: Maintenant cherche 'epargne' qui correspond aux données réelles
      */
     @Query("SELECT COALESCE(SUM(m.montant), 0) FROM Mouvement m " +
             "WHERE m.client.id = :clientId " +
             "AND m.dateOperation BETWEEN :startDate AND :endDate " +
-            "AND m.sens = 'CREDIT'")
+            "AND LOWER(m.sens) = 'epargne'")
     double sumAmountByClientAndPeriod(@Param("clientId") Long clientId,
                                       @Param("startDate") LocalDateTime startDate,
                                       @Param("endDate") LocalDateTime endDate);
@@ -848,5 +850,24 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
     Long countByCollecteurAndSensAndDate(@Param("collecteurId") Long collecteurId,
                                          @Param("sens") String sens,
                                          @Param("date") LocalDate date);
+
+    /**
+     * Trouve les clients avec des soldes négatifs
+     */
+    @Query("SELECT m.client.id, m.client.nom, SUM(CASE WHEN m.sens = 'CREDIT' THEN m.montant ELSE -m.montant END) as solde " +
+           "FROM Mouvement m " +
+           "GROUP BY m.client.id, m.client.nom " +
+           "HAVING SUM(CASE WHEN m.sens = 'CREDIT' THEN m.montant ELSE -m.montant END) < 0")
+    List<Object[]> findClientsWithNegativeBalances();
+
+    /**
+     * Trouve les transactions importantes depuis une date donnée
+     */
+    @Query("SELECT m FROM Mouvement m " +
+           "WHERE m.dateOperation >= :since " +
+           "AND m.montant >= :minAmount " +
+           "ORDER BY m.montant DESC")
+    List<Mouvement> findLargeTransactionsSince(@Param("since") LocalDateTime since, 
+                                              @Param("minAmount") double minAmount);
 
 }

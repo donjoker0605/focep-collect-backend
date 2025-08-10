@@ -358,7 +358,7 @@ public class CollecteurServiceImpl implements CollecteurService {
     @Override
     @Cacheable(value = "collecteurs", key = "#id")
     public Optional<Collecteur> getCollecteurById(Long id) {
-        return collecteurRepository.findById(id);
+        return collecteurRepository.findByIdWithAgence(id);
     }
 
     @Override

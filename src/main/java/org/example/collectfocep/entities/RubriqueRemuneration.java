@@ -2,6 +2,7 @@ package org.example.collectfocep.entities;
 
 import jakarta.persistence.*;
 import lombok.*;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -56,12 +57,12 @@ public class  RubriqueRemuneration {
      * IDs des collecteurs concernés par cette rubrique
      * Stocké en JSON pour simplicité
      */
-    @ElementCollection
+    @ElementCollection(fetch = jakarta.persistence.FetchType.EAGER)
     @CollectionTable(name = "rubrique_collecteurs", joinColumns = @JoinColumn(name = "rubrique_id"))
     @Column(name = "collecteur_id")
     private List<Long> collecteurIds;
 
-    @Column(name = "active")
+    @Column(name = "active", nullable = false)
     @Builder.Default
     private boolean active = true;
 

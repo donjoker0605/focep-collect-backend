@@ -15,4 +15,30 @@ public final class AppConstants {
     // Délais et durées
     public static final int TOKEN_VALIDITY_HOURS = 24;
     public static final int PASSWORD_MIN_LENGTH = 8;
+    
+    // =====================================
+    // TYPES DE MOUVEMENTS - AJOUTÉ POUR ÉVITER ERREURS
+    // =====================================
+    
+    /**
+     * Types de sens de mouvement utilisés en base de données
+     * ATTENTION: Ne pas modifier ces valeurs sans migration de données
+     */
+    public static final class MouvementSens {
+        public static final String EPARGNE = "epargne";
+        public static final String RETRAIT = "retrait";
+        public static final String DEBIT = "DEBIT";  // Pour les mouvements comptables
+        public static final String CREDIT = "CREDIT";  // Pour les mouvements comptables
+        public static final String VERSEMENT_NORMAL = "versement_normal";
+        public static final String VERSEMENT_MANQUANT = "versement_manquant";
+        public static final String AJUSTEMENT_MANQUANT = "ajustement_manquant";
+    }
+    
+    /**
+     * Types de mouvement métier
+     */
+    public static final class TypeMouvement {
+        public static final String EPARGNE = "EPARGNE";
+        public static final String RETRAIT = "RETRAIT";
+    }
 }

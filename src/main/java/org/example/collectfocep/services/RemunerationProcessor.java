@@ -277,6 +277,14 @@ public class RemunerationProcessor {
     }
 
     /**
+     * Récupère les rubriques actives d'un collecteur
+     */
+    public List<RubriqueRemuneration> getRubriquesCollecteur(Long collecteurId) {
+        log.info("Récupération rubriques collecteur: {}", collecteurId);
+        return rubriqueRepository.findActiveRubriquesByCollecteur(collecteurId, LocalDate.now());
+    }
+
+    /**
      * Classe pour le résultat de la rémunération
      */
     @lombok.Builder

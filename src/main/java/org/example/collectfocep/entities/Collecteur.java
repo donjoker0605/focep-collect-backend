@@ -1,5 +1,6 @@
 package org.example.collectfocep.entities;
 
+
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
@@ -159,5 +160,113 @@ public class Collecteur extends Utilisateur {
      */
     public boolean isNouveauCollecteur() {
         return ancienneteEnMois != null && ancienneteEnMois < 3;
+    }
+
+    // ================================
+    // 🔥 SYSTÈME D'ANCIENNETÉ AUTOMATIQUE
+    // ================================
+
+    /**
+     * Calcule l'ancienneté en mois depuis la date de création
+     * @return ancienneté en mois
+     */
+    public int calculateAncienneteEnMois() {
+        if (this.getDateCreation() == null) {
+            return 0;
+        }
+        
+        LocalDateTime maintenant = LocalDateTime.now();
+        LocalDateTime dateCreation = this.getDateCreation();
+        
+        // Calcul précis en utilisant Period pour les mois
+        int moisDifference = (maintenant.getYear() - dateCreation.getYear()) * 12 
+                           + (maintenant.getMonthValue() - dateCreation.getMonthValue());
+        
+        // Si nous sommes avant le jour de création dans le mois courant, enlever 1 mois
+        if (maintenant.getDayOfMonth() < dateCreation.getDayOfMonth()) {
+            moisDifference--;
+        }
+        
+        return Math.max(0, moisDifference);
+    }
+
+    /**
+     * Met à jour l'ancienneté automatiquement
+     */
+    @PreUpdate
+    @PrePersist
+    public void updateAnciennete() {
+        this.ancienneteEnMois = calculateAncienneteEnMois();
+    }
+
+    /**
+     * Retourne le niveau d'ancienneté textuel
+     */
+    public String getNiveauAnciennete() {
+        if (ancienneteEnMois == null || ancienneteEnMois < 1) {
+            return "NOUVEAU"; // < 1 mois
+        } else if (ancienneteEnMois < 3) {
+            return "JUNIOR"; // 1-3 mois
+        } else if (ancienneteEnMois < 12) {
+            return "CONFIRMÉ"; // 3-12 mois
+        } else if (ancienneteEnMois < 24) {
+            return "SENIOR"; // 1-2 ans
+        } else {
+            return "EXPERT"; // > 2 ans
+        }
+    }
+
+    /**
+     * Retourne le coefficient de commission basé sur l'ancienneté
+     */
+    public double getCoefficientAnciennete() {
+        String niveau = getNiveauAnciennete();
+        switch (niveau) {
+            case "NOUVEAU":
+                return 1.0; // Pas de bonus
+            case "JUNIOR":
+                return 1.05; // +5%
+            case "CONFIRMÉ":
+                return 1.10; // +10%
+            case "SENIOR":
+                return 1.15; // +15%
+            case "EXPERT":
+                return 1.20; // +20%
+            default:
+                return 1.0;
+        }
+    }
+
+    /**
+     * Retourne un résumé de l'ancienneté pour l'affichage
+     */
+    public String getAncienneteSummary() {
+        int mois = ancienneteEnMois != null ? ancienneteEnMois : 0;
+        int annees = mois / 12;
+        int moisRestants = mois % 12;
+        
+        if (annees == 0) {
+            return mois == 1 ? "1 mois" : mois + " mois";
+        } else if (moisRestants == 0) {
+            return annees == 1 ? "1 an" : annees + " ans";
+        } else {
+            return annees + " an" + (annees > 1 ? "s" : "") + 
+                   " et " + moisRestants + " mois";
+        }
+    }
+
+    /**
+     * Vérifie si le collecteur a droit à une promotion d'ancienneté
+     */
+    public boolean isEligibleForSeniorityPromotion() {
+        // Promotion automatique tous les 3 mois les 12 premiers mois,
+        // puis chaque année
+        if (ancienneteEnMois == null) return false;
+        
+        if (ancienneteEnMois < 12) {
+            return ancienneteEnMois % 3 == 0 && ancienneteEnMois > 0;
+        } else {
+            return ancienneteEnMois % 12 == 0;
+        }
     }
 }

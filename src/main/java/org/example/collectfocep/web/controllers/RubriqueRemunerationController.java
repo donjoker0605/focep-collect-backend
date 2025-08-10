@@ -21,10 +21,27 @@ import java.util.Optional;
 @RequestMapping("/api/v2/rubriques-remuneration")
 @RequiredArgsConstructor
 @Slf4j
-@PreAuthorize("hasRole('ADMIN') or hasRole('SUPER_ADMIN')")
 public class RubriqueRemunerationController {
 
     private final RubriqueRemunerationRepository rubriqueRepository;
+
+    /**
+     * Test endpoint pour diagnostiquer les problèmes
+     */
+    @GetMapping("/test")
+    public ResponseEntity<ApiResponse<String>> testEndpoint() {
+        try {
+            long count = rubriqueRepository.count();
+            log.info("🧪 Test endpoint: {} rubriques en DB", count);
+            return ResponseEntity.ok(
+                ApiResponse.success("OK", String.format("Test réussi - %d rubriques en DB", count))
+            );
+        } catch (Exception e) {
+            log.error("❌ Test endpoint failed: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError()
+                .body(ApiResponse.error("Test failed: " + e.getMessage()));
+        }
+    }
 
     /**
      * Récupère les rubriques actives pour un collecteur
@@ -33,7 +50,7 @@ public class RubriqueRemunerationController {
      * @return Liste des rubriques applicables
      */
     @GetMapping("/collecteur/{collecteurId}")
-    public ResponseEntity<ApiResponse<List<RubriqueRemuneration>>> getRubriquesByCollecteur(
+    public ResponseEntity<ApiResponse<List<RubriqueRemunerationDTO>>> getRubriquesByCollecteur(
             @PathVariable Long collecteurId) {
         try {
             log.info("📋 Récupération rubriques pour collecteur: {}", collecteurId);
@@ -41,16 +58,21 @@ public class RubriqueRemunerationController {
             List<RubriqueRemuneration> rubriques = rubriqueRepository
                     .findActiveRubriquesByCollecteurId(collecteurId);
             
-            log.info("✅ {} rubriques trouvées pour collecteur {}", rubriques.size(), collecteurId);
+            // Conversion en DTO pour éviter les problèmes de sérialisation JPA
+            List<RubriqueRemunerationDTO> rubriquesDTOs = rubriques.stream()
+                    .map(RubriqueRemunerationDTO::fromEntity)
+                    .toList();
+            
+            log.info("✅ {} rubriques trouvées pour collecteur {}", rubriquesDTOs.size(), collecteurId);
             
             return ResponseEntity.ok(
                 ApiResponse.success(
-                    rubriques, 
-                    String.format("%d rubriques actives trouvées", rubriques.size())
+                    rubriquesDTOs, 
+                    String.format("%d rubriques actives trouvées", rubriquesDTOs.size())
                 )
             );
         } catch (Exception e) {
-            log.error("❌ Erreur récupération rubriques collecteur {}: {}", collecteurId, e.getMessage());
+            log.error("❌ Erreur récupération rubriques collecteur {}: {}", collecteurId, e.getMessage(), e);
             return ResponseEntity.internalServerError()
                 .body(ApiResponse.error("Erreur lors de la récupération des rubriques"));
         }

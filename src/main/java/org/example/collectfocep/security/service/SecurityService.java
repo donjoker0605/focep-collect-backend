@@ -37,6 +37,7 @@ public class SecurityService {
     private final CompteCollecteurRepository compteCollecteurRepository;
     private final CompteLiaisonRepository compteLiaisonRepository;
     private final ClientRepository clientRepository;
+    private final AdminCollecteurRepository adminCollecteurRepository;
 
     @Autowired
     public SecurityService(AgenceRepository agenceRepository,
@@ -47,7 +48,8 @@ public class SecurityService {
                            CompteClientRepository compteClientRepository,
                            CompteCollecteurRepository compteCollecteurRepository,
                            CompteLiaisonRepository compteLiaisonRepository,
-                           ClientRepository clientRepository) {
+                           ClientRepository clientRepository,
+                           AdminCollecteurRepository adminCollecteurRepository) {
         this.agenceRepository = agenceRepository;
         this.adminRepository = adminRepository;
         this.collecteurRepository = collecteurRepository;
@@ -57,6 +59,7 @@ public class SecurityService {
         this.compteCollecteurRepository = compteCollecteurRepository;
         this.compteLiaisonRepository = compteLiaisonRepository;
         this.clientRepository = clientRepository;
+        this.adminCollecteurRepository = adminCollecteurRepository;
     }
 
     /**
@@ -402,6 +405,21 @@ public class SecurityService {
 
     private boolean verifyAdminCanManageCollecteur(String adminEmail, Long collecteurId) {
         try {
+            // 🔥 NOUVELLE LOGIQUE: Vérifier la relation spécifique admin-collecteur
+            boolean canManageSpecific = adminCollecteurRepository.canAdminManageCollecteurByEmail(adminEmail, collecteurId);
+            
+            log.debug("🎯 [NEW LOGIC] Admin {} peut gérer collecteur {} via relation spécifique: {}", 
+                    adminEmail, collecteurId, canManageSpecific);
+            
+            if (canManageSpecific) {
+                return true;
+            }
+            
+            // 🔄 FALLBACK: Si pas de relation spécifique, utiliser l'ancienne logique basée sur l'agence
+            // (Temporaire pour transition douce - à supprimer après migration complète)
+            log.warn("⚠️ [FALLBACK] Pas de relation admin-collecteur spécifique, utilisation logique agence pour admin {} et collecteur {}", 
+                    adminEmail, collecteurId);
+            
             Optional<Admin> adminOpt = adminRepository.findByAdresseMail(adminEmail);
             if (adminOpt.isEmpty()) {
                 log.debug("❌ Admin non trouvé: {}", adminEmail);
@@ -417,12 +435,12 @@ public class SecurityService {
             // Vérifier que le collecteur appartient à l'agence de l'admin
             Long adminAgenceId = adminOpt.get().getAgence().getId();
             Long collecteurAgenceId = collecteurOpt.get().getAgence().getId();
-            boolean canManage = adminAgenceId.equals(collecteurAgenceId);
+            boolean canManageByAgence = adminAgenceId.equals(collecteurAgenceId);
 
-            log.debug("🎯 Admin agence: {}, Collecteur agence: {}, Peut gérer: {}",
-                    adminAgenceId, collecteurAgenceId, canManage);
+            log.debug("🎯 [FALLBACK] Admin agence: {}, Collecteur agence: {}, Peut gérer: {}",
+                    adminAgenceId, collecteurAgenceId, canManageByAgence);
 
-            return canManage;
+            return canManageByAgence;
 
         } catch (Exception e) {
             log.error("❌ Erreur vérification admin-collecteur: {}", e.getMessage());
@@ -449,9 +467,23 @@ public class SecurityService {
         try {
             String userEmail = authentication.getName();
 
-            // Vérification pour les Admins CORRIGÉE
+            // 🔥 NOUVELLE VÉRIFICATION ADMIN: Accès via relation spécifique admin-collecteur
             if (hasRole(authentication.getAuthorities(), RoleConfig.ADMIN)) {
-                log.debug("🔍 Vérification accès admin {} au client {}", userEmail, clientId);
+                log.debug("🔍 [NEW] Vérification accès admin {} au client {} via relations spécifiques", userEmail, clientId);
+
+                // Utiliser la nouvelle méthode qui vérifie la relation admin-collecteur
+                boolean canAccessViaCollecteur = adminCollecteurRepository.canAdminAccessClientByEmail(userEmail, clientId);
+                
+                log.debug("🎯 [NEW] Admin {} peut accéder au client {} via ses collecteurs: {}", 
+                        userEmail, clientId, canAccessViaCollecteur);
+
+                if (canAccessViaCollecteur) {
+                    return true;
+                }
+
+                // 🔄 FALLBACK: Si pas d'accès via relation spécifique, essayer l'ancienne logique
+                log.warn("⚠️ [FALLBACK] Admin {} n'a pas d'accès spécifique au client {}, essai avec logique agence", 
+                        userEmail, clientId);
 
                 // Récupérer l'agence de l'admin
                 Optional<Admin> adminOpt = adminRepository.findByAdresseMailWithAgence(userEmail);
@@ -468,12 +500,12 @@ public class SecurityService {
                 }
 
                 Long adminAgenceId = adminOpt.get().getAgence().getId();
-                boolean canAccess = adminAgenceId.equals(clientAgenceId);
+                boolean canAccessByAgence = adminAgenceId.equals(clientAgenceId);
 
-                log.debug("🎯 Admin agence: {}, Client agence: {}, Accès autorisé: {}",
-                        adminAgenceId, clientAgenceId, canAccess);
+                log.debug("🎯 [FALLBACK] Admin agence: {}, Client agence: {}, Accès autorisé: {}",
+                        adminAgenceId, clientAgenceId, canAccessByAgence);
 
-                return canAccess;
+                return canAccessByAgence;
             }
 
             // Vérification pour les Collecteurs (logique existante conservée)

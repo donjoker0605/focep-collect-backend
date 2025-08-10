@@ -4,7 +4,8 @@ public enum Priority {
     CRITIQUE("Critique", 1),
     ELEVEE("Élevée", 2),
     NORMALE("Normale", 3),
-    FAIBLE("Faible", 4);
+    FAIBLE("Faible", 4),
+    INFORMATIF("Informatif", 5);
 
     private final String label;
     private final int order;

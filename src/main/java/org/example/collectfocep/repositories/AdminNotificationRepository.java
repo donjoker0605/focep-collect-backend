@@ -59,6 +59,11 @@ public interface AdminNotificationRepository extends JpaRepository<AdminNotifica
                                                       @Param("startDate") LocalDateTime startDate,
                                                       @Param("endDate") LocalDateTime endDate);
 
+    // Méthode spécifique pour AdminNotificationService
+    List<AdminNotification> findByAdminIdAndDateCreationBetween(Long adminId, 
+                                                              LocalDateTime startDate, 
+                                                              LocalDateTime endDate);
+
     // Statistiques pour monitoring
     @Query("SELECT COUNT(n) FROM AdminNotification n WHERE n.dateCreation > :since")
     Long countCreatedSince(@Param("since") LocalDateTime since);

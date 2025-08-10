@@ -6,6 +6,7 @@ import org.example.collectfocep.entities.*;
 import org.example.collectfocep.exceptions.CompteNotFoundException;
 import org.example.collectfocep.exceptions.ResourceNotFoundException;
 import org.example.collectfocep.repositories.*;
+import org.example.collectfocep.repositories.MouvementRepository;
 import org.example.collectfocep.services.impl.MouvementServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -105,6 +106,11 @@ public class CompteTransferService {
             } catch (Exception e) {
                 log.error("Erreur lors du transfert du client {}: {}", clientId, e.getMessage(), e);
             }
+        }
+
+        // Créer un enregistrement de transfert pour l'historique
+        if (successCount > 0) {
+            createTransferRecord(sourceCollecteurId, targetCollecteurId, clientIds, successCount, isSameAgence);
         }
 
         log.info("Fin du transfert: {} comptes sur {} transférés avec succès",
@@ -362,5 +368,111 @@ public class CompteTransferService {
 
         info.append(")");
         return info.toString();
+    }
+
+    /**
+     * Récupère tous les transferts avec pagination et filtres
+     */
+    @Transactional(readOnly = true)
+    public org.springframework.data.domain.Page<TransfertCompte> getAllTransfers(
+            org.springframework.data.domain.Pageable pageable,
+            Long collecteurId,
+            Boolean interAgence) {
+        
+        if (collecteurId != null) {
+            // Récupérer les transferts pour ce collecteur (source ou destination)
+            java.util.List<TransfertCompte> sourceTransfers = transfertCompteRepository.findBySourceCollecteurId(collecteurId);
+            java.util.List<TransfertCompte> targetTransfers = transfertCompteRepository.findByTargetCollecteurId(collecteurId);
+            
+            // Combiner et dédupliquer
+            java.util.Set<TransfertCompte> allTransfers = new java.util.HashSet<>(sourceTransfers);
+            allTransfers.addAll(targetTransfers);
+            
+            java.util.List<TransfertCompte> transfersList = new java.util.ArrayList<>(allTransfers);
+            transfersList.sort((a, b) -> b.getDateTransfert().compareTo(a.getDateTransfert()));
+
+            // Pagination manuelle
+            int start = (int) pageable.getOffset();
+            int end = Math.min(start + pageable.getPageSize(), transfersList.size());
+            java.util.List<TransfertCompte> pageContent = 
+                start < transfersList.size() ? transfersList.subList(start, end) : new java.util.ArrayList<>();
+
+            return new org.springframework.data.domain.PageImpl<>(pageContent, pageable, transfersList.size());
+            
+        } else if (interAgence != null) {
+            java.util.List<TransfertCompte> transfers = transfertCompteRepository.findByInterAgence(interAgence);
+            transfers.sort((a, b) -> b.getDateTransfert().compareTo(a.getDateTransfert()));
+
+            // Pagination manuelle
+            int start = (int) pageable.getOffset();
+            int end = Math.min(start + pageable.getPageSize(), transfers.size());
+            java.util.List<TransfertCompte> pageContent = 
+                start < transfers.size() ? transfers.subList(start, end) : new java.util.ArrayList<>();
+
+            return new org.springframework.data.domain.PageImpl<>(pageContent, pageable, transfers.size());
+        } else {
+            // Récupérer tous les transferts avec pagination native
+            return transfertCompteRepository.findAll(pageable);
+        }
+    }
+
+    /**
+     * Crée un enregistrement de transfert dans l'historique
+     */
+    private void createTransferRecord(Long sourceCollecteurId, Long targetCollecteurId, 
+                                    List<Long> clientIds, int successCount, boolean isSameAgence) {
+        try {
+            Collecteur sourceCollecteur = collecteurRepository.findById(sourceCollecteurId).orElse(null);
+            Collecteur targetCollecteur = collecteurRepository.findById(targetCollecteurId).orElse(null);
+
+            if (sourceCollecteur == null || targetCollecteur == null) {
+                log.warn("Impossible de créer l'enregistrement de transfert: collecteur introuvable");
+                return;
+            }
+
+            // Calculer le montant total transféré
+            double montantTotal = clientIds.stream()
+                    .limit(successCount) // Seulement les clients transférés avec succès
+                    .mapToDouble(clientId -> {
+                        try {
+                            Client client = clientRepository.findById(clientId).orElse(null);
+                            if (client != null) {
+                                CompteClient compteClient = compteClientRepository.findByClient(client).orElse(null);
+                                if (compteClient != null) {
+                                    return compteClient.getSolde();
+                                }
+                            }
+                        } catch (Exception e) {
+                            log.warn("Erreur calcul solde client {}: {}", clientId, e.getMessage());
+                        }
+                        return 0.0;
+                    })
+                    .sum();
+
+            // Estimer les commissions (simplifié)
+            double montantCommissions = montantTotal * 0.02; // 2% estimé
+
+            // Créer l'entité TransfertCompte
+            org.example.collectfocep.entities.TransfertCompte transfertCompte = 
+                new org.example.collectfocep.entities.TransfertCompte();
+            transfertCompte.setSourceCollecteurId(sourceCollecteurId);
+            transfertCompte.setTargetCollecteurId(targetCollecteurId);
+            transfertCompte.setNombreComptes(successCount);
+            transfertCompte.setMontantTotal(montantTotal);
+            transfertCompte.setMontantCommissions(montantCommissions);
+            transfertCompte.setIsInterAgence(!isSameAgence);
+            transfertCompte.setDateTransfert(LocalDateTime.now());
+            transfertCompte.setStatut("COMPLETED");
+
+            // Sauvegarder l'enregistrement
+            org.example.collectfocep.entities.TransfertCompte savedTransfer = 
+                transfertCompteRepository.save(transfertCompte);
+
+            log.info("Enregistrement de transfert créé: ID {}, {} comptes, {} FCFA", 
+                    savedTransfer.getId(), successCount, montantTotal);
+
+        } catch (Exception e) {
+            log.error("Erreur lors de la création de l'enregistrement de transfert: {}", e.getMessage(), e);
+        }
     }
 }

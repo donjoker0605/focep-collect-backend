@@ -7,7 +7,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.dto.*;
 import org.example.collectfocep.entities.Collecteur;
 import org.example.collectfocep.exceptions.BusinessException;
-import org.example.collectfocep.exceptions.InvalidOperationException;
 import org.example.collectfocep.exceptions.ResourceNotFoundException;
 import org.example.collectfocep.repositories.ClientRepository;
 import org.example.collectfocep.repositories.CollecteurRepository;
@@ -701,5 +700,170 @@ public class CollecteurController {
     public ResponseEntity<String> checkMappings() {
         log.info("🎯 MAPPINGS CHECK APPELÉ");
         return ResponseEntity.ok("CollecteurController est bien configuré");
+    }
+
+    // ================================
+    // 🔥 ENDPOINTS ANCIENNETÉ
+    // ================================
+
+    /**
+     * Récupère les informations d'ancienneté d'un collecteur
+     */
+    @GetMapping("/{collecteurId}/seniority")
+    @PreAuthorize("@securityService.canManageCollecteur(authentication, #collecteurId)")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getCollecteurSeniority(
+            @PathVariable Long collecteurId,
+            Authentication authentication) {
+        
+        log.info("📈 [ANCIENNETÉ] Récupération ancienneté collecteur {} par {}",
+                collecteurId, authentication.getName());
+
+        try {
+            // Récupérer le collecteur
+            Collecteur collecteur = collecteurRepository.findById(collecteurId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé avec l'ID: " + collecteurId));
+
+            // Mettre à jour l'ancienneté (au cas où)
+            collecteur.updateAnciennete();
+            collecteurRepository.save(collecteur);
+
+            // Construire la réponse
+            Map<String, Object> seniorityInfo = new HashMap<>();
+            seniorityInfo.put("collecteurId", collecteurId);
+            seniorityInfo.put("nom", collecteur.getDisplayName());
+            seniorityInfo.put("dateCreation", collecteur.getDateCreation());
+            seniorityInfo.put("ancienneteEnMois", collecteur.getAncienneteEnMois());
+            seniorityInfo.put("niveauAnciennete", collecteur.getNiveauAnciennete());
+            seniorityInfo.put("ancienneteSummary", collecteur.getAncienneteSummary());
+            seniorityInfo.put("coefficientAnciennete", collecteur.getCoefficientAnciennete());
+            seniorityInfo.put("isNouveauCollecteur", collecteur.isNouveauCollecteur());
+            seniorityInfo.put("eligibleForPromotion", collecteur.isEligibleForSeniorityPromotion());
+            seniorityInfo.put("dateCalcul", LocalDateTime.now());
+
+            log.info("✅ [ANCIENNETÉ] Collecteur {} - {} ({} mois, niveau {})",
+                    collecteurId, collecteur.getDisplayName(), 
+                    collecteur.getAncienneteEnMois(), collecteur.getNiveauAnciennete());
+
+            return ResponseEntity.ok(ApiResponse.success(seniorityInfo, "Informations d'ancienneté récupérées"));
+
+        } catch (Exception e) {
+            log.error("❌ [ANCIENNETÉ] Erreur récupération ancienneté collecteur {}: {}", 
+                    collecteurId, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("SENIORITY_ERROR", "Erreur: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Met à jour l'ancienneté de tous les collecteurs (tâche admin)
+     */
+    @PostMapping("/update-all-seniority")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('SUPER_ADMIN')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> updateAllCollecteursSeniority(
+            Authentication authentication) {
+        
+        log.info("🔄 [ANCIENNETÉ] Mise à jour ancienneté tous collecteurs par {}", authentication.getName());
+
+        try {
+            List<Collecteur> collecteurs = collecteurRepository.findAll();
+            int updatedCount = 0;
+            int promotionCount = 0;
+
+            for (Collecteur collecteur : collecteurs) {
+                int oldAnciennete = collecteur.getAncienneteEnMois();
+                String oldNiveau = collecteur.getNiveauAnciennete();
+                
+                collecteur.updateAnciennete();
+                
+                int newAnciennete = collecteur.getAncienneteEnMois();
+                String newNiveau = collecteur.getNiveauAnciennete();
+                
+                if (oldAnciennete != newAnciennete) {
+                    updatedCount++;
+                    log.info("📈 Collecteur {} - Ancienneté: {} → {} mois", 
+                            collecteur.getDisplayName(), oldAnciennete, newAnciennete);
+                    
+                    if (!oldNiveau.equals(newNiveau)) {
+                        promotionCount++;
+                        log.info("🎉 Collecteur {} - Promotion: {} → {}", 
+                                collecteur.getDisplayName(), oldNiveau, newNiveau);
+                    }
+                }
+            }
+
+            // Sauvegarder tous les changements
+            collecteurRepository.saveAll(collecteurs);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("totalCollecteurs", collecteurs.size());
+            result.put("collecteursUpdated", updatedCount);
+            result.put("promotions", promotionCount);
+            result.put("dateUpdate", LocalDateTime.now());
+
+            log.info("✅ [ANCIENNETÉ] Mise à jour terminée - {} collecteurs traités, {} mis à jour, {} promotions",
+                    collecteurs.size(), updatedCount, promotionCount);
+
+            return ResponseEntity.ok(ApiResponse.success(result, 
+                    String.format("Ancienneté mise à jour pour %d collecteurs (%d promotions)", updatedCount, promotionCount)));
+
+        } catch (Exception e) {
+            log.error("❌ [ANCIENNETÉ] Erreur mise à jour ancienneté: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("SENIORITY_UPDATE_ERROR", "Erreur: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Récupère le rapport d'ancienneté pour tous les collecteurs (admin)
+     */
+    @GetMapping("/seniority-report")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('SUPER_ADMIN')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getSeniorityReport(Authentication authentication) {
+        
+        log.info("📊 [ANCIENNETÉ] Génération rapport ancienneté par {}", authentication.getName());
+
+        try {
+            List<Collecteur> collecteurs = collecteurRepository.findAllByOrderByAncienneteEnMoisDesc();
+            
+            // Grouper par niveau d'ancienneté
+            Map<String, Long> groupByLevel = collecteurs.stream()
+                    .collect(Collectors.groupingBy(
+                            Collecteur::getNiveauAnciennete,
+                            Collectors.counting()
+                    ));
+
+            // Calculer les moyennes
+            double moyenneAnciennete = collecteurs.stream()
+                    .mapToInt(c -> c.getAncienneteEnMois() != null ? c.getAncienneteEnMois() : 0)
+                    .average()
+                    .orElse(0.0);
+
+            // Top 5 plus anciens
+            List<Map<String, Object>> topSeniors = collecteurs.stream()
+                    .limit(5)
+                    .map(c -> {
+                        Map<String, Object> info = new HashMap<>();
+                        info.put("nom", c.getDisplayName());
+                        info.put("ancienneteMois", c.getAncienneteEnMois());
+                        info.put("niveau", c.getNiveauAnciennete());
+                        info.put("coefficient", c.getCoefficientAnciennete());
+                        return info;
+                    })
+                    .collect(Collectors.toList());
+
+            Map<String, Object> rapport = new HashMap<>();
+            rapport.put("totalCollecteurs", collecteurs.size());
+            rapport.put("moyenneAncienneteMois", Math.round(moyenneAnciennete * 100.0) / 100.0);
+            rapport.put("distributionParNiveau", groupByLevel);
+            rapport.put("top5PlusAnciens", topSeniors);
+            rapport.put("dateGeneration", LocalDateTime.now());
+
+            return ResponseEntity.ok(ApiResponse.success(rapport, "Rapport d'ancienneté généré"));
+
+        } catch (Exception e) {
+            log.error("❌ [ANCIENNETÉ] Erreur génération rapport: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("SENIORITY_REPORT_ERROR", "Erreur: " + e.getMessage()));
+        }
     }
 }

@@ -5,8 +5,11 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
 
 import java.io.Serializable;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "utilisateurs")
@@ -44,6 +47,28 @@ public abstract class Utilisateur implements Serializable {
     @NotBlank(message = "Le rôle est obligatoire")
     private String role;
 
+    @CreationTimestamp
+    @Column(name = "date_creation", updatable = false)
+    private LocalDateTime dateCreation;
+
+    @UpdateTimestamp
+    @Column(name = "date_modification")
+    private LocalDateTime dateModification;
+
     @Version
     private Long version;
+
+    /**
+     * Méthode pour initialiser les dates sur les entités existantes
+     */
+    @PrePersist
+    @PreUpdate
+    protected void initDates() {
+        if (dateCreation == null) {
+            dateCreation = LocalDateTime.now();
+        }
+        if (dateModification == null) {
+            dateModification = LocalDateTime.now();
+        }
+    }
 }
