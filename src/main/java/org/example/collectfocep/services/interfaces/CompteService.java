@@ -5,9 +5,7 @@ import org.example.collectfocep.exceptions.ResourceNotFoundException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public interface CompteService {
@@ -108,6 +106,11 @@ public interface CompteService {
      * Archive les anciens mouvements de compte (pour performance)
      */
     void archiverAnciensMouvements(int nombreJours);
+
+    /**
+     * Récupère les soldes de tous les comptes d'un collecteur
+     */
+    Map<String, Object> getCollecteurAccountBalances(Long collecteurId);
 }
 
 

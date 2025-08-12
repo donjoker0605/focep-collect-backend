@@ -16,6 +16,7 @@ import org.example.collectfocep.security.filters.JwtAuthenticationFilter;
 import org.example.collectfocep.security.service.SecurityService;
 import org.example.collectfocep.services.impl.PasswordService;
 import org.example.collectfocep.services.interfaces.CollecteurService;
+import org.example.collectfocep.services.interfaces.CompteService;
 import org.example.collectfocep.util.ApiResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -58,6 +59,7 @@ public class CollecteurController {
     private final SecurityService securityService;
     private final CollecteurRepository collecteurRepository;
     private final ClientRepository clientRepository;
+    private final CompteService compteService;
 
     // ✅ TON CODE EXISTANT - CONSERVÉ INTÉGRALEMENT
     @PostMapping
@@ -864,6 +866,46 @@ public class CollecteurController {
             log.error("❌ [ANCIENNETÉ] Erreur génération rapport: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error("SENIORITY_REPORT_ERROR", "Erreur: " + e.getMessage()));
+        }
+    }
+
+    // ================================
+    // 🔥 ENDPOINTS SOLDES DES COMPTES
+    // ================================
+
+    /**
+     * Récupère les soldes de tous les comptes du collecteur
+     */
+    @GetMapping("/{collecteurId}/account-balances")
+    @PreAuthorize("@securityService.canManageCollecteur(authentication, #collecteurId)")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getCollecteurAccountBalances(
+            @PathVariable Long collecteurId,
+            Authentication authentication) {
+        
+        log.info("💰 [SOLDES] Récupération soldes comptes collecteur {} par {}",
+                collecteurId, authentication.getName());
+
+        try {
+            // Vérifier que le collecteur existe
+            Collecteur collecteur = collecteurRepository.findById(collecteurId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé avec l'ID: " + collecteurId));
+
+            // Récupérer les soldes via le service
+            Map<String, Object> balances = compteService.getCollecteurAccountBalances(collecteurId);
+            
+            log.info("✅ [SOLDES] Soldes récupérés pour collecteur {} : {}", collecteurId, balances);
+
+            return ResponseEntity.ok(ApiResponse.success(balances, "Soldes des comptes récupérés"));
+
+        } catch (ResourceNotFoundException e) {
+            log.warn("❌ [SOLDES] Collecteur non trouvé: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(ApiResponse.error("COLLECTEUR_NOT_FOUND", e.getMessage()));
+        } catch (Exception e) {
+            log.error("❌ [SOLDES] Erreur récupération soldes collecteur {}: {}", 
+                    collecteurId, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("ACCOUNT_BALANCES_ERROR", "Erreur: " + e.getMessage()));
         }
     }
 }

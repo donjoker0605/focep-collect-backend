@@ -13,4 +13,5 @@ public interface CompteManquantRepository extends JpaRepository<CompteManquant, 
     Optional<CompteManquant> findFirstByCollecteur(Collecteur collecteur);
     List<CompteManquant> findAllByCollecteur(Collecteur collecteur);
     boolean existsByCollecteur(Collecteur collecteur);
+    Optional<CompteManquant> findByCollecteurId(Long collecteurId);
 }

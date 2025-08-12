@@ -336,7 +336,8 @@ public class ClientServiceImpl implements ClientService {
         if (!collecteurRepository.existsById(collecteurId)) {
             throw new ResourceNotFoundException("Collecteur", "id", collecteurId);
         }
-        return clientRepository.findByCollecteurId(collecteurId);
+        // Utiliser la nouvelle méthode qui récupère les paramètres de commission
+        return clientRepository.findByCollecteurIdWithCommissionParams(collecteurId);
     }
 
     @Override

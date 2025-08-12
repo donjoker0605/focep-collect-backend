@@ -150,7 +150,7 @@ public class AdminNotificationService {
             Long total = notificationRepository.countByAdminId(adminId);
             Long nonLues = notificationRepository.countByAdminIdAndLuFalse(adminId);
             Long critiques = notificationRepository.countByAdminIdAndPriority(adminId, Priority.CRITIQUE);
-            Long critiquesNonLues = notificationRepository.countCriticalUnreadByAdminId(adminId);
+            Long critiquesNonLues = notificationRepository.countCriticalUnreadByAdminId(adminId, Priority.CRITIQUE);
 
             // Dernière notification
             LocalDateTime derniere = notificationRepository.findByAdminIdOrderByDateCreationDesc(adminId)
@@ -179,7 +179,12 @@ public class AdminNotificationService {
      * 🚨 Récupérer notifications critiques
      */
     public List<AdminNotification> getCriticalNotifications(Long adminId) {
-        return notificationRepository.findCriticalUnreadByAdminId(adminId);
+        try {
+            return notificationRepository.findCriticalUnreadByAdminId(adminId, Priority.CRITIQUE);
+        } catch (Exception e) {
+            log.error("❌ Erreur récupération notifications critiques: {}", e.getMessage(), e);
+            return Collections.emptyList();
+        }
     }
 
     private List<AdminNotificationDTO> getCriticalNotificationsDTO(Long adminId) {
@@ -299,7 +304,7 @@ public class AdminNotificationService {
      */
     public Long getCriticalCount(Long adminId) {
         try {
-            return notificationRepository.countCriticalUnreadByAdminId(adminId);
+            return notificationRepository.countCriticalUnreadByAdminId(adminId, Priority.CRITIQUE);
         } catch (Exception e) {
             log.error("❌ Erreur comptage critiques: {}", e.getMessage(), e);
             return 0L;

@@ -5,6 +5,7 @@ import org.example.collectfocep.entities.Client;
 import org.example.collectfocep.entities.Collecteur;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -34,6 +35,12 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
     @Query("SELECT c FROM Client c WHERE c.collecteur.id = :collecteurId")
     List<Client> findByCollecteurId(@Param("collecteurId") Long collecteurId);
 
+    @Query("SELECT c FROM Client c LEFT JOIN FETCH c.commissionParameters cp WHERE c.collecteur.id = :collecteurId")
+    List<Client> findByCollecteurIdWithCommissionParams(@Param("collecteurId") Long collecteurId);
+
+    @Query("SELECT c FROM Client c LEFT JOIN FETCH c.commissionParameters cp WHERE c.id = :clientId")
+    Optional<Client> findByIdWithCommissionParameters(@Param("clientId") Long clientId);
+
     @Query("SELECT c FROM Client c WHERE c.collecteur.id = :collecteurId ORDER BY c.dateCreation DESC")
     Page<Client> findByCollecteurId(@Param("collecteurId") Long collecteurId, Pageable pageable);
 
@@ -56,6 +63,32 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
 
     @Query("SELECT c FROM Client c WHERE c.agence.id = :agenceId")
     Page<Client> findByAgenceId(@Param("agenceId") Long agenceId, Pageable pageable);
+    
+    @Query("SELECT DISTINCT c FROM Client c LEFT JOIN FETCH c.collecteur LEFT JOIN FETCH c.compteClient WHERE c.agence.id = :agenceId")
+    List<Client> findByAgenceIdWithAssociations(@Param("agenceId") Long agenceId);
+    
+    @Query("SELECT DISTINCT c FROM Client c LEFT JOIN FETCH c.collecteur WHERE c.id IN :clientIds")
+    List<Client> findByIdInWithCollecteur(@Param("clientIds") List<Long> clientIds);
+    
+    // =====================================
+    // MÉTHODES AVEC @EntityGraph (APPROCHE MODERNE)
+    // =====================================
+    
+    @EntityGraph("Client.withCollecteur")
+    @Query("SELECT c FROM Client c WHERE c.agence.id = :agenceId ORDER BY c.id DESC")
+    Page<Client> findByAgenceIdWithCollecteurOrderByIdDesc(@Param("agenceId") Long agenceId, Pageable pageable);
+    
+    @EntityGraph("Client.withCollecteurAndCompte") 
+    @Query("SELECT c FROM Client c WHERE c.agence.id = :agenceId ORDER BY c.id DESC")
+    List<Client> findByAgenceIdWithFullDataOrderByIdDesc(@Param("agenceId") Long agenceId);
+    
+    @EntityGraph("Client.withCollecteur")
+    @Query("SELECT c FROM Client c WHERE c.id IN :clientIds ORDER BY c.id")
+    List<Client> findByIdInWithCollecteurOrderById(@Param("clientIds") List<Long> clientIds);
+    
+    @EntityGraph("Client.full")
+    @Query("SELECT c FROM Client c WHERE c.id = :id")
+    Optional<Client> findByIdWithFullData(@Param("id") Long id);
 
     /**
      * Compte le nombre de clients par agence

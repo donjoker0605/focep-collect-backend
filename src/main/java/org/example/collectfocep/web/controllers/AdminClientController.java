@@ -4,13 +4,16 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.dto.*;
 import org.example.collectfocep.entities.Client;
+import org.example.collectfocep.entities.CompteClient;
 import org.example.collectfocep.entities.Mouvement;
 import org.example.collectfocep.exceptions.ResourceNotFoundException;
 import org.example.collectfocep.mappers.ClientMapper;
 import org.example.collectfocep.mappers.MouvementMapperV2;
 import org.example.collectfocep.repositories.ClientRepository;
+import org.example.collectfocep.repositories.CompteClientRepository;
 import org.example.collectfocep.repositories.MouvementRepository;
 import org.example.collectfocep.security.service.SecurityService;
+import org.example.collectfocep.services.FetchStrategyService;
 import org.example.collectfocep.services.interfaces.ClientService;
 import org.example.collectfocep.util.ApiResponse;
 import org.springframework.data.domain.Page;
@@ -25,8 +28,7 @@ import org.springframework.web.bind.annotation.*;
 import jakarta.validation.Valid;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -47,6 +49,8 @@ public class AdminClientController {
 
     private final ClientService clientService;
     private final ClientRepository clientRepository;
+    private final CompteClientRepository compteClientRepository;
+    private final FetchStrategyService fetchStrategyService;
     private final MouvementRepository mouvementRepository;
     private final ClientMapper clientMapper;
     private final MouvementMapperV2 mouvementMapper;
@@ -299,8 +303,8 @@ public class AdminClientController {
 
     private Page<Client> getClientsForAdmin(Long agenceId, PageRequest pageRequest,
                                             String search, Long collecteurId, Boolean active) {
-        // Utiliser la méthode existante qui fonctionne
-        return clientRepository.findByAgenceId(agenceId, pageRequest);
+        // ARCHITECTURE MODERNE: Service centralisé avec EntityGraph optimisé
+        return fetchStrategyService.getClientsWithCollecteur(agenceId, pageRequest);
     }
 
     private List<Client> searchClientsGlobal(String query, int limit, Long collecteurId) {

@@ -7,6 +7,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Entity
 @Table(name = "clients", indexes = {
@@ -14,6 +15,32 @@ import java.time.LocalDateTime;
         @Index(name = "idx_client_collecteur", columnList = "id_collecteur"),
         @Index(name = "idx_client_agence", columnList = "id_agence"),
         @Index(name = "idx_client_date_creation", columnList = "date_creation")
+})
+@NamedEntityGraphs({
+        @NamedEntityGraph(
+                name = "Client.withCollecteur",
+                attributeNodes = @NamedAttributeNode("collecteur")
+        ),
+        @NamedEntityGraph(
+                name = "Client.withCompteClient",
+                attributeNodes = @NamedAttributeNode("compteClient")
+        ),
+        @NamedEntityGraph(
+                name = "Client.withCollecteurAndCompte",
+                attributeNodes = {
+                        @NamedAttributeNode("collecteur"),
+                        @NamedAttributeNode("compteClient")
+                }
+        ),
+        @NamedEntityGraph(
+                name = "Client.full",
+                attributeNodes = {
+                        @NamedAttributeNode("collecteur"),
+                        @NamedAttributeNode("agence"),
+                        @NamedAttributeNode("compteClient"),
+                        @NamedAttributeNode("commissionParameters")
+                }
+        )
 })
 @Getter
 @Setter
@@ -83,6 +110,10 @@ public class Client {
     // Relation bidirectionnelle avec CompteClient
     @OneToOne(mappedBy = "client", fetch = FetchType.LAZY)
     private CompteClient compteClient;
+
+    // Relation avec les paramètres de commission
+    @OneToMany(mappedBy = "client", fetch = FetchType.LAZY)
+    private List<CommissionParameter> commissionParameters;
 
     public Boolean getValide() {
         return this.valide;
@@ -220,6 +251,27 @@ public class Client {
 
     public boolean isActive() {
         return valide != null && valide;
+    }
+
+    /**
+     * Récupère les paramètres de commission actifs pour ce client
+     */
+    public List<CommissionParameter> getActiveCommissionParameters() {
+        if (commissionParameters == null) {
+            return List.of();
+        }
+        
+        return commissionParameters.stream()
+                .filter(param -> param.getActive() != null && param.getActive())
+                .toList();
+    }
+
+    /**
+     * Vérifie si le client a des paramètres de commission configurés
+     */
+    public boolean hasCommissionParameters() {
+        return commissionParameters != null && !commissionParameters.isEmpty() 
+               && getActiveCommissionParameters().size() > 0;
     }
 
 }

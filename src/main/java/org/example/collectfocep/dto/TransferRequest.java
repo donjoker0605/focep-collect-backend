@@ -26,8 +26,28 @@ public class TransferRequest {
 
     private String justification;
 
+    // Pour confirmer un transfert malgré les avertissements
+    private String forceConfirm;
+    
+    // Pour effectuer une validation sans transfert réel
+    private Boolean dryRun;
+
     // Getter pour la compatibilité
     public Long getDestinationCollecteurId() {
         return destinationCollecteurId != null ? destinationCollecteurId : targetCollecteurId;
+    }
+    
+    // Setter pour la compatibilité - map destinationCollecteurId vers targetCollecteurId
+    public void setDestinationCollecteurId(Long destinationCollecteurId) {
+        this.destinationCollecteurId = destinationCollecteurId;
+        // Assurer que targetCollecteurId est aussi défini pour la validation
+        if (destinationCollecteurId != null) {
+            this.targetCollecteurId = destinationCollecteurId;
+        }
+    }
+    
+    // Getter pour targetCollecteurId
+    public Long getTargetCollecteurId() {
+        return targetCollecteurId != null ? targetCollecteurId : destinationCollecteurId;
     }
 }

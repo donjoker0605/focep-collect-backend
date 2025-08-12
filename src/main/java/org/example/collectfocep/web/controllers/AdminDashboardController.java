@@ -11,6 +11,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -238,6 +239,27 @@ public class AdminDashboardController {
     @FunctionalInterface
     private interface SumSupplier {
         Double get() throws Exception;
+    }
+
+    /**
+     * ENDPOINT DE DÉCONNEXION DASHBOARD ADMIN
+     */
+    @PostMapping("/logout")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN') or hasAuthority('ROLE_SUPER_ADMIN')")
+    public ResponseEntity<Object> logoutAdmin() {
+        log.info("👋 Demande de déconnexion depuis le dashboard admin");
+
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String userEmail = auth != null ? auth.getName() : "Utilisateur inconnu";
+        
+        log.info("✅ Déconnexion dashboard admin pour: {}", userEmail);
+        
+        return ResponseEntity.ok(java.util.Map.of(
+                "message", "Déconnexion réussie depuis le dashboard admin",
+                "status", "success",
+                "user", userEmail,
+                "timestamp", LocalDateTime.now()
+        ));
     }
 
     /**

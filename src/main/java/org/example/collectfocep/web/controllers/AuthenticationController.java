@@ -136,19 +136,45 @@ public class AuthenticationController {
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<?> logout(Authentication authentication) {
+    public ResponseEntity<?> logout(HttpServletRequest request, Authentication authentication) {
         log.info("👋 Demande de déconnexion reçue");
 
-        Map<String, String> response = new HashMap<>();
-        response.put("message", "Déconnexion réussie");
-        response.put("status", "success");
+        try {
+            String token = extractTokenFromRequest(request);
+            String userEmail = authentication != null ? authentication.getName() : "Utilisateur inconnu";
+            
+            log.info("✅ Déconnexion traitée pour l'utilisateur: {}", userEmail);
+            
+            Map<String, String> response = new HashMap<>();
+            response.put("message", "Déconnexion réussie");
+            response.put("status", "success");
+            response.put("timestamp", String.valueOf(System.currentTimeMillis()));
 
-        if (authentication != null) {
-            auditService.logAction("LOGOUT", "AUTHENTICATION",
-                    null, "Déconnexion utilisateur: " + authentication.getName());
+            if (authentication != null) {
+                auditService.logAction("LOGOUT", "AUTHENTICATION",
+                        null, "Déconnexion utilisateur: " + authentication.getName());
+            }
+
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la déconnexion: {}", e.getMessage(), e);
+            
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("message", "Déconnexion effectuée avec avertissement");
+            errorResponse.put("status", "warning");
+            errorResponse.put("error", "Token processing failed but logout completed");
+            
+            return ResponseEntity.ok(errorResponse);
         }
+    }
 
-        return ResponseEntity.ok(response);
+    private String extractTokenFromRequest(HttpServletRequest request) {
+        String bearerToken = request.getHeader("Authorization");
+        if (bearerToken != null && bearerToken.startsWith("Bearer ")) {
+            return bearerToken.substring(7);
+        }
+        return null;
     }
 
     @GetMapping("/verify")

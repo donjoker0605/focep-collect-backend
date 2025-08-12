@@ -8,6 +8,8 @@ import org.example.collectfocep.security.annotations.AgenceAccess;
 import org.example.collectfocep.security.annotations.Audited;
 import org.example.collectfocep.security.service.SecurityService;
 import org.example.collectfocep.services.interfaces.CompteService;
+import org.example.collectfocep.repositories.CompteSalaireCollecteurRepository;
+import org.example.collectfocep.repositories.CompteManquantRepository;
 import org.example.collectfocep.util.ApiResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -16,6 +18,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.http.HttpStatus;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -27,13 +30,20 @@ public class CompteController {
 
     private final CompteService compteService;
     private final SecurityService securityService;
+    private final CompteSalaireCollecteurRepository compteSalaireCollecteurRepository;
+    private final CompteManquantRepository compteManquantRepository;
     private CompteMapper compteMapper;
 
 
     @Autowired
-    public CompteController(CompteService compteService, SecurityService securityService, CompteMapper compteMapper) {
+    public CompteController(CompteService compteService, SecurityService securityService, 
+                           CompteSalaireCollecteurRepository compteSalaireCollecteurRepository,
+                           CompteManquantRepository compteManquantRepository,
+                           CompteMapper compteMapper) {
         this.compteService = compteService;
         this.securityService = securityService;
+        this.compteSalaireCollecteurRepository = compteSalaireCollecteurRepository;
+        this.compteManquantRepository = compteManquantRepository;
         this.compteMapper = compteMapper;
     }
 
@@ -126,6 +136,54 @@ public class CompteController {
         return compteService.getCompteById(id)
                 .map(compte -> ResponseEntity.ok(ApiResponse.success(compte, "Compte récupéré avec succès")))
                 .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    // ================================
+    // 🔥 ENDPOINTS SOLDES COLLECTEUR
+    // ================================
+
+    /**
+     * Récupérer le solde du compte salaire d'un collecteur
+     */
+    @GetMapping("/collecteur/{collecteurId}/salaire/solde")
+    @PreAuthorize("@securityService.canManageCollecteur(authentication, #collecteurId)")
+    public ResponseEntity<ApiResponse<Double>> getCompteSalaireSolde(@PathVariable Long collecteurId) {
+        log.info("💰 Consultation solde compte salaire collecteur: {}", collecteurId);
+        
+        try {
+            CompteSalaireCollecteur compteSalaire = compteSalaireCollecteurRepository
+                    .findByCollecteurId(collecteurId)
+                    .orElse(null);
+            Double solde = compteSalaire != null ? compteSalaire.getSolde() : 0.0;
+            
+            return ResponseEntity.ok(ApiResponse.success(solde, "Solde compte salaire récupéré"));
+        } catch (Exception e) {
+            log.error("❌ Erreur récupération solde compte salaire: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("SALARY_BALANCE_ERROR", "Erreur: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Récupérer le solde du compte manquant d'un collecteur
+     */
+    @GetMapping("/collecteur/{collecteurId}/manquant/solde")
+    @PreAuthorize("@securityService.canManageCollecteur(authentication, #collecteurId)")
+    public ResponseEntity<ApiResponse<Double>> getCompteManquantSolde(@PathVariable Long collecteurId) {
+        log.info("💰 Consultation solde compte manquant collecteur: {}", collecteurId);
+        
+        try {
+            CompteManquant compteManquant = compteManquantRepository
+                    .findByCollecteurId(collecteurId)
+                    .orElse(null);
+            Double solde = compteManquant != null ? compteManquant.getSolde() : 0.0;
+            
+            return ResponseEntity.ok(ApiResponse.success(solde, "Solde compte manquant récupéré"));
+        } catch (Exception e) {
+            log.error("❌ Erreur récupération solde compte manquant: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("MISSING_BALANCE_ERROR", "Erreur: " + e.getMessage()));
+        }
     }
 
     // Ajout d'une méthode pour sauvegarder un compte

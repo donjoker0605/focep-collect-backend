@@ -828,4 +828,91 @@ public class CompteServiceImpl implements CompteService {
                 "CHARGE".equals(typeCompte.toUpperCase());
     }
 
+    @Override
+    public Map<String, Object> getCollecteurAccountBalances(Long collecteurId) {
+        log.info("💰 [SOLDES] Récupération soldes comptes collecteur: {}", collecteurId);
+
+        try {
+            // Vérifier que le collecteur existe
+            Collecteur collecteur = collecteurRepository.findById(collecteurId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé: " + collecteurId));
+
+            Map<String, Object> balances = new HashMap<>();
+            
+            try {
+                // Récupérer le solde du compte salaire
+                CompteSalaireCollecteur compteSalaire = compteSalaireCollecteurRepository
+                        .findByCollecteurId(collecteurId)
+                        .orElse(null);
+                Double soldeSalaire = compteSalaire != null ? compteSalaire.getSolde() : 0.0;
+                balances.put("soldeSalaire", soldeSalaire);
+                
+                log.debug("💰 Solde compte salaire collecteur {}: {}", collecteurId, soldeSalaire);
+            } catch (Exception e) {
+                log.warn("⚠️ Erreur récupération solde salaire pour collecteur {}: {}", collecteurId, e.getMessage());
+                balances.put("soldeSalaire", 0.0);
+                balances.put("errorSalaire", e.getMessage());
+            }
+
+            try {
+                // Récupérer le solde du compte manquant
+                CompteManquant compteManquant = compteManquantRepository
+                        .findByCollecteurId(collecteurId)
+                        .orElse(null);
+                Double soldeManquant = compteManquant != null ? compteManquant.getSolde() : 0.0;
+                balances.put("soldeManquant", soldeManquant);
+                
+                log.debug("💰 Solde compte manquant collecteur {}: {}", collecteurId, soldeManquant);
+            } catch (Exception e) {
+                log.warn("⚠️ Erreur récupération solde manquant pour collecteur {}: {}", collecteurId, e.getMessage());
+                balances.put("soldeManquant", 0.0);
+                balances.put("errorManquant", e.getMessage());
+            }
+
+            // Autres comptes si nécessaire
+            try {
+                List<CompteCollecteur> autresComptes = compteCollecteurRepository.findByCollecteurId(collecteurId);
+                Double soldeTotalAutres = autresComptes.stream()
+                        .filter(c -> !c.getTypeCompte().equals("SALAIRE_COLLECTEUR") && !c.getTypeCompte().equals("MANQUANT"))
+                        .mapToDouble(Compte::getSolde)
+                        .sum();
+                balances.put("soldeTotalAutres", soldeTotalAutres);
+                balances.put("nombreAutresComptes", autresComptes.size() - 2); // Exclure salaire et manquant
+                
+                log.debug("💰 Solde total autres comptes collecteur {}: {} ({} comptes)", 
+                        collecteurId, soldeTotalAutres, autresComptes.size() - 2);
+            } catch (Exception e) {
+                log.warn("⚠️ Erreur récupération autres comptes pour collecteur {}: {}", collecteurId, e.getMessage());
+                balances.put("soldeTotalAutres", 0.0);
+                balances.put("nombreAutresComptes", 0);
+            }
+
+            // Indiquer s'il y a eu des erreurs
+            boolean hasError = balances.containsKey("errorSalaire") || balances.containsKey("errorManquant");
+            balances.put("hasError", hasError);
+
+            log.info("✅ [SOLDES] Soldes récupérés pour collecteur {}: salaire={}, manquant={}, hasError={}", 
+                    collecteurId, balances.get("soldeSalaire"), balances.get("soldeManquant"), hasError);
+
+            return balances;
+
+        } catch (ResourceNotFoundException e) {
+            log.error("❌ [SOLDES] Collecteur non trouvé: {}", e.getMessage());
+            throw e;
+        } catch (Exception e) {
+            log.error("❌ [SOLDES] Erreur récupération soldes collecteur {}: {}", collecteurId, e.getMessage(), e);
+            
+            // Retourner des soldes par défaut en cas d'erreur critique
+            Map<String, Object> defaultBalances = new HashMap<>();
+            defaultBalances.put("soldeSalaire", 0.0);
+            defaultBalances.put("soldeManquant", 0.0);
+            defaultBalances.put("soldeTotalAutres", 0.0);
+            defaultBalances.put("nombreAutresComptes", 0);
+            defaultBalances.put("hasError", true);
+            defaultBalances.put("errorMessage", e.getMessage());
+            
+            return defaultBalances;
+        }
+    }
+
 }

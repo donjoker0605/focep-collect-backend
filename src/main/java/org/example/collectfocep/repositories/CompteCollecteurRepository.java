@@ -21,6 +21,7 @@ public interface CompteCollecteurRepository extends JpaRepository<CompteCollecte
 
     // MÉTHODES STANDARDS OPTION A
     List<CompteCollecteur> findByCollecteur(Collecteur collecteur);
+    List<CompteCollecteur> findByCollecteurId(Long collecteurId);
 
     Optional<CompteCollecteur> findByCollecteurAndSoldeGreaterThan(
             Collecteur collecteur,

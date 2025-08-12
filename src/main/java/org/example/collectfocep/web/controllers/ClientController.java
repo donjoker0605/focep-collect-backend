@@ -63,6 +63,9 @@ public class ClientController {
     private final CommissionTierRepository commissionTierRepository;
     private final AdminRepository adminRepository;
     private final CollecteurRepository collecteurRepository;
+    
+    // 🔥 NOUVEAU SERVICE POUR ENRICHISSEMENT DES DONNÉES CLIENT
+    private final org.example.collectfocep.services.ClientStatsService clientStatsService;
 
     // Endpoint pour créer un client
     @PostMapping
@@ -278,11 +281,11 @@ public class ClientController {
      */
     @GetMapping("/collecteur/{collecteurId}")
     @PreAuthorize("@securityService.canAccessCollecteurData(authentication, #collecteurId)")
-    public ResponseEntity<ApiResponse<List<ClientDTO>>> getClientsByCollecteur(
+    public ResponseEntity<?> getClientsByCollecteur(
             @PathVariable Long collecteurId,
             Authentication authentication) {
 
-        log.info("📋 Récupération des clients pour le collecteur: {} par {}",
+        log.info("📋 Récupération des clients ENRICHIS pour le collecteur: {} par {}",
                 collecteurId, authentication.getName());
 
         try {
@@ -297,16 +300,18 @@ public class ClientController {
                         .body(ApiResponse.error("ACCESS_DENIED", "Accès refusé aux clients de ce collecteur"));
             }
 
-            // Récupérer les clients
+            // 🔥 RÉCUPÉRATION CLASSIQUE DES CLIENTS
             List<Client> clients = clientService.findByCollecteurId(collecteurId);
-            List<ClientDTO> dtos = clients.stream()
-                    .map(clientMapper::toDTO)
-                    .toList();
+            
+            // 🔥 ENRICHISSEMENT AVEC STATS, TRANSACTIONS ET TOTAUX
+            List<org.example.collectfocep.dto.ClientSummaryDTO> enrichedClients = 
+                clientStatsService.enrichMultipleClientsWithStats(clients);
 
-            log.info("✅ Récupéré {} clients pour le collecteur {}", dtos.size(), collecteurId);
+            log.info("✅ Récupéré {} clients ENRICHIS pour le collecteur {}", clients.size(), collecteurId);
 
-            return ResponseEntity.ok(ApiResponse.success(dtos,
-                    String.format("Récupéré %d clients", dtos.size())));
+            return ResponseEntity.ok(ApiResponse.success(
+                enrichedClients,
+                "Récupéré " + clients.size() + " clients avec statistiques complètes"));
 
         } catch (Exception e) {
             log.error("❌ Erreur lors de la récupération des clients du collecteur {}: {}",
@@ -746,15 +751,23 @@ public class ClientController {
         log.info("🔍 Récupération du client avec transactions: {}", id);
 
         try {
-            // 1. Récupérer le client
-            Client client = clientService.getClientById(id)
-                    .orElseThrow(() -> new ResourceNotFoundException("Client non trouvé avec l'ID: " + id));
+            // 1. Récupérer le client AVEC ses paramètres de commission
+            Optional<Client> clientOpt = clientRepository.findByIdWithCommissionParameters(id);
+            Client client = clientOpt.orElseThrow(() -> new ResourceNotFoundException("Client non trouvé avec l'ID: " + id));
 
             // 2. Récupérer ses transactions
             List<Mouvement> transactions = mouvementRepository.findByClientIdWithAllRelations(id);
 
             // 3. Récupérer les paramètres de commission avec hiérarchie
             CommissionParameterDTO commissionParam = getEffectiveCommissionParameter(client);
+            
+            // 🔍 DEBUG COMMISSION PARAMETER
+            if (commissionParam != null) {
+                log.debug("✅ Commission parameter trouvé pour client {}: type={}, valeur={}", 
+                    client.getId(), commissionParam.getTypeCommission(), commissionParam.getValeur());
+            } else {
+                log.warn("⚠️ Aucun commission parameter trouvé pour client {}", client.getId());
+            }
 
             // 4. Calculer le solde total
             Double soldeTotal = calculateClientBalance(transactions);
@@ -927,12 +940,21 @@ public class ClientController {
 
     // IMPLÉMENTATION DE LA HIÉRARCHIE DE COMMISSION
     private CommissionParameterDTO getEffectiveCommissionParameter(Client client) {
-        // 1. Chercher au niveau client
+        // 🔥 OPTIMISATION: D'abord vérifier les paramètres déjà chargés par JPA
+        if (client.hasCommissionParameters()) {
+            List<CommissionParameter> activeParams = client.getActiveCommissionParameters();
+            if (!activeParams.isEmpty()) {
+                log.debug("✅ Commission trouvée dans les relations JPA pour client: {}", client.getId());
+                return commissionParameterMapper.toDTO(activeParams.get(0));
+            }
+        }
+        
+        // 1. Si pas trouvé, chercher au niveau client via repository
         Optional<CommissionParameter> clientCommission =
                 commissionParameterRepository.findActiveCommissionParameter(client.getId());
 
         if (clientCommission.isPresent()) {
-            log.debug("Commission trouvée au niveau client: {}", client.getId());
+            log.debug("Commission trouvée au niveau client via repository: {}", client.getId());
             return commissionParameterMapper.toDTO(clientCommission.get());
         }
 

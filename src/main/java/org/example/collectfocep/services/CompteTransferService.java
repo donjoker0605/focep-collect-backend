@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.dto.*;
 import org.example.collectfocep.entities.*;
 import org.example.collectfocep.exceptions.CompteNotFoundException;
+import org.example.collectfocep.exceptions.DryRunException;
 import org.example.collectfocep.exceptions.ResourceNotFoundException;
 import org.example.collectfocep.repositories.*;
 import org.example.collectfocep.repositories.MouvementRepository;
@@ -12,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -116,6 +118,170 @@ public class CompteTransferService {
         log.info("Fin du transfert: {} comptes sur {} transférés avec succès",
                 successCount, clientIds.size());
 
+        return successCount;
+    }
+
+    /**
+     * Version améliorée qui support le dry-run pour validation sans modification des données.
+     * Remplace l'ancienne approche avec TransferValidationService séparé.
+     * 
+     * @param sourceCollecteurId ID du collecteur source
+     * @param targetCollecteurId ID du collecteur cible  
+     * @param clientIds Liste des IDs des clients à transférer
+     * @param dryRun Si true, effectue toutes les validations mais rollback la transaction
+     * @return TransferValidationResult avec détails complets ou nombre de transferts si dryRun=false
+     */
+    @Transactional(rollbackFor = DryRunException.class)
+    public Object transferComptesWithValidation(Long sourceCollecteurId, Long targetCollecteurId, 
+                                              List<Long> clientIds, boolean dryRun) {
+        
+        log.info("🔍 Démarrage transfert (dryRun={}): {} clients de {} vers {}", 
+                dryRun, clientIds.size(), sourceCollecteurId, targetCollecteurId);
+        
+        TransferValidationResult result = new TransferValidationResult();
+        result.setErrors(new ArrayList<>());
+        result.setWarnings(new ArrayList<>());
+        result.setClientValidations(new HashMap<>());
+        
+        // 1. VALIDATION DES COLLECTEURS
+        Collecteur sourceCollecteur = collecteurRepository.findById(sourceCollecteurId)
+                .orElse(null);
+        Collecteur targetCollecteur = collecteurRepository.findById(targetCollecteurId)
+                .orElse(null);
+                
+        if (sourceCollecteur == null) {
+            result.getErrors().add("Collecteur source non trouvé: " + sourceCollecteurId);
+        }
+        if (targetCollecteur == null) {
+            result.getErrors().add("Collecteur destination non trouvé: " + targetCollecteurId);
+        }
+        
+        if (!result.getErrors().isEmpty()) {
+            result.setValid(false);
+            result.setSummary("Collecteurs invalides");
+            if (dryRun) throw new DryRunException(result);
+            throw new ResourceNotFoundException("Collecteurs invalides");
+        }
+        
+        result.setSourceCollecteur(sourceCollecteur);
+        result.setTargetCollecteur(targetCollecteur);
+        
+        // 2. DÉTECTION TRANSFERT INTER-AGENCES
+        boolean isSameAgence = sourceCollecteur.getAgence().getId().equals(targetCollecteur.getAgence().getId());
+        result.setInterAgenceTransfer(!isSameAgence);
+        
+        if (!isSameAgence) {
+            result.getWarnings().add("Transfert inter-agences détecté - des frais peuvent s'appliquer");
+        }
+        
+        // 3. VALIDATION DES CLIENTS ET CALCULS FINANCIERS
+        BigDecimal totalBalance = BigDecimal.ZERO;
+        BigDecimal totalCommissions = BigDecimal.ZERO;
+        int successCount = 0;
+        int clientsWithDebt = 0;
+        
+        result.setTotalClientsCount(clientIds.size());
+        
+        for (Long clientId : clientIds) {
+            try {
+                // Verrouillage pessimiste comme dans l'original
+                Client client = clientRepository.findByIdForUpdate(clientId).orElse(null);
+                
+                if (client == null) {
+                    result.getErrors().add("Client non trouvé: " + clientId);
+                    result.getClientValidations().put(clientId, "CLIENT_NOT_FOUND");
+                    continue;
+                }
+                
+                // Vérification appartenance (logique métier critique)
+                if (!sourceCollecteurId.equals(client.getCollecteur().getId())) {
+                    result.getWarnings().add("Client " + clientId + " n'appartient pas au collecteur source");
+                    result.getClientValidations().put(clientId, "WRONG_COLLECTEUR");
+                    continue;
+                }
+                
+                CompteClient compteClient = compteClientRepository.findByClient(client).orElse(null);
+                if (compteClient == null) {
+                    result.getErrors().add("Compte non trouvé pour client: " + clientId);
+                    result.getClientValidations().put(clientId, "ACCOUNT_NOT_FOUND");
+                    continue;
+                }
+                
+                // Calculs financiers
+                BigDecimal soldeClient = BigDecimal.valueOf(compteClient.getSolde());
+                BigDecimal commissionsClient = BigDecimal.valueOf(getPendingCommissions(compteClient.getId(), sourceCollecteurId));
+                
+                totalBalance = totalBalance.add(soldeClient);
+                totalCommissions = totalCommissions.add(commissionsClient);
+                
+                if (soldeClient.compareTo(BigDecimal.ZERO) < 0) {
+                    clientsWithDebt++;
+                    result.getWarnings().add("Client " + clientId + " a un solde négatif: " + soldeClient + " FCFA");
+                }
+                
+                // Si pas dry-run, effectuer le transfert réel
+                if (!dryRun) {
+                    client.setCollecteur(targetCollecteur);
+                    clientRepository.save(client);
+                    
+                    if (!isSameAgence) {
+                        handleInterAgencyTransfer(compteClient, sourceCollecteur, targetCollecteur);
+                    }
+                }
+                
+                successCount++;
+                result.getClientValidations().put(clientId, "VALID");
+                
+            } catch (Exception e) {
+                log.error("Erreur validation client {}: {}", clientId, e.getMessage());
+                result.getErrors().add("Erreur client " + clientId + ": " + e.getMessage());
+                result.getClientValidations().put(clientId, "ERROR");
+            }
+        }
+        
+        // 4. FINALISATION DU RÉSULTAT
+        result.setValidClientsCount(successCount);
+        result.setTotalBalance(totalBalance);
+        result.setCommissionImpact(totalCommissions);
+        result.setClientsWithDebt(clientsWithDebt);
+        
+        // Calcul frais estimés pour inter-agences
+        if (!isSameAgence && totalBalance.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal estimatedFees = totalBalance.multiply(BigDecimal.valueOf(0.005)); // 0.5%
+            result.setEstimatedTransferFees(estimatedFees);
+        } else {
+            result.setEstimatedTransferFees(BigDecimal.ZERO);
+        }
+        
+        // Règles d'approbation  
+        boolean requiresApproval = totalBalance.compareTo(BigDecimal.valueOf(1_000_000)) > 0 || clientsWithDebt > 0;
+        result.setRequiresApproval(requiresApproval);
+        if (requiresApproval) {
+            result.setApprovalReason("Montant > 1M FCFA ou clients en dette");
+        }
+        
+        // État final
+        boolean isValid = result.getErrors().isEmpty() && successCount > 0;
+        result.setValid(isValid);
+        
+        if (isValid) {
+            result.setSummary(String.format("✅ %d/%d clients validés pour transfert", successCount, clientIds.size()));
+        } else {
+            result.setSummary("❌ Transfert impossible - erreurs détectées");
+        }
+        
+        // 5. DRY-RUN : ROLLBACK VIA EXCEPTION
+        if (dryRun) {
+            log.info("🧪 Dry-run terminé - rollback de la transaction");
+            throw new DryRunException(result);
+        }
+        
+        // 6. TRANSFERT RÉEL : ENREGISTREMENT ET AUDIT
+        if (successCount > 0) {
+            createTransferRecord(sourceCollecteurId, targetCollecteurId, clientIds, successCount, isSameAgence);
+            log.info("✅ Transfert réel terminé: {} clients transférés", successCount);
+        }
+        
         return successCount;
     }
 

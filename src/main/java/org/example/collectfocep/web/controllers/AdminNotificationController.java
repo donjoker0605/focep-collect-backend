@@ -27,6 +27,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
 
 @RestController
@@ -111,16 +112,27 @@ public class AdminNotificationController {
     public ResponseEntity<ApiResponse<List<AdminNotification>>> getCriticalNotifications() {
         try {
             Long adminId = getCurrentAdminId();
+            
+            if (adminId == null) {
+                log.warn("⚠️ Admin ID non trouvé dans le contexte de sécurité");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(ApiResponse.error("UNAUTHORIZED", "Utilisateur non authentifié"));
+            }
+            
             log.info("🚨 Notifications critiques: adminId={}", adminId);
 
             List<AdminNotification> notifications = adminNotificationService.getCriticalNotifications(adminId);
+            
+            if (notifications == null) {
+                notifications = Collections.emptyList();
+            }
 
             return ResponseEntity.ok(ApiResponse.success(notifications, "Notifications critiques récupérées"));
 
         } catch (Exception e) {
             log.error("❌ Erreur notifications critiques: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error("Erreur lors de la récupération des notifications critiques"));
+                    .body(ApiResponse.error("CRITICAL_FETCH_ERROR", "Erreur lors de la récupération des notifications critiques"));
         }
     }
 

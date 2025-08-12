@@ -96,8 +96,8 @@ public interface AdminNotificationRepository extends JpaRepository<AdminNotifica
     /**
      * Notifications critiques non lues
      */
-    @Query("SELECT an FROM AdminNotification an WHERE an.adminId = :adminId AND an.priority = 'CRITIQUE' AND an.lu = false ORDER BY an.dateCreation DESC")
-    List<AdminNotification> findCriticalUnreadByAdminId(@Param("adminId") Long adminId);
+    @Query("SELECT an FROM AdminNotification an WHERE an.adminId = :adminId AND an.priority = :priority AND an.lu = false ORDER BY an.dateCreation DESC")
+    List<AdminNotification> findCriticalUnreadByAdminId(@Param("adminId") Long adminId, @Param("priority") Priority priority);
 
     // =====================================
     // MÉTHODES DE COMPTAGE
@@ -112,8 +112,8 @@ public interface AdminNotificationRepository extends JpaRepository<AdminNotifica
     /**
      * Compter notifications critiques non lues
      */
-    @Query("SELECT COUNT(an) FROM AdminNotification an WHERE an.adminId = :adminId AND an.priority = 'CRITIQUE' AND an.lu = false")
-    Long countCriticalUnreadByAdminId(@Param("adminId") Long adminId);
+    @Query("SELECT COUNT(an) FROM AdminNotification an WHERE an.adminId = :adminId AND an.priority = :priority AND an.lu = false")
+    Long countCriticalUnreadByAdminId(@Param("adminId") Long adminId, @Param("priority") Priority priority);
 
     /**
      * Compter par type
