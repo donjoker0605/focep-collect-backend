@@ -160,4 +160,12 @@ public interface JournalRepository extends JpaRepository<Journal, Long> {
     @Query("SELECT j FROM Journal j WHERE j.collecteur.id = :collecteurId ORDER BY j.dateDebut DESC")
     Page<Journal> findByCollecteurId(@Param("collecteurId") Long collecteurId, Pageable pageable);
 
+    /**
+     * Récupérer la dernière date de clôture d'un collecteur
+     */
+    @Query("SELECT j.dateDebut FROM Journal j WHERE j.collecteur.id = :collecteurId " +
+            "AND j.estCloture = true AND j.dateCloture IS NOT NULL " +
+            "ORDER BY j.dateCloture DESC LIMIT 1")
+    Optional<LocalDate> findLastClosureDateByCollecteurId(@Param("collecteurId") Long collecteurId);
+
 }

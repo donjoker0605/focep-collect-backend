@@ -44,6 +44,11 @@ public interface JournalService {
      */
     Journal createJournal(Long collecteurId);
 
+    /**
+     * Récupérer la dernière date de clôture d'un collecteur
+     */
+    Optional<LocalDate> getLastClosureDateByCollecteur(Long collecteurId);
+
     // MÉTHODES EXISTANTES CONSERVÉES
     List<Journal> getAllJournaux();
     Page<Journal> getAllJournaux(Pageable pageable);

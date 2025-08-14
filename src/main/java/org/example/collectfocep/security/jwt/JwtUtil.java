@@ -64,17 +64,20 @@ public class JwtUtil {
         Long agenceId = -1L;
 
         // Rechercher l'utilisateur et récupérer ses informations en fonction du rôle
-        if (role.equals("ROLE_ADMIN")) {
+        if (role.equals("ROLE_ADMIN") || role.equals("ROLE_SUPER_ADMIN")) {
             Optional<Admin> adminOpt = adminRepository.findByAdresseMail(username);
             if (adminOpt.isPresent()) {
                 Admin admin = adminOpt.get();
                 userId = admin.getId();
                 if (admin.getAgence() != null) {
                     agenceId = admin.getAgence().getId();
+                } else if (role.equals("ROLE_SUPER_ADMIN")) {
+                    // SuperAdmin n'a pas d'agence spécifique
+                    agenceId = null;
                 }
-                log.info("Admin trouvé: id={}, agenceId={}", userId, agenceId);
+                log.info("Admin/SuperAdmin trouvé: id={}, agenceId={}, role={}", userId, agenceId, role);
             } else {
-                log.warn("Admin non trouvé pour l'email: {}", username);
+                log.warn("Admin/SuperAdmin non trouvé pour l'email: {}", username);
             }
         } else if (role.equals("ROLE_COLLECTEUR")) {
             Optional<Collecteur> collecteurOpt = collecteurRepository.findByAdresseMail(username);
@@ -108,17 +111,19 @@ public class JwtUtil {
     }
 
     public Long getUserIdFromJWT(String token) {
-        return ((Number) Jwts.parserBuilder().setSigningKey(key).build()
+        Object userIdClaim = Jwts.parserBuilder().setSigningKey(key).build()
                 .parseClaimsJws(token)
                 .getBody()
-                .get("userId")).longValue();
+                .get("userId");
+        return userIdClaim != null ? ((Number) userIdClaim).longValue() : null;
     }
 
     public Long getAgenceIdFromJWT(String token) {
-        return ((Number) Jwts.parserBuilder().setSigningKey(key).build()
+        Object agenceIdClaim = Jwts.parserBuilder().setSigningKey(key).build()
                 .parseClaimsJws(token)
                 .getBody()
-                .get("agenceId")).longValue();
+                .get("agenceId");
+        return agenceIdClaim != null ? ((Number) agenceIdClaim).longValue() : null;
     }
 
     public boolean validateToken(String token) {

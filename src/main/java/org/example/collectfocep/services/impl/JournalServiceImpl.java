@@ -396,4 +396,16 @@ public class JournalServiceImpl implements JournalService {
             throw new RuntimeException("Erreur récupération journaux: " + e.getMessage(), e);
         }
     }
+
+    @Override
+    public Optional<LocalDate> getLastClosureDateByCollecteur(Long collecteurId) {
+        log.debug("📅 Récupération dernière date de clôture pour collecteur: {}", collecteurId);
+        
+        try {
+            return journalRepository.findLastClosureDateByCollecteurId(collecteurId);
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la récupération de la dernière date de clôture: {}", e.getMessage(), e);
+            return Optional.empty();
+        }
+    }
 }

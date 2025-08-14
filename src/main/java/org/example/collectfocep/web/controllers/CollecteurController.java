@@ -17,6 +17,7 @@ import org.example.collectfocep.security.service.SecurityService;
 import org.example.collectfocep.services.impl.PasswordService;
 import org.example.collectfocep.services.interfaces.CollecteurService;
 import org.example.collectfocep.services.interfaces.CompteService;
+import org.example.collectfocep.services.interfaces.JournalService;
 import org.example.collectfocep.util.ApiResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -30,10 +31,12 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @RestController
@@ -48,6 +51,7 @@ public class CollecteurController {
         log.info("📍 Mappings disponibles:");
         log.info("   - GET /api/collecteurs/{id}/dashboard");
         log.info("   - GET /api/collecteurs/{id}/dashboard-debug");
+        log.info("   - GET /api/collecteurs/{id}/last-closure-date - NOUVEAU");
         log.info("   - GET /api/collecteurs - Liste filtrée par agence");
         log.info("   - POST /api/collecteurs - Création sécurisée");
         log.info("   - PATCH /api/collecteurs/{id}/toggle-status");
@@ -60,6 +64,7 @@ public class CollecteurController {
     private final CollecteurRepository collecteurRepository;
     private final ClientRepository clientRepository;
     private final CompteService compteService;
+    private final JournalService journalService;
 
     // ✅ TON CODE EXISTANT - CONSERVÉ INTÉGRALEMENT
     @PostMapping
@@ -906,6 +911,54 @@ public class CollecteurController {
                     collecteurId, e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error("ACCOUNT_BALANCES_ERROR", "Erreur: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * 📅 Récupérer la dernière date de clôture de journal d'un collecteur
+     * Utilisé par le frontend pour la règle 9 : réinitialiser le dashboard après clôture
+     */
+    @GetMapping("/{id}/last-closure-date")
+    @PreAuthorize("@securityService.canManageCollecteur(authentication, #collecteurId)")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getLastClosureDate(
+            @PathVariable("id") Long collecteurId,
+            Authentication authentication) {
+        
+        log.info("📅 [CLOSURE] Récupération dernière date de clôture pour collecteur {} par {}",
+                collecteurId, authentication.getName());
+
+        try {
+            // Vérifier que le collecteur existe
+            Collecteur collecteur = collecteurRepository.findById(collecteurId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé avec l'ID: " + collecteurId));
+
+            // Récupérer la dernière date de clôture via le service journal
+            Optional<LocalDate> lastClosureDate = journalService.getLastClosureDateByCollecteur(collecteurId);
+            
+            // Préparer la réponse
+            Map<String, Object> response = new HashMap<>();
+            if (lastClosureDate.isPresent()) {
+                response.put("lastClosureDate", lastClosureDate.get().toString());
+                response.put("hasClosureHistory", true);
+                log.info("✅ [CLOSURE] Dernière clôture trouvée pour collecteur {}: {}", 
+                        collecteurId, lastClosureDate.get());
+            } else {
+                response.put("lastClosureDate", null);
+                response.put("hasClosureHistory", false);
+                log.info("ℹ️ [CLOSURE] Aucune clôture trouvée pour collecteur {}", collecteurId);
+            }
+
+            return ResponseEntity.ok(ApiResponse.success(response, "Dernière date de clôture récupérée"));
+
+        } catch (ResourceNotFoundException e) {
+            log.warn("❌ [CLOSURE] Collecteur non trouvé: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(ApiResponse.error("COLLECTEUR_NOT_FOUND", e.getMessage()));
+        } catch (Exception e) {
+            log.error("❌ [CLOSURE] Erreur récupération dernière date de clôture collecteur {}: {}", 
+                    collecteurId, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("CLOSURE_DATE_ERROR", "Erreur: " + e.getMessage()));
         }
     }
 }
