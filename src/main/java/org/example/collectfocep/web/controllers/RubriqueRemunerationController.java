@@ -195,18 +195,21 @@ public class RubriqueRemunerationController {
             @PathVariable Long id,
             @RequestBody RubriqueRemunerationDTO rubriqueDTO) {
         try {
-            log.info("✏️ Mise à jour rubrique ID: {}", id);
+            log.info("✏️ Mise à jour rubrique ID: {} avec données: {}", id, rubriqueDTO);
             
             Optional<RubriqueRemuneration> existingRubrique = rubriqueRepository.findById(id);
             
             if (existingRubrique.isEmpty()) {
+                log.warn("❌ Rubrique {} non trouvée", id);
                 return ResponseEntity.notFound().build();
             }
             
             RubriqueRemuneration rubrique = existingRubrique.get();
+            log.info("📝 Rubrique avant modification: nom={}, type={}, valeur={}, active={}", 
+                     rubrique.getNom(), rubrique.getType(), rubrique.getValeur(), rubrique.isActive());
             
-            // Mise à jour des champs
-            if (rubriqueDTO.getNom() != null) {
+            // Mise à jour des champs (même si null, garder la valeur existante)
+            if (rubriqueDTO.getNom() != null && !rubriqueDTO.getNom().trim().isEmpty()) {
                 rubrique.setNom(rubriqueDTO.getNom().trim());
             }
             
@@ -222,23 +225,29 @@ public class RubriqueRemunerationController {
                 rubrique.setDateApplication(rubriqueDTO.getDateApplication());
             }
             
-            if (rubriqueDTO.getDelaiJours() != null) {
-                rubrique.setDelaiJours(rubriqueDTO.getDelaiJours());
-            }
+            // Gestion du délai (peut être null pour effacer)
+            rubrique.setDelaiJours(rubriqueDTO.getDelaiJours());
             
             if (rubriqueDTO.getCollecteurIds() != null) {
                 rubrique.setCollecteurIds(rubriqueDTO.getCollecteurIds());
             }
             
+            // Gestion explicite du statut actif
+            if (rubriqueDTO.getActive() != null) {
+                rubrique.setActive(rubriqueDTO.getActive());
+            }
+            
             RubriqueRemuneration savedRubrique = rubriqueRepository.save(rubrique);
             
-            log.info("✅ Rubrique {} mise à jour", id);
+            log.info("✅ Rubrique {} mise à jour avec succès: nom={}, type={}, valeur={}, active={}", 
+                     savedRubrique.getId(), savedRubrique.getNom(), savedRubrique.getType(), 
+                     savedRubrique.getValeur(), savedRubrique.isActive());
             
             return ResponseEntity.ok(
                 ApiResponse.success(savedRubrique, "Rubrique mise à jour avec succès")
             );
         } catch (Exception e) {
-            log.error("❌ Erreur mise à jour rubrique {}: {}", id, e.getMessage());
+            log.error("❌ Erreur mise à jour rubrique {}: {}", id, e.getMessage(), e);
             return ResponseEntity.internalServerError()
                 .body(ApiResponse.error("Erreur lors de la mise à jour de la rubrique"));
         }

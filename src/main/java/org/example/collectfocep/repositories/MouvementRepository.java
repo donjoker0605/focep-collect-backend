@@ -668,6 +668,18 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
                                       @Param("startDate") LocalDateTime startDate,
                                       @Param("endDate") LocalDateTime endDate);
 
+    /**
+     * 🔥 OPTIMISATION N+1: Récupération groupée des montants d'épargne
+     */
+    @Query("SELECT m.client.id, COALESCE(SUM(m.montant), 0) FROM Mouvement m " +
+            "WHERE m.client.id IN :clientIds " +
+            "AND m.dateOperation BETWEEN :startDate AND :endDate " +
+            "AND LOWER(m.sens) = 'epargne' " +
+            "GROUP BY m.client.id")
+    List<Object[]> sumAmountByClientsAndPeriod(@Param("clientIds") List<Long> clientIds,
+                                               @Param("startDate") LocalDateTime startDate,
+                                               @Param("endDate") LocalDateTime endDate);
+
     // =====================================
     // MÉTHODES POUR TRANSFERTS
     // =====================================

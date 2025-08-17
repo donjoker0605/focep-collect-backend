@@ -69,7 +69,7 @@ public class SimpleRubriqueTest {
         assertEquals(rubrique.getDateApplication(), dto.getDateApplication());
         assertEquals(30, dto.getDelaiJours());
         assertEquals(List.of(4L, 5L), dto.getCollecteurIds());
-        assertTrue(dto.isActive());
+        assertTrue(dto.getActive());
         
         // Vérification des champs calculés
         assertNotNull(dto.getTypeLabel());

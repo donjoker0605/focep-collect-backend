@@ -23,9 +23,10 @@ import java.util.List;
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler", "clients", "comptes"})
 public class Collecteur extends Utilisateur {
 
+    // 🔥 MODIFICATION: Collecteurs créés inactifs par défaut selon requirements
     @Column(name = "active", nullable = false)
     @Builder.Default
-    private Boolean active = true;
+    private Boolean active = false;
 
     @Column(name = "id_agence", nullable = false)
     private Long agenceId;

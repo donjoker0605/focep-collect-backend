@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.entities.*;
 import org.example.collectfocep.repositories.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.collectfocep.services.CommissionCalculatorService;
 import org.example.collectfocep.services.impl.MouvementServiceImpl;
 import org.springframework.stereotype.Service;
@@ -39,14 +40,42 @@ public class CommissionOrchestrator {
     private final CollecteurRepository collecteurRepository;
     private final MouvementRepository mouvementRepository;
     private final CompteClientRepository compteClientRepository;
+    
+    // 🔥 NOUVEAU: Repository pour l'historique des calculs
+    private final HistoriqueCalculCommissionRepository historiqueRepository;
 
     /**
-     * Lance le calcul de commission complet pour un collecteur sur une période
+     * 🔥 NOUVELLE VERSION: Lance le calcul de commission avec protection anti-doublon
+     * 
+     * Exigence métier: Un collecteur ne peut avoir qu'un seul calcul par période
      */
     @Transactional
     public CommissionResult processCommissions(Long collecteurId, LocalDate dateDebut, LocalDate dateFin) {
-        log.info("Début calcul commission - Collecteur: {}, Période: {} → {}", 
+        log.info("🔥 Début calcul commission avec anti-doublon - Collecteur: {}, Période: {} → {}", 
                 collecteurId, dateDebut, dateFin);
+
+        // 🔥 ÉTAPE 1: Vérification anti-doublon
+        if (historiqueRepository.existsCalculForPeriod(collecteurId, dateDebut, dateFin)) {
+            log.warn("❌ DOUBLON DÉTECTÉ: Calcul déjà effectué pour collecteur {} sur période {} → {}", 
+                    collecteurId, dateDebut, dateFin);
+            
+            // Récupération du calcul existant
+            HistoriqueCalculCommission calculExistant = historiqueRepository
+                    .findByCollecteurAndPeriod(collecteurId, dateDebut, dateFin)
+                    .orElseThrow(() -> new RuntimeException("Calcul existant introuvable"));
+            
+            return CommissionResult.builder()
+                    .collecteurId(collecteurId)
+                    .agenceId(calculExistant.getAgenceId())
+                    .periode(calculExistant.getPeriodeDescription())
+                    .commissionsClients(new ArrayList<>()) // Vide car déjà calculé
+                    .montantSCollecteur(calculExistant.getMontantCommissionTotal())
+                    .totalTVA(calculExistant.getMontantTvaTotal())
+                    .dateCalcul(calculExistant.getDateCalcul())
+                    .success(true)
+                    .message("⚠️ Calcul déjà effectué le " + calculExistant.getDateCalcul())
+                    .build();
+        }
 
         try {
             // 1. Récupération des données
@@ -54,13 +83,24 @@ public class CommissionOrchestrator {
             Long agenceId = collecteur.getAgence().getId();
             List<Client> clients = clientRepository.findByCollecteurId(collecteurId);
 
-            // 2. Calcul des commissions par client
+            // 2. 🔥 OPTIMISATION N+1: Récupération groupée des données
+            List<Long> clientIds = clients.stream().map(Client::getId).toList();
+            
+            // Récupération groupée des montants d'épargne
+            Map<Long, BigDecimal> epargnesParClient = getEpargnesGroupees(clientIds, dateDebut, dateFin);
+            
+            // Récupération groupée des paramètres de commission
+            Map<Long, CommissionParameter> parametresParClient = getParametresGroupes(clients, collecteurId, agenceId);
+
+            // 3. Calcul des commissions par client (optimisé)
             List<CommissionClientDetail> commissionsClients = new ArrayList<>();
             BigDecimal totalCommissions = BigDecimal.ZERO;
             BigDecimal totalTVA = BigDecimal.ZERO;
 
             for (Client client : clients) {
-                CommissionClientDetail detail = calculateClientCommission(client, dateDebut, dateFin);
+                CommissionClientDetail detail = calculateClientCommissionOptimized(
+                    client, epargnesParClient.get(client.getId()), 
+                    parametresParClient.get(client.getId()));
                 if (detail != null && detail.getCommissionX().compareTo(BigDecimal.ZERO) > 0) {
                     commissionsClients.add(detail);
                     totalCommissions = totalCommissions.add(detail.getCommissionX());
@@ -74,7 +114,25 @@ public class CommissionOrchestrator {
             // 3. Exécution des mouvements comptables
             executeCommissionMovements(agenceId, commissionsClients);
 
-            // 4. Construction du résultat
+            // 🔥 ÉTAPE 4: Sauvegarde dans l'historique (anti-doublon)
+            LocalDateTime maintenant = LocalDateTime.now();
+            HistoriqueCalculCommission historique = HistoriqueCalculCommission.builder()
+                    .collecteur(collecteur)
+                    .dateDebut(dateDebut)
+                    .dateFin(dateFin)
+                    .montantCommissionTotal(totalCommissions)
+                    .montantTvaTotal(totalTVA)
+                    .nombreClients(commissionsClients.size())
+                    .statut(HistoriqueCalculCommission.StatutCalcul.CALCULE)
+                    .detailsCalcul(serializeCommissionDetails(commissionsClients))
+                    .agenceId(agenceId)
+                    .remunere(false)
+                    .build();
+            
+            HistoriqueCalculCommission historiqueSauve = historiqueRepository.save(historique);
+            log.info("✅ Historique de calcul sauvegardé - ID: {}", historiqueSauve.getId());
+
+            // 5. Construction du résultat
             return CommissionResult.builder()
                     .collecteurId(collecteurId)
                     .agenceId(agenceId)
@@ -82,8 +140,9 @@ public class CommissionOrchestrator {
                     .commissionsClients(commissionsClients)
                     .montantSCollecteur(totalCommissions) // S du collecteur
                     .totalTVA(totalTVA)
-                    .dateCalcul(LocalDateTime.now())
+                    .dateCalcul(maintenant)
                     .success(true)
+                    .historiqueId(historiqueSauve.getId()) // 🔥 NOUVEAU: ID de l'historique
                     .build();
 
         } catch (Exception e) {
@@ -250,6 +309,118 @@ public class CommissionOrchestrator {
                 .build();
     }
 
+    // 🔥 NOUVELLES MÉTHODES OPTIMISÉES POUR RÉSOUDRE N+1
+
+    /**
+     * Sérialise les détails de commission en JSON pour stockage
+     */
+    private String serializeCommissionDetails(List<CommissionClientDetail> commissionsClients) {
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            return mapper.writeValueAsString(commissionsClients);
+        } catch (Exception e) {
+            log.warn("Erreur lors de la sérialisation des détails de commission: {}", e.getMessage());
+            return "[]"; // JSON vide en cas d'erreur
+        }
+    }
+
+    /**
+     * Récupère les montants d'épargne pour tous les clients en une seule requête
+     */
+    private Map<Long, BigDecimal> getEpargnesGroupees(List<Long> clientIds, LocalDate dateDebut, LocalDate dateFin) {
+        LocalDateTime startDateTime = dateDebut.atStartOfDay();
+        LocalDateTime endDateTime = dateFin.atTime(23, 59, 59);
+        
+        Map<Long, BigDecimal> resultMap = new HashMap<>();
+        
+        // Initialiser avec 0 pour tous les clients
+        clientIds.forEach(id -> resultMap.put(id, BigDecimal.ZERO));
+        
+        // Une seule requête groupée au lieu de N requêtes
+        List<Object[]> results = mouvementRepository.sumAmountByClientsAndPeriod(
+                clientIds, startDateTime, endDateTime);
+        
+        // Mapper les résultats 
+        for (Object[] result : results) {
+            Long clientId = (Long) result[0];
+            Double montant = (Double) result[1];
+            resultMap.put(clientId, BigDecimal.valueOf(montant != null ? montant : 0.0));
+        }
+        
+        return resultMap;
+    }
+
+    /**
+     * Récupère les paramètres de commission pour tous les clients selon la hiérarchie
+     */
+    private Map<Long, CommissionParameter> getParametresGroupes(List<Client> clients, Long collecteurId, Long agenceId) {
+        Map<Long, CommissionParameter> resultMap = new HashMap<>();
+        
+        // 1. Récupération groupée des paramètres clients
+        List<Long> clientIds = clients.stream().map(Client::getId).toList();
+        List<CommissionParameter> parametresClients = parameterRepository.findByClientIdIn(clientIds);
+        Map<Long, CommissionParameter> parametresClientsMap = parametresClients.stream()
+                .collect(HashMap::new, (map, param) -> {
+                    if (param.getClient() != null) {
+                        map.put(param.getClient().getId(), param);
+                    }
+                }, HashMap::putAll);
+        
+        // 2. Paramètre collecteur (une seule requête)
+        CommissionParameter parametreCollecteur = parameterRepository.findByCollecteurId(collecteurId).orElse(null);
+        
+        // 3. Paramètre agence (une seule requête)
+        CommissionParameter parametreAgence = parameterRepository.findByAgenceId(agenceId).orElse(null);
+        
+        // 4. Application de la hiérarchie pour chaque client
+        for (Client client : clients) {
+            CommissionParameter parametre = parametresClientsMap.get(client.getId());
+            if (parametre == null) {
+                parametre = parametreCollecteur;
+            }
+            if (parametre == null) {
+                parametre = parametreAgence;
+            }
+            resultMap.put(client.getId(), parametre);
+        }
+        
+        return resultMap;
+    }
+
+    /**
+     * Version optimisée du calcul de commission (sans requêtes DB)
+     */
+    private CommissionClientDetail calculateClientCommissionOptimized(Client client, 
+            BigDecimal montantEpargne, CommissionParameter parameter) {
+        
+        if (montantEpargne == null || montantEpargne.compareTo(BigDecimal.ZERO) <= 0) {
+            log.debug("Pas d'épargne pour client {}", client.getNom());
+            return null;
+        }
+        
+        if (parameter == null) {
+            log.warn("Aucun paramètre de commission trouvé pour client {}", client.getNom());
+            return null;
+        }
+
+        // Calcul de la commission "x"
+        BigDecimal commissionX = calculatorService.calculateCommission(montantEpargne, parameter);
+        BigDecimal tva = calculatorService.calculateTVA(commissionX);
+        BigDecimal soldeNet = calculatorService.calculateSoldeNet(
+                BigDecimal.valueOf(client.getSolde()), commissionX, tva);
+
+        return CommissionClientDetail.builder()
+                .clientId(client.getId())
+                .clientNom(client.getNom())
+                .montantEpargne(montantEpargne)
+                .commissionX(commissionX)
+                .tva(tva)
+                .ancienSolde(BigDecimal.valueOf(client.getSolde()))
+                .nouveauSolde(soldeNet)
+                .parameterUsed(parameter.getType().name())
+                .build();
+    }
+
     // Classes internes pour les résultats
     
     @lombok.Builder
@@ -264,6 +435,10 @@ public class CommissionOrchestrator {
         private LocalDateTime dateCalcul;
         private boolean success;
         private String errorMessage;
+        
+        // 🔥 NOUVEAUX CHAMPS pour le système anti-doublon
+        private Long historiqueId;  // ID de l'historique de calcul
+        private String message;     // Message d'information (ex: "déjà calculé")
 
         public static CommissionResult failure(Long collecteurId, String errorMessage) {
             return CommissionResult.builder()

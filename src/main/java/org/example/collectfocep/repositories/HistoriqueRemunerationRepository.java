@@ -29,8 +29,9 @@ public interface HistoriqueRemunerationRepository extends JpaRepository<Historiq
     /**
      * Récupère l'historique des rémunérations d'un collecteur, trié par date décroissante
      */
-    @Query("SELECT hr FROM HistoriqueRemuneration hr WHERE " +
-           "hr.collecteur.id = :collecteurId " +
+    @Query("SELECT hr FROM HistoriqueRemuneration hr " +
+           "LEFT JOIN FETCH hr.collecteur " +
+           "WHERE hr.collecteur.id = :collecteurId " +
            "ORDER BY hr.dateRemuneration DESC")
     List<HistoriqueRemuneration> findByCollecteurOrderByDateDesc(@Param("collecteurId") Long collecteurId);
     

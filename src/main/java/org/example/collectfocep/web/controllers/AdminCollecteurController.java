@@ -4,12 +4,16 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.collectfocep.dto.CollecteurDTO;
 import org.example.collectfocep.dto.JournalDTO;
+import org.example.collectfocep.dto.ClientDTO;
 import org.example.collectfocep.entities.Collecteur;
+import org.example.collectfocep.entities.Client;
 import org.example.collectfocep.exceptions.ResourceNotFoundException;
 import org.example.collectfocep.mappers.CollecteurMapper;
+import org.example.collectfocep.mappers.ClientMapper;
 import org.example.collectfocep.security.service.SecurityService;
 import org.example.collectfocep.services.interfaces.CollecteurService;
 import org.example.collectfocep.services.interfaces.JournalService;
+import org.example.collectfocep.services.interfaces.ClientService;
 import org.example.collectfocep.util.ApiResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -33,6 +37,8 @@ public class AdminCollecteurController {
     private final SecurityService securityService;
     private final CollecteurMapper collecteurMapper; // ✅ AJOUT
     private final JournalService journalService; // ✅ AJOUT
+    private final ClientService clientService; // ✅ AJOUT
+    private final ClientMapper clientMapper; // ✅ AJOUT
 
     /**
      * 🔥 ENDPOINT 1: Récupérer un collecteur par ID (pour admin)
@@ -133,5 +139,72 @@ public class AdminCollecteurController {
         Map<String, Object> performance = collecteurService.getCollecteurPerformanceMetrics(id, dateDebut, dateFin);
 
         return ResponseEntity.ok(ApiResponse.success(performance));
+    }
+
+    /**
+     * 🔥 ENDPOINT MANQUANT 1: Récupérer tous les collecteurs assignés à un admin
+     */
+    @GetMapping("/mes-collecteurs")
+    public ResponseEntity<ApiResponse<Page<CollecteurDTO>>> getMesCollecteurs(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        
+        log.info("👥 Admin demande ses collecteurs assignés - page={}, size={}", page, size);
+        
+        try {
+            PageRequest pageRequest = PageRequest.of(page, size, 
+                Sort.by(Sort.Direction.ASC, "nom"));
+            
+            // Récupérer les collecteurs via le service existant
+            Page<Collecteur> collecteursPage = collecteurService.getCollecteursByAgence(
+                securityService.getCurrentUserAgenceId(), pageRequest
+            );
+            
+            // Mapper vers DTOs
+            Page<CollecteurDTO> dtoPage = collecteursPage.map(collecteurMapper::toDTO);
+            
+            return ResponseEntity.ok(ApiResponse.success(dtoPage, 
+                String.format("Récupéré %d collecteurs", dtoPage.getNumberOfElements())));
+                
+        } catch (Exception e) {
+            log.error("❌ Erreur récupération collecteurs assignés: {}", e.getMessage(), e);
+            return ResponseEntity.status(500)
+                .body(ApiResponse.error("COLLECTEURS_ERROR", "Erreur: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * 🔥 ENDPOINT MANQUANT 2: Récupérer les clients d'un collecteur spécifique (pour admin)
+     * RÉCUPÈRE DIRECTEMENT LES DONNÉES SANS REDIRECTION
+     */
+    @GetMapping("/{collecteurId}/clients")
+    @PreAuthorize("@securityService.canManageCollecteur(authentication, #collecteurId)")
+    public ResponseEntity<ApiResponse<Page<ClientDTO>>> getCollecteurClients(
+            @PathVariable Long collecteurId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        
+        log.info("📋 Admin demande clients du collecteur {} - page={}, size={}", collecteurId, page, size);
+        
+        try {
+            // Récupérer directement les clients du collecteur via le service
+            PageRequest pageRequest = PageRequest.of(page, size, 
+                Sort.by(Sort.Direction.DESC, "dateCreation"));
+            
+            Page<Client> clientsPage = clientService.findByCollecteurId(collecteurId, pageRequest);
+            
+            // Convertir en DTOs
+            Page<ClientDTO> clientsDTO = clientsPage.map(clientMapper::toDTO);
+            
+            log.info("✅ {} clients récupérés pour le collecteur {}", clientsDTO.getTotalElements(), collecteurId);
+            
+            return ResponseEntity.ok(ApiResponse.success(clientsDTO,
+                String.format("Récupéré %d clients pour le collecteur %d", clientsDTO.getNumberOfElements(), collecteurId)));
+                
+        } catch (Exception e) {
+            log.error("❌ Erreur récupération clients collecteur {}: {}", collecteurId, e.getMessage(), e);
+            return ResponseEntity.status(500)
+                .body(ApiResponse.error("CLIENTS_ERROR", "Erreur: " + e.getMessage()));
+        }
     }
 }

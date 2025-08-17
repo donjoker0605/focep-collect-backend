@@ -75,6 +75,15 @@ public class CompteTransferService {
                 .orElseThrow(() -> new ResourceNotFoundException("Collecteur cible non trouvé"));
 
         boolean isSameAgence = sourceCollecteur.getAgence().getId().equals(targetCollecteur.getAgence().getId());
+        
+        // 🚨 NOUVELLE RESTRICTION : Rejeter les transferts inter-agences
+        if (!isSameAgence) {
+            log.warn("🚫 Transfert inter-agences refusé: {} (agence {}) vers {} (agence {})", 
+                    sourceCollecteurId, sourceCollecteur.getAgence().getId(),
+                    targetCollecteurId, targetCollecteur.getAgence().getId());
+            throw new IllegalArgumentException("Transfert inter-agences non autorisé - les collecteurs doivent appartenir à la même agence");
+        }
+        
         int successCount = 0;
 
         for (Long clientId : clientIds) {
@@ -92,14 +101,11 @@ public class CompteTransferService {
                 CompteClient compteClient = compteClientRepository.findByClient(client)
                         .orElseThrow(() -> new CompteNotFoundException("Compte client non trouvé pour le client: " + clientId));
 
-                // Transférer le client vers le nouveau collecteur
+                // Transférer le client vers le nouveau collecteur (même agence uniquement)
                 client.setCollecteur(targetCollecteur);
                 clientRepository.save(client);
-
-                // Si les agences sont différentes, gérer le transfert inter-agences
-                if (!isSameAgence) {
-                    handleInterAgencyTransfer(compteClient, sourceCollecteur, targetCollecteur);
-                }
+                
+                // Note: Plus de transfert inter-agences (restriction appliquée)
 
                 successCount++;
                 log.info("Transfert réussi du compte client {} du collecteur {} vers {}",
@@ -135,7 +141,7 @@ public class CompteTransferService {
     public Object transferComptesWithValidation(Long sourceCollecteurId, Long targetCollecteurId, 
                                               List<Long> clientIds, boolean dryRun) {
         
-        log.info("🔍 Démarrage transfert (dryRun={}): {} clients de {} vers {}", 
+        log.info("🔍 Démarrage transfert simple (dryRun={}): {} clients de {} vers {}", 
                 dryRun, clientIds.size(), sourceCollecteurId, targetCollecteurId);
         
         TransferValidationResult result = new TransferValidationResult();
@@ -163,29 +169,34 @@ public class CompteTransferService {
             throw new ResourceNotFoundException("Collecteurs invalides");
         }
         
-        result.setSourceCollecteur(sourceCollecteur);
-        result.setTargetCollecteur(targetCollecteur);
+        // Ne pas inclure les entités complètes pour éviter la sérialisation circulaire
+        // result.setSourceCollecteur(sourceCollecteur);
+        // result.setTargetCollecteur(targetCollecteur);
         
-        // 2. DÉTECTION TRANSFERT INTER-AGENCES
+        // 2. VALIDATION MÊME AGENCE UNIQUEMENT
         boolean isSameAgence = sourceCollecteur.getAgence().getId().equals(targetCollecteur.getAgence().getId());
         result.setInterAgenceTransfer(!isSameAgence);
         
         if (!isSameAgence) {
-            result.getWarnings().add("Transfert inter-agences détecté - des frais peuvent s'appliquer");
+            result.getErrors().add("Transfert refusé: les collecteurs doivent appartenir à la même agence");
+            result.getErrors().add("Collecteur source agence: " + sourceCollecteur.getAgence().getNom());
+            result.getErrors().add("Collecteur destination agence: " + targetCollecteur.getAgence().getNom());
+            result.setValid(false);
+            result.setSummary("Transfert inter-agences non autorisé");
+            log.warn("🚫 Transfert inter-agences refusé: {} (agence {}) vers {} (agence {})", 
+                    sourceCollecteurId, sourceCollecteur.getAgence().getId(),
+                    targetCollecteurId, targetCollecteur.getAgence().getId());
+            if (dryRun) throw new DryRunException(result);
+            throw new IllegalArgumentException("Transfert inter-agences non autorisé");
         }
         
-        // 3. VALIDATION DES CLIENTS ET CALCULS FINANCIERS
-        BigDecimal totalBalance = BigDecimal.ZERO;
-        BigDecimal totalCommissions = BigDecimal.ZERO;
+        // 3. VALIDATION ET TRANSFERT SIMPLE DES CLIENTS
         int successCount = 0;
-        int clientsWithDebt = 0;
-        
         result.setTotalClientsCount(clientIds.size());
         
         for (Long clientId : clientIds) {
             try {
-                // Verrouillage pessimiste comme dans l'original
-                Client client = clientRepository.findByIdForUpdate(clientId).orElse(null);
+                Client client = clientRepository.findById(clientId).orElse(null);
                 
                 if (client == null) {
                     result.getErrors().add("Client non trouvé: " + clientId);
@@ -193,40 +204,18 @@ public class CompteTransferService {
                     continue;
                 }
                 
-                // Vérification appartenance (logique métier critique)
+                // Vérification appartenance
                 if (!sourceCollecteurId.equals(client.getCollecteur().getId())) {
                     result.getWarnings().add("Client " + clientId + " n'appartient pas au collecteur source");
                     result.getClientValidations().put(clientId, "WRONG_COLLECTEUR");
                     continue;
                 }
                 
-                CompteClient compteClient = compteClientRepository.findByClient(client).orElse(null);
-                if (compteClient == null) {
-                    result.getErrors().add("Compte non trouvé pour client: " + clientId);
-                    result.getClientValidations().put(clientId, "ACCOUNT_NOT_FOUND");
-                    continue;
-                }
-                
-                // Calculs financiers
-                BigDecimal soldeClient = BigDecimal.valueOf(compteClient.getSolde());
-                BigDecimal commissionsClient = BigDecimal.valueOf(getPendingCommissions(compteClient.getId(), sourceCollecteurId));
-                
-                totalBalance = totalBalance.add(soldeClient);
-                totalCommissions = totalCommissions.add(commissionsClient);
-                
-                if (soldeClient.compareTo(BigDecimal.ZERO) < 0) {
-                    clientsWithDebt++;
-                    result.getWarnings().add("Client " + clientId + " a un solde négatif: " + soldeClient + " FCFA");
-                }
-                
-                // Si pas dry-run, effectuer le transfert réel
+                // TRANSFERT SIMPLE: juste changer le collecteur du client
                 if (!dryRun) {
                     client.setCollecteur(targetCollecteur);
                     clientRepository.save(client);
-                    
-                    if (!isSameAgence) {
-                        handleInterAgencyTransfer(compteClient, sourceCollecteur, targetCollecteur);
-                    }
+                    log.info("✅ Client {} transféré vers collecteur {}", clientId, targetCollecteurId);
                 }
                 
                 successCount++;
@@ -239,26 +228,13 @@ public class CompteTransferService {
             }
         }
         
-        // 4. FINALISATION DU RÉSULTAT
+        // 4. FINALISATION DU RÉSULTAT SIMPLIFIÉ
         result.setValidClientsCount(successCount);
-        result.setTotalBalance(totalBalance);
-        result.setCommissionImpact(totalCommissions);
-        result.setClientsWithDebt(clientsWithDebt);
-        
-        // Calcul frais estimés pour inter-agences
-        if (!isSameAgence && totalBalance.compareTo(BigDecimal.ZERO) > 0) {
-            BigDecimal estimatedFees = totalBalance.multiply(BigDecimal.valueOf(0.005)); // 0.5%
-            result.setEstimatedTransferFees(estimatedFees);
-        } else {
-            result.setEstimatedTransferFees(BigDecimal.ZERO);
-        }
-        
-        // Règles d'approbation  
-        boolean requiresApproval = totalBalance.compareTo(BigDecimal.valueOf(1_000_000)) > 0 || clientsWithDebt > 0;
-        result.setRequiresApproval(requiresApproval);
-        if (requiresApproval) {
-            result.setApprovalReason("Montant > 1M FCFA ou clients en dette");
-        }
+        result.setTotalBalance(BigDecimal.ZERO); // Pas de calcul financier complexe
+        result.setCommissionImpact(BigDecimal.ZERO); // Pas d'impact sur les commissions
+        result.setClientsWithDebt(0); // Pas de calcul de dette
+        result.setEstimatedTransferFees(BigDecimal.ZERO); // Pas de frais
+        result.setRequiresApproval(false); // Transfert simple, pas d'approbation nécessaire
         
         // État final
         boolean isValid = result.getErrors().isEmpty() && successCount > 0;
@@ -276,10 +252,10 @@ public class CompteTransferService {
             throw new DryRunException(result);
         }
         
-        // 6. TRANSFERT RÉEL : ENREGISTREMENT ET AUDIT
+        // 6. TRANSFERT RÉEL : ENREGISTREMENT SIMPLE
         if (successCount > 0) {
-            createTransferRecord(sourceCollecteurId, targetCollecteurId, clientIds, successCount, isSameAgence);
-            log.info("✅ Transfert réel terminé: {} clients transférés", successCount);
+            createSimpleTransferRecord(sourceCollecteurId, targetCollecteurId, clientIds, successCount);
+            log.info("✅ Transfert simple terminé: {} clients transférés", successCount);
         }
         
         return successCount;
@@ -579,6 +555,34 @@ public class CompteTransferService {
         } else {
             // Récupérer tous les transferts avec pagination native
             return transfertCompteRepository.findAll(pageable);
+        }
+    }
+
+    /**
+     * Crée un enregistrement simplifié de transfert dans l'historique
+     */
+    private void createSimpleTransferRecord(Long sourceCollecteurId, Long targetCollecteurId, 
+                                          List<Long> clientIds, int successCount) {
+        try {
+            org.example.collectfocep.entities.TransfertCompte transfertCompte = 
+                new org.example.collectfocep.entities.TransfertCompte();
+            transfertCompte.setSourceCollecteurId(sourceCollecteurId);
+            transfertCompte.setTargetCollecteurId(targetCollecteurId);
+            transfertCompte.setNombreComptes(successCount);
+            transfertCompte.setMontantTotal(0.0); // Pas de calcul de montant pour transfert simple
+            transfertCompte.setMontantCommissions(0.0); // Pas de commission calculée
+            transfertCompte.setIsInterAgence(false); // Toujours même agence
+            transfertCompte.setDateTransfert(LocalDateTime.now());
+            transfertCompte.setStatut("COMPLETED");
+
+            org.example.collectfocep.entities.TransfertCompte savedTransfer = 
+                transfertCompteRepository.save(transfertCompte);
+
+            log.info("Enregistrement de transfert simple créé: ID {}, {} clients transférés", 
+                    savedTransfer.getId(), successCount);
+
+        } catch (Exception e) {
+            log.error("Erreur lors de la création de l'enregistrement de transfert simple: {}", e.getMessage(), e);
         }
     }
 

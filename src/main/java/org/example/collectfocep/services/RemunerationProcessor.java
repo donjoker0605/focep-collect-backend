@@ -3,6 +3,7 @@ package org.example.collectfocep.services;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.example.collectfocep.dto.HistoriqueRemunerationDTO;
 import org.example.collectfocep.entities.*;
 import org.example.collectfocep.repositories.CollecteurRepository;
 import org.example.collectfocep.repositories.HistoriqueRemunerationRepository;
@@ -65,8 +66,9 @@ public class RemunerationProcessor {
         RemunerationResult result = processRemuneration(collecteurId, S);
         
         if (result.isSuccess()) {
-            // 3. Enregistrement dans l'historique
-            saveHistorique(collecteurId, S, result, dateDebutPeriode, dateFinPeriode, effectuePar);
+            // 3. Enregistrement dans l'historique et récupération de l'ID
+            Long historiqueId = saveHistorique(collecteurId, S, result, dateDebutPeriode, dateFinPeriode, effectuePar);
+            result.setHistoriqueRemunerationId(historiqueId);
         }
 
         return result;
@@ -217,9 +219,9 @@ public class RemunerationProcessor {
     }
 
     /**
-     * Sauvegarde l'historique de la rémunération
+     * Sauvegarde l'historique de la rémunération et retourne l'ID
      */
-    private void saveHistorique(Long collecteurId, BigDecimal S, RemunerationResult result, 
+    private Long saveHistorique(Long collecteurId, BigDecimal S, RemunerationResult result, 
                                LocalDate dateDebut, LocalDate dateFin, String effectuePar) {
         try {
             Collecteur collecteur = collecteurRepository.findById(collecteurId)
@@ -239,10 +241,12 @@ public class RemunerationProcessor {
                                           dateDebut, dateFin, result.getMouvements().size()))
                     .build();
 
-            historiqueRemunerationRepository.save(historique);
-            log.info("Historique rémunération sauvegardé pour collecteur {}", collecteurId);
+            HistoriqueRemuneration saved = historiqueRemunerationRepository.save(historique);
+            log.info("Historique rémunération sauvegardé pour collecteur {} avec ID: {}", collecteurId, saved.getId());
+            return saved.getId();
         } catch (Exception e) {
             log.error("Erreur lors de la sauvegarde de l'historique pour collecteur {}: {}", collecteurId, e.getMessage());
+            return null;
         }
     }
 
@@ -251,6 +255,16 @@ public class RemunerationProcessor {
      */
     public List<HistoriqueRemuneration> getHistoriqueRemuneration(Long collecteurId) {
         return historiqueRemunerationRepository.findByCollecteurOrderByDateDesc(collecteurId);
+    }
+    
+    /**
+     * Récupère l'historique des rémunérations d'un collecteur sous forme de DTO
+     */
+    public List<HistoriqueRemunerationDTO> getHistoriqueRemunerationDTO(Long collecteurId) {
+        var historiques = historiqueRemunerationRepository.findByCollecteurOrderByDateDesc(collecteurId);
+        return historiques.stream()
+                .map(HistoriqueRemunerationDTO::fromEntity)
+                .toList();
     }
 
     /**
@@ -289,6 +303,7 @@ public class RemunerationProcessor {
      */
     @lombok.Builder
     @lombok.Getter
+    @lombok.Setter
     public static class RemunerationResult {
         private Long collecteurId;
         private BigDecimal montantSInitial;
@@ -297,6 +312,7 @@ public class RemunerationProcessor {
         private List<Mouvement> mouvements;
         private boolean success;
         private String errorMessage;
+        private Long historiqueRemunerationId;
 
         public static RemunerationResult failure(Long collecteurId, String errorMessage) {
             return RemunerationResult.builder()

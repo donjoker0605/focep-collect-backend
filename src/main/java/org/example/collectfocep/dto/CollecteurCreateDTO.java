@@ -42,8 +42,9 @@ public class CollecteurCreateDTO {
     @Positive(message = "Le montant doit être positif")
     private BigDecimal montantMaxRetrait;
 
+    // 🔥 MODIFICATION: Collecteurs créés inactifs par défaut selon requirements
     @Builder.Default
-    private Boolean active = true;
+    private Boolean active = false;
 
     // L'agenceId sera assignée automatiquement côté backend
     private Long agenceId;

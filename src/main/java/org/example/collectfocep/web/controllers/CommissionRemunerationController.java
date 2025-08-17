@@ -3,9 +3,12 @@ package org.example.collectfocep.web.controllers;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.example.collectfocep.entities.HistoriqueCalculCommission;
+import org.example.collectfocep.repositories.HistoriqueCalculCommissionRepository;
 import org.example.collectfocep.services.CommissionOrchestrator;
 import org.example.collectfocep.services.ExcelReportGenerator;
 import org.example.collectfocep.services.RemunerationProcessor;
+import org.example.collectfocep.util.ApiResponse;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -14,7 +17,9 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 /**
  * Contrôleur unifié pour le système de commission et rémunération FOCEP
@@ -29,6 +34,7 @@ public class CommissionRemunerationController {
     private final CommissionOrchestrator commissionOrchestrator;
     private final RemunerationProcessor remunerationProcessor;
     private final ExcelReportGenerator excelReportGenerator;
+    private final HistoriqueCalculCommissionRepository historiqueCalculCommissionRepository;
 
     /**
      * Lance le calcul de commission complet pour un collecteur
@@ -64,9 +70,59 @@ public class CommissionRemunerationController {
     }
 
     /**
-     * Lance la rémunération d'un collecteur
+     * Lance la rémunération d'un collecteur basée sur les commissions sélectionnées (NOUVEAU)
      */
     @PostMapping("/collecteur/{collecteurId}/remunerer")
+    public ResponseEntity<?> remunererCollecteurAvecCommissions(
+            @PathVariable Long collecteurId,
+            @RequestBody RemunerationRequest request) {
+        
+        log.info("Rémunération collecteur V2 - ID: {}, Commissions: {}, Rubriques: {}", 
+                 collecteurId, request.getCommissionIds(), request.getRubriques().size());
+
+        try {
+            // Calculer le montant S total et récupérer les dates de période
+            java.math.BigDecimal montantS = calculateMontantSFromCommissions(request.getCommissionIds());
+            PeriodInfo periodInfo = calculatePeriodFromCommissions(request.getCommissionIds());
+            String effectuePar = SecurityContextHolder.getContext().getAuthentication().getName();
+            
+            // Utiliser le processeur avec période pour sauvegarder l'historique
+            RemunerationProcessor.RemunerationResult result = 
+                    remunerationProcessor.processRemunerationWithPeriod(
+                        collecteurId, 
+                        montantS,
+                        periodInfo.dateDebut,
+                        periodInfo.dateFin,
+                        effectuePar
+                    );
+
+            if (result.isSuccess()) {
+                // Marquer les commissions comme rémunérées avec l'ID de l'historique
+                if (result.getHistoriqueRemunerationId() != null) {
+                    markCommissionsAsRemunerated(request.getCommissionIds(), result.getHistoriqueRemunerationId());
+                }
+                
+                log.info("Rémunération V2 effectuée - Vi total: {}, EMF: {}, Période: {} - {}", 
+                        result.getTotalRubriqueVi(), result.getMontantEMF(), 
+                        periodInfo.dateDebut, periodInfo.dateFin);
+                return ResponseEntity.ok(result);
+            } else {
+                log.error("Échec rémunération V2: {}", result.getErrorMessage());
+                return ResponseEntity.badRequest()
+                        .body(ErrorResponse.of("REMUNERATION_FAILED", result.getErrorMessage()));
+            }
+
+        } catch (Exception e) {
+            log.error("Erreur inattendue lors de la rémunération V2: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError()
+                    .body(ErrorResponse.of("INTERNAL_ERROR", "Erreur système lors de la rémunération"));
+        }
+    }
+
+    /**
+     * Lance la rémunération d'un collecteur (ancien endpoint)
+     */
+    @PostMapping("/collecteur/{collecteurId}/remunerer-simple")
     public ResponseEntity<?> remunererCollecteur(
             @PathVariable Long collecteurId,
             @RequestParam java.math.BigDecimal montantS) {
@@ -244,13 +300,49 @@ public class CommissionRemunerationController {
         log.info("Récupération historique rémunération collecteur: {}", collecteurId);
         
         try {
-            var historique = remunerationProcessor.getHistoriqueRemuneration(collecteurId);
-            return ResponseEntity.ok(historique);
+            var historique = remunerationProcessor.getHistoriqueRemunerationDTO(collecteurId);
+            log.info("Historique récupéré: {} éléments", historique.size());
+            
+            // Log détaillé pour debug
+            for (var h : historique) {
+                log.info("Historique ID {}: montantSInitial={}, totalRubriquesVi={}, effectuePar={}", 
+                         h.getId(), h.getMontantSInitial(), h.getTotalRubriquesVi(), h.getEffectuePar());
+            }
+            
+            return ResponseEntity.ok(ApiResponse.success(historique, 
+                historique.size() + " historiques trouvés"));
             
         } catch (Exception e) {
             log.error("Erreur récupération historique: {}", e.getMessage(), e);
             return ResponseEntity.internalServerError()
                     .body(ErrorResponse.of("INTERNAL_ERROR", "Erreur système"));
+        }
+    }
+    
+    /**
+     * ENDPOINT DE TEST TEMPORAIRE - SANS AUTHENTIFICATION
+     */
+    @GetMapping("/debug/collecteur/{collecteurId}/historique-remuneration")
+    public ResponseEntity<?> getHistoriqueRemunerationDebug(@PathVariable Long collecteurId) {
+        
+        log.info("🔍 DEBUG: Récupération historique rémunération collecteur: {}", collecteurId);
+        
+        try {
+            var historique = remunerationProcessor.getHistoriqueRemunerationDTO(collecteurId);
+            log.info("🔍 DEBUG: Historique récupéré: {} éléments", historique.size());
+            
+            // Log détaillé pour debug
+            for (var h : historique) {
+                log.info("🔍 DEBUG: Historique ID {}: montantSInitial={}, totalRubriquesVi={}, effectuePar={}", 
+                         h.getId(), h.getMontantSInitial(), h.getTotalRubriquesVi(), h.getEffectuePar());
+            }
+            
+            return ResponseEntity.ok(historique);
+            
+        } catch (Exception e) {
+            log.error("🔍 DEBUG: Erreur récupération historique: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError()
+                    .body(java.util.Map.of("error", e.getMessage()));
         }
     }
     
@@ -391,7 +483,83 @@ public class CommissionRemunerationController {
         }
     }
 
+    /**
+     * Calcule le montant S total à partir des IDs des commissions sélectionnées
+     */
+    private BigDecimal calculateMontantSFromCommissions(List<Long> commissionIds) {
+        BigDecimal total = BigDecimal.ZERO;
+        
+        for (Long commissionId : commissionIds) {
+            HistoriqueCalculCommission commission = historiqueCalculCommissionRepository
+                    .findById(commissionId)
+                    .orElseThrow(() -> new RuntimeException("Commission non trouvée: " + commissionId));
+            
+            if (commission.getMontantCommissionTotal() != null) {
+                total = total.add(commission.getMontantCommissionTotal());
+            }
+        }
+        
+        log.info("Montant S calculé à partir de {} commissions: {}", commissionIds.size(), total);
+        return total;
+    }
+
+    /**
+     * Calcule la période globale à partir des commissions sélectionnées
+     */
+    private PeriodInfo calculatePeriodFromCommissions(List<Long> commissionIds) {
+        LocalDate dateDebut = null;
+        LocalDate dateFin = null;
+        
+        for (Long commissionId : commissionIds) {
+            HistoriqueCalculCommission commission = historiqueCalculCommissionRepository
+                    .findById(commissionId)
+                    .orElseThrow(() -> new RuntimeException("Commission non trouvée: " + commissionId));
+            
+            if (dateDebut == null || commission.getDateDebut().isBefore(dateDebut)) {
+                dateDebut = commission.getDateDebut();
+            }
+            if (dateFin == null || commission.getDateFin().isAfter(dateFin)) {
+                dateFin = commission.getDateFin();
+            }
+        }
+        
+        log.info("Période calculée: {} - {} pour {} commissions", dateDebut, dateFin, commissionIds.size());
+        return new PeriodInfo(dateDebut, dateFin);
+    }
+
+    /**
+     * Marque les commissions comme rémunérées et lie à l'historique de rémunération
+     */
+    private void markCommissionsAsRemunerated(List<Long> commissionIds, Long remunerationId) {
+        for (Long commissionId : commissionIds) {
+            HistoriqueCalculCommission commission = historiqueCalculCommissionRepository
+                    .findById(commissionId)
+                    .orElseThrow(() -> new RuntimeException("Commission non trouvée: " + commissionId));
+            
+            // Utiliser la méthode de l'entité qui fait tout d'un coup
+            commission.marquerCommeRemunere(remunerationId);
+            historiqueCalculCommissionRepository.save(commission);
+        }
+        log.info("{} commissions marquées comme rémunérées avec remunerationId: {}", commissionIds.size(), remunerationId);
+    }
+
     // Classes internes pour les réponses
+
+    @lombok.Data
+    @lombok.AllArgsConstructor
+    private static class PeriodInfo {
+        private LocalDate dateDebut;
+        private LocalDate dateFin;
+    }
+
+    @lombok.Data
+    @lombok.NoArgsConstructor
+    @lombok.AllArgsConstructor
+    public static class RemunerationRequest {
+        private List<Long> commissionIds;
+        private List<Object> rubriques; // Pour l'instant, pas utilisé mais garde la compatibilité
+        private String confirmationDateTime;
+    }
 
     @lombok.Builder
     @lombok.Getter

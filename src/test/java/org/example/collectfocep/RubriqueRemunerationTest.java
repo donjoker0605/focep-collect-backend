@@ -40,7 +40,7 @@ public class RubriqueRemunerationTest {
         assertEquals(LocalDate.of(2025, 8, 7), dto.getDateApplication());
         assertEquals(60, dto.getDelaiJours());
         assertEquals(List.of(4L), dto.getCollecteurIds());
-        assertTrue(dto.isActive());
+        assertTrue(dto.getActive());
         
         // Vérification des champs calculés
         assertNotNull(dto.getTypeLabel());

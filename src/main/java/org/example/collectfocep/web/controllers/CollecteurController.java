@@ -156,9 +156,10 @@ public class CollecteurController {
 
     /**
      * MISE À JOUR D'UN COLLECTEUR - AVEC CHANGEMENT DE MOT DE PASSE
+     * 🚨 RESTRICTION: Seuls les SUPER_ADMIN peuvent modifier les collecteurs
      */
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     public ResponseEntity<ApiResponse<CollecteurDTO>> updateCollecteur(
             @PathVariable Long id,
             @Valid @RequestBody CollecteurUpdateDTO dto) {

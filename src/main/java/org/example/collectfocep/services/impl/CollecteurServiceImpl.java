@@ -109,7 +109,8 @@ public class CollecteurServiceImpl implements CollecteurService {
                 log.info("🔑 Mot de passe temporaire généré: {}", tempPassword);
             }
 
-            collecteur.setActive(true);
+            // 🔥 MODIFICATION: Collecteurs créés inactifs par défaut selon requirements
+            collecteur.setActive(dto.getActive() != null ? dto.getActive() : false);
             collecteur.setRole("COLLECTEUR");
             collecteur.setAncienneteEnMois(0);
 

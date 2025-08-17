@@ -72,14 +72,26 @@ public interface CommissionParameterRepository extends JpaRepository<CommissionP
         """)
     Optional<CommissionParameter> findActiveCommissionParameterByCollecteur(@Param("collecteurId") Long collecteurId);
 
+    @Query(value = """
+        SELECT cp.* FROM commission_parameter cp 
+        WHERE cp.agence_id = :agenceId 
+        AND cp.is_active = true 
+        AND (cp.valid_to IS NULL OR cp.valid_to >= CURRENT_DATE)
+        ORDER BY cp.valid_from DESC
+        LIMIT 1
+        """, nativeQuery = true)
+    Optional<CommissionParameter> findActiveCommissionParameterByAgence(@Param("agenceId") Long agenceId);
+
+    /**
+     * 🔥 OPTIMISATION N+1: Récupération groupée des paramètres de commission par clients
+     */
     @Query("""
         SELECT cp FROM CommissionParameter cp 
-        WHERE cp.agence.id = :agenceId 
+        WHERE cp.client.id IN :clientIds 
         AND cp.active = true 
         AND (cp.validTo IS NULL OR cp.validTo >= CURRENT_DATE)
-        ORDER BY cp.validFrom DESC
         """)
-    Optional<CommissionParameter> findActiveCommissionParameterByAgence(@Param("agenceId") Long agenceId);
+    List<CommissionParameter> findByClientIdIn(@Param("clientIds") List<Long> clientIds);
 
     // Méthodes de compatibilité pour CommissionOrchestrator
     default Optional<CommissionParameter> findByClientId(Long clientId) {

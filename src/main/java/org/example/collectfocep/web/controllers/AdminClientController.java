@@ -303,7 +303,17 @@ public class AdminClientController {
 
     private Page<Client> getClientsForAdmin(Long agenceId, PageRequest pageRequest,
                                             String search, Long collecteurId, Boolean active) {
-        // ARCHITECTURE MODERNE: Service centralisé avec EntityGraph optimisé
+        log.debug("🔍 [ADMIN] Filtrage clients agence={}, collecteurId={}, search='{}', active={}", 
+                agenceId, collecteurId, search, active);
+        
+        // 🚨 CORRECTION BUG: Utiliser les paramètres de filtrage
+        if (collecteurId != null) {
+            // Si un collecteurId spécifique est demandé, filtrer par ce collecteur uniquement
+            log.info("🎯 [ADMIN] Filtrage par collecteur spécifique: {}", collecteurId);
+            return clientRepository.findByCollecteurIdAndCollecteurAgenceId(collecteurId, agenceId, pageRequest);
+        }
+        
+        // Sinon, utiliser le service centralisé pour tous les clients de l'agence
         return fetchStrategyService.getClientsWithCollecteur(agenceId, pageRequest);
     }
 

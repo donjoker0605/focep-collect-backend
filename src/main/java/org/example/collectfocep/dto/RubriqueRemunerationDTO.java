@@ -50,7 +50,7 @@ public class RubriqueRemunerationDTO {
     /**
      * Indique si la rubrique est active
      */
-    private boolean active;
+    private Boolean active;
     
     /**
      * Informations calculées (en lecture seule)

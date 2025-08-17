@@ -59,6 +59,7 @@ public class WebSecurityConfig {
 
                         // ENDPOINTS DEBUG (À SUPPRIMER EN PROD)
                         .requestMatchers("/api/admin/dashboard-debug").permitAll()
+                        .requestMatchers("/api/v2/commission-remuneration/debug/**").permitAll()
 
                         // DASHBOARD COLLECTEUR
                         .requestMatchers(HttpMethod.GET, "/api/collecteurs/*/dashboard*")
@@ -77,6 +78,7 @@ public class WebSecurityConfig {
                         // API V2 - ENDPOINTS COMMISSION ET REMUNERATION
                         .requestMatchers("/api/v2/rubriques-remuneration/**").hasAnyAuthority("ROLE_ADMIN", "ROLE_SUPER_ADMIN")
                         .requestMatchers("/api/v2/commission-remuneration/**").hasAnyAuthority("ROLE_ADMIN", "ROLE_SUPER_ADMIN", "ROLE_COLLECTEUR")
+                        .requestMatchers("/api/v2/historique-commissions/**").hasAnyAuthority("ROLE_ADMIN", "ROLE_SUPER_ADMIN")
 
                         // ENDPOINTS SUPER ADMIN UNIQUEMENT
                         .requestMatchers("/api/agences/**").hasAuthority("ROLE_SUPER_ADMIN")
@@ -122,10 +124,10 @@ public class WebSecurityConfig {
         configuration.setAllowedOrigins(Arrays.asList(
                 "http://localhost:19006",
                 "http://localhost:8081",
-                "http://192.168.111.57:19006",
-                "http://192.168.111.57:8081",
-                "http://192.168.111.57:8080",
-                "exp://192.168.111.57:8081",
+                "http://192.168.90.134:19006",
+                "http://192.168.90.134:8081",
+                "http://192.168.90.134:8080",
+                "exp://192.168.90.134:8081",
                 "http://10.0.2.2:8080",
                 "http://127.0.0.1:8081"
         ));

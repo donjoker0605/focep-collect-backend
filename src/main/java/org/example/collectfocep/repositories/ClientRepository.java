@@ -670,4 +670,17 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
             "SUM(CASE WHEN c.coordonneesSaisieManuelle = true THEN 1 ELSE 0 END) as manualLocation) " +
             "FROM Client c WHERE c.agence.id = :agenceId")
     Map<String, Object> getLocationStatsByAgence(@Param("agenceId") Long agenceId);
+
+    // =====================================
+    // MÉTHODE POUR CORRIGER BUG LISTE CLIENTS PAR COLLECTEUR
+    // =====================================
+
+    /**
+     * 🔧 Trouve les clients d'un collecteur spécifique dans une agence donnée
+     * Utilisé par l'AdminClientController pour filtrer correctement les clients
+     */
+    @Query("SELECT c FROM Client c WHERE c.collecteur.id = :collecteurId AND c.collecteur.agence.id = :agenceId ORDER BY c.dateCreation DESC")
+    Page<Client> findByCollecteurIdAndCollecteurAgenceId(@Param("collecteurId") Long collecteurId, 
+                                                         @Param("agenceId") Long agenceId, 
+                                                         Pageable pageable);
 }
