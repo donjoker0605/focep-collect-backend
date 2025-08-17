@@ -154,13 +154,18 @@ public interface AgenceRepository extends JpaRepository<Agence, Long> {
     List<Object[]> getAgencesWithCompleteStats();
 
     /**
-     * Agence par ID avec toutes ses relations
+     * Agence par ID avec collecteurs seulement (pour éviter MultipleBagFetchException)
      */
     @Query("SELECT a FROM Agence a " +
-            "LEFT JOIN FETCH a.collecteurs c " +
-            "LEFT JOIN FETCH c.clients " +
+            "LEFT JOIN FETCH a.collecteurs " +
             "WHERE a.id = :agenceId")
     Optional<Agence> findByIdWithDetails(@Param("agenceId") Long agenceId);
+    
+    /**
+     * Agence par ID de base (sans collections)
+     */
+    @Query("SELECT a FROM Agence a WHERE a.id = :agenceId")
+    Optional<Agence> findByIdBasic(@Param("agenceId") Long agenceId);
 
     // =====================================
     // MÉTHODES DE VALIDATION

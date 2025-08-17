@@ -35,4 +35,6 @@ public interface ParametreCommissionRepository extends JpaRepository<ParametreCo
     boolean existsByAgenceIdAndTypeOperationAndActifTrue(Long agenceId, ParametreCommission.TypeOperation typeOperation);
 
     void deleteByAgenceIdAndTypeOperation(Long agenceId, ParametreCommission.TypeOperation typeOperation);
+    
+    void deleteByAgenceId(Long agenceId);
 }

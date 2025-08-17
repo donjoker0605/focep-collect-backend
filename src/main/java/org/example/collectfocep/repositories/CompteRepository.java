@@ -70,4 +70,15 @@ public interface CompteRepository extends JpaRepository<Compte, Long> {
     @Query("SELECT c FROM Compte c WHERE c.typeCompte = :typeCompte AND " +
            "c.id IN (SELECT csc.id FROM CompteSalaireCollecteur csc WHERE csc.collecteur.id = :collecteurId)")
     Optional<Compte> findByCollecteurIdAndTypeCompte(@Param("collecteurId") Long collecteurId, @Param("typeCompte") String typeCompte);
+
+    /**
+     * Vérifie si un compte existe pour une agence et un type donné
+     */
+    @Query("SELECT CASE WHEN COUNT(c) > 0 THEN TRUE ELSE FALSE END FROM Compte c WHERE c.typeCompte = :typeCompte AND " +
+           "(c.id IN (SELECT pccc.id FROM ComptePassageCommissionCollecte pccc WHERE pccc.agence.id = :agenceId) OR " +
+           "c.id IN (SELECT cpt.id FROM ComptePassageTaxe cpt WHERE cpt.agence.id = :agenceId) OR " +
+           "c.id IN (SELECT cpc.id FROM CompteProduitCollecte cpc WHERE cpc.agence.id = :agenceId) OR " +
+           "c.id IN (SELECT ccc.id FROM CompteChargeCollecte ccc WHERE ccc.agence.id = :agenceId) OR " +
+           "c.id IN (SELECT ct.id FROM CompteTaxe ct WHERE ct.agence.id = :agenceId))")
+    Boolean existsByTypeCompteAndAgenceId(@Param("typeCompte") String typeCompte, @Param("agenceId") Long agenceId);
 }

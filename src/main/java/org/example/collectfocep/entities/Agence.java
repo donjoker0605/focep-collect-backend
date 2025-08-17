@@ -51,6 +51,12 @@ public class Agence {
     @Column(name = "adresse")
     private String adresse;
 
+    @Column(name = "ville", nullable = false)
+    private String ville;
+
+    @Column(name = "quartier", nullable = false)
+    private String quartier;
+
     @Column(name = "telephone")
     private String telephone;
 
