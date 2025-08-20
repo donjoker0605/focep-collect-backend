@@ -17,6 +17,12 @@ public interface CompteChargeCollecteRepository extends JpaRepository<CompteChar
     List<CompteChargeCollecte> findAllByAgence(Agence agence);
     boolean existsByAgence(Agence agence);
     
+    /**
+     * Trouve le compte charge collecte par agence ID
+     */
+    @Query("SELECT ccc FROM CompteChargeCollecte ccc WHERE ccc.agence.id = :agenceId")
+    CompteChargeCollecte findByAgenceId(@Param("agenceId") Long agenceId);
+    
     // Méthodes de compatibilité pour la migration depuis CompteCharge
     // Trouve par collecteur (utilise l'agence du collecteur)
     @Query("SELECT c FROM CompteChargeCollecte c WHERE c.agence = :#{#collecteur.agence}")

@@ -55,6 +55,8 @@ public class CollecteurDTO {
     private Integer ancienneteEnMois = 0;
 
     // Champs existants
+    private LocalDateTime dateCreation;
+    private LocalDateTime dateModification;
     private LocalDateTime dateModificationMontantMax;
     private String modifiePar;
     private String agenceNom;
@@ -62,6 +64,22 @@ public class CollecteurDTO {
     private Integer nombreComptes;
     private String fcmToken;
     private LocalDateTime fcmTokenUpdatedAt;
+    
+    // Champs enrichis pour données financières
+    private String nomComplet;
+    private String niveauAnciennete;
+    private String ancienneteSummary;
+    private Double coefficientAnciennete;
+    
+    // Soldes des comptes collecteur
+    private Double soldeSalaire;
+    private Double soldeManquant;
+    private Double soldeService;
+    private Double soldeTotal;
+    
+    // Statistiques clients
+    private Integer nombreClientsActifs;
+    private Double soldeTotalClients;
 
     // MÉTHODES UTILITAIRES CORRIGÉES
     public Boolean isActive() {
@@ -76,7 +94,10 @@ public class CollecteurDTO {
         return ancienneteEnMois != null && ancienneteEnMois < 3;
     }
 
-    public String getNomComplet() {
+    public String getDisplayName() {
+        if (nomComplet != null && !nomComplet.trim().isEmpty()) {
+            return nomComplet;
+        }
         return (prenom != null ? prenom : "") + " " + (nom != null ? nom : "");
     }
 

@@ -10,12 +10,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/admin")
@@ -35,7 +34,8 @@ public class AdminDashboardController {
      */
     @GetMapping("/dashboard")
     @PreAuthorize("hasAuthority('ROLE_ADMIN') or hasAuthority('ROLE_SUPER_ADMIN')")
-    public ResponseEntity<ApiResponse<DashboardStatsDTO>> getDashboardStats() {
+    public ResponseEntity<ApiResponse<DashboardStatsDTO>> getDashboardStats(
+            @RequestParam(defaultValue = "all") String period) {
         log.info("📊 Récupération des statistiques du dashboard admin");
 
         try {
@@ -50,8 +50,8 @@ public class AdminDashboardController {
             DashboardStatsDTO stats;
 
             if (isSuperAdmin) {
-                stats = buildGlobalStats();
-                log.info("Statistiques globales générées pour super admin");
+                stats = buildGlobalStats(period);
+                log.info("Statistiques globales générées pour super admin (période: {})", period);
             } else {
                 // GESTION SÉCURISÉE POUR ADMIN D'AGENCE
                 try {
@@ -61,8 +61,8 @@ public class AdminDashboardController {
                         // Retourner des stats vides plutôt qu'une erreur
                         stats = createEmptyStats("Admin sans agence");
                     } else {
-                        stats = buildAgenceStats(agenceId);
-                        log.info("Statistiques d'agence {} générées pour admin", agenceId);
+                        stats = buildAgenceStats(agenceId, period);
+                        log.info("Statistiques d'agence {} générées pour admin (période: {})", agenceId, period);
                     }
                 } catch (Exception e) {
                     log.error("Erreur récupération agence admin, utilisation stats vides", e);
@@ -88,8 +88,8 @@ public class AdminDashboardController {
     /**
      * STATISTIQUES GLOBALES AVEC GESTION D'ERREURS
      */
-    private DashboardStatsDTO buildGlobalStats() {
-        log.debug("Construction des statistiques globales");
+    private DashboardStatsDTO buildGlobalStats(String period) {
+        log.debug("Construction des statistiques globales pour période: {}", period);
 
         try {
             // COLLECTEURS - AVEC GESTION D'ERREURS
@@ -142,8 +142,8 @@ public class AdminDashboardController {
     /**
      * STATISTIQUES PAR AGENCE AVEC GESTION D'ERREURS
      */
-    private DashboardStatsDTO buildAgenceStats(Long agenceId) {
-        log.debug("Construction des statistiques pour l'agence: {}", agenceId);
+    private DashboardStatsDTO buildAgenceStats(Long agenceId, String period) {
+        log.debug("Construction des statistiques pour l'agence: {} (période: {})", agenceId, period);
 
         try {
             // COLLECTEURS DE L'AGENCE - AVEC GESTION D'ERREURS
@@ -160,6 +160,31 @@ public class AdminDashboardController {
             Double totalEpargne = safeSum(() -> mouvementRepository.sumByAgenceIdAndSens(agenceId, "EPARGNE"));
             Double totalRetrait = safeSum(() -> mouvementRepository.sumByAgenceIdAndSens(agenceId, "RETRAIT"));
 
+            // 🆕 NOUVEAU: Calculs par période configurables - VERSION SIMPLIFIÉE
+            // Utilisons les méthodes existantes avec filtres par collecteurs de l'agence
+            List<Long> collecteurIds = collecteurRepository.findIdsByAgenceId(agenceId);
+            
+            // Données pour aujourd'hui 
+            LocalDate today = LocalDate.now();
+            Double epargneAujourdhui = calculateSumForCollecteursAndPeriod(
+                collecteurIds, "EPARGNE", today.atStartOfDay(), today.atTime(23, 59, 59));
+            Double retraitsAujourdhui = calculateSumForCollecteursAndPeriod(
+                collecteurIds, "RETRAIT", today.atStartOfDay(), today.atTime(23, 59, 59));
+            
+            // Données pour la semaine
+            LocalDate weekStart = today.minusWeeks(1);
+            Double epargneSemaine = calculateSumForCollecteursAndPeriod(
+                collecteurIds, "EPARGNE", weekStart.atStartOfDay(), today.atTime(23, 59, 59));
+            Double retraitsSemaine = calculateSumForCollecteursAndPeriod(
+                collecteurIds, "RETRAIT", weekStart.atStartOfDay(), today.atTime(23, 59, 59));
+            
+            // Données pour le mois
+            LocalDate monthStart = today.withDayOfMonth(1);
+            Double epargneMois = calculateSumForCollecteursAndPeriod(
+                collecteurIds, "EPARGNE", monthStart.atStartOfDay(), today.atTime(23, 59, 59));
+            Double retraitsMois = calculateSumForCollecteursAndPeriod(
+                collecteurIds, "RETRAIT", monthStart.atStartOfDay(), today.atTime(23, 59, 59));
+
             // COMMISSIONS DE L'AGENCE - AVEC GESTION D'ERREURS
             Long commissionsEnAttente = safeCount(() -> commissionRepository.countPendingCommissionsByAgence(agenceId));
             Double totalCommissions = safeSum(() -> commissionRepository.sumCommissionsByAgence(agenceId));
@@ -174,10 +199,23 @@ public class AdminDashboardController {
                     .clientsInactifs(clientsInactifs)
                     .totalEpargne(totalEpargne)
                     .totalRetrait(totalRetrait)
+                    // 🆕 NOUVEAUX CHAMPS PAR PÉRIODE
+                    .epargneAujourdhui(epargneAujourdhui != null ? epargneAujourdhui : 0.0)
+                    .retraitsAujourdhui(retraitsAujourdhui != null ? retraitsAujourdhui : 0.0)
+                    .soldeAujourdhui((epargneAujourdhui != null ? epargneAujourdhui : 0.0) - 
+                                     (retraitsAujourdhui != null ? retraitsAujourdhui : 0.0))
+                    .epargneSemaine(epargneSemaine != null ? epargneSemaine : 0.0)
+                    .retraitsSemaine(retraitsSemaine != null ? retraitsSemaine : 0.0)
+                    .soldeSemaine((epargneSemaine != null ? epargneSemaine : 0.0) - 
+                                  (retraitsSemaine != null ? retraitsSemaine : 0.0))
+                    .epargneMois(epargneMois != null ? epargneMois : 0.0)
+                    .retraitsMois(retraitsMois != null ? retraitsMois : 0.0)
+                    .soldeMois((epargneMois != null ? epargneMois : 0.0) - 
+                               (retraitsMois != null ? retraitsMois : 0.0))
                     .commissionsEnAttente(commissionsEnAttente)
                     .totalCommissions(totalCommissions)
                     .lastUpdate(LocalDateTime.now())
-                    .periode("Agence " + agenceId)
+                    .periode("Agence " + agenceId + " (" + period + ")")
                     .build();
 
         } catch (Exception e) {
@@ -226,6 +264,63 @@ public class AdminDashboardController {
                 .lastUpdate(LocalDateTime.now())
                 .periode(periode)
                 .build();
+    }
+
+    /**
+     * 🆕 NOUVEAU: Calcule les plages de dates selon la période
+     */
+    private LocalDate[] getDateRange(String period) {
+        LocalDate today = LocalDate.now();
+        LocalDate startDate;
+        
+        switch (period.toLowerCase()) {
+            case "today":
+            case "aujourd'hui":
+                startDate = today;
+                break;
+            case "week":
+            case "semaine":
+                startDate = today.minusWeeks(1);
+                break;
+            case "month":
+            case "mois":
+                startDate = today.withDayOfMonth(1);
+                break;
+            default:
+                // "all" ou autre = pas de limite
+                startDate = LocalDate.of(2020, 1, 1);
+                break;
+        }
+        
+        return new LocalDate[]{startDate, today};
+    }
+
+    /**
+     * 🆕 NOUVEAU: Calcule la somme pour plusieurs collecteurs sur une période
+     */
+    private Double calculateSumForCollecteursAndPeriod(List<Long> collecteurIds, String sens, 
+                                                       LocalDateTime startDate, LocalDateTime endDate) {
+        try {
+            if (collecteurIds == null || collecteurIds.isEmpty()) {
+                return 0.0;
+            }
+            
+            double total = 0.0;
+            for (Long collecteurId : collecteurIds) {
+                Double sum = mouvementRepository.sumEpargneByCollecteurIdAndDateOperationBetween(
+                    collecteurId, startDate, endDate);
+                if (sens.equals("RETRAIT")) {
+                    sum = mouvementRepository.sumRetraitByCollecteurIdAndDateOperationBetween(
+                        collecteurId, startDate, endDate);
+                }
+                total += (sum != null ? sum : 0.0);
+            }
+            return total;
+        } catch (Exception e) {
+            log.warn("Erreur calcul somme pour collecteurs {} ({}-{}) : {}", 
+                    collecteurIds, startDate, endDate, e.getMessage());
+            return 0.0;
+        }
     }
 
     /**

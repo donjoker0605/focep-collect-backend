@@ -15,6 +15,7 @@ import org.example.collectfocep.repositories.*;
 import org.example.collectfocep.security.service.SecurityService;
 import org.example.collectfocep.services.SuperAdminAgenceService;
 import org.example.collectfocep.services.SuperAdminValidationService;
+import org.example.collectfocep.services.ExportExcelService;
 import org.example.collectfocep.util.ApiResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -25,6 +26,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.http.MediaType;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -52,6 +55,7 @@ public class SuperAdminController {
     // Nouveaux services
     private final SuperAdminAgenceService superAdminAgenceService;
     private final SuperAdminValidationService superAdminValidationService;
+    private final ExportExcelService exportExcelService;
 
     /**
      * 📊 DASHBOARD SUPER ADMIN GLOBAL
@@ -846,6 +850,227 @@ public class SuperAdminController {
             log.error("❌ Erreur récupération clients: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error("Erreur lors de la récupération des clients: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * 💎 DÉTAILS COMPLETS D'UN CLIENT
+     */
+    @GetMapping("/clients/{clientId}")
+    public ResponseEntity<ApiResponse<ClientDTO>> getClientDetailsComplete(@PathVariable Long clientId) {
+        log.info("💎 SuperAdmin - Récupération détails complets client: {}", clientId);
+
+        try {
+            superAdminValidationService.validateId(clientId, "Client");
+            
+            ClientDTO client = superAdminAgenceService.getClientDetailsComplete(clientId);
+            
+            return ResponseEntity.ok(
+                    ApiResponse.success(client, "Détails complets du client récupérés avec succès")
+            );
+        } catch (ResourceNotFoundException e) {
+            log.warn("⚠️ Client non trouvé: {}", clientId);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(ApiResponse.error("Client non trouvé: " + clientId));
+        } catch (Exception e) {
+            log.error("❌ Erreur récupération détails client {}: {}", clientId, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Erreur lors de la récupération des détails du client: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * 💳 HISTORIQUE DES TRANSACTIONS D'UN CLIENT
+     */
+    @GetMapping("/clients/{clientId}/transactions")
+    public ResponseEntity<ApiResponse<List<MouvementDTO>>> getClientTransactions(
+            @PathVariable Long clientId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        log.info("💳 SuperAdmin - Récupération transactions client: {} (page={}, size={})", clientId, page, size);
+
+        try {
+            superAdminValidationService.validateId(clientId, "Client");
+            
+            List<MouvementDTO> transactions = superAdminAgenceService.getClientTransactions(clientId, page, size);
+            
+            return ResponseEntity.ok(
+                    ApiResponse.success(transactions, 
+                            String.format("Historique des transactions récupéré avec succès (%d transactions)", transactions.size()))
+            );
+        } catch (ResourceNotFoundException e) {
+            log.warn("⚠️ Client non trouvé pour transactions: {}", clientId);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(ApiResponse.error("Client non trouvé: " + clientId));
+        } catch (Exception e) {
+            log.error("❌ Erreur récupération transactions client {}: {}", clientId, e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Erreur lors de la récupération des transactions: " + e.getMessage()));
+        }
+    }
+
+    // ================================
+    // 📊 EXPORTS EXCEL SUPER ADMIN
+    // ================================
+
+    /**
+     * 📊 EXPORT EXCEL COMPLET MULTI-ONGLETS
+     */
+    @PostMapping("/export/excel")
+    public ResponseEntity<ByteArrayResource> exportExcelComplete(@RequestBody ExportExcelRequest request) {
+        log.info("📊 SuperAdmin - Export Excel complet: {}", request);
+
+        try {
+            // Validation des paramètres
+            if (request.getDateDebut() != null && request.getDateFin() != null) {
+                if (request.getDateDebut().isAfter(request.getDateFin())) {
+                    return ResponseEntity.badRequest()
+                            .body(null);
+                }
+            }
+
+            // Configuration des filtres
+            ExportExcelService.ExportFilters filters = new ExportExcelService.ExportFilters();
+            filters.setAgenceId(request.getAgenceId());
+            filters.setDateDebut(request.getDateDebut());
+            filters.setDateFin(request.getDateFin());
+            filters.setIncludeInactifs(request.getIncludeInactifs());
+            filters.setMaxRecords(request.getMaxRecords());
+
+            // Génération du fichier Excel
+            byte[] excelData = exportExcelService.exportCompleteData(filters);
+
+            // Nom du fichier avec timestamp
+            String timestamp = LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmm"));
+            String fileName = String.format("FOCEP_Export_Complet_%s.xlsx", timestamp);
+
+            // Configuration de la réponse
+            ByteArrayResource resource = new ByteArrayResource(excelData);
+
+            return ResponseEntity.ok()
+                    .header("Content-Disposition", "attachment; filename=\"" + fileName + "\"")
+                    .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                    .contentLength(excelData.length)
+                    .body(resource);
+
+        } catch (Exception e) {
+            log.error("❌ Erreur export Excel: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(null);
+        }
+    }
+
+    /**
+     * 📊 EXPORT EXCEL PAR AGENCE
+     */
+    @GetMapping("/export/excel/agence/{agenceId}")
+    public ResponseEntity<ByteArrayResource> exportExcelAgence(@PathVariable Long agenceId) {
+        log.info("📊 SuperAdmin - Export Excel agence: {}", agenceId);
+
+        try {
+            superAdminValidationService.validateId(agenceId, "Agence");
+
+            // Configuration des filtres pour l'agence
+            ExportExcelService.ExportFilters filters = new ExportExcelService.ExportFilters();
+            filters.setAgenceId(agenceId);
+            filters.setIncludeInactifs(true);
+
+            // Génération du fichier Excel
+            byte[] excelData = exportExcelService.exportCompleteData(filters);
+
+            // Nom du fichier avec agence et timestamp
+            String timestamp = LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmm"));
+            String fileName = String.format("FOCEP_Export_Agence_%d_%s.xlsx", agenceId, timestamp);
+
+            ByteArrayResource resource = new ByteArrayResource(excelData);
+
+            return ResponseEntity.ok()
+                    .header("Content-Disposition", "attachment; filename=\"" + fileName + "\"")
+                    .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                    .contentLength(excelData.length)
+                    .body(resource);
+
+        } catch (ResourceNotFoundException e) {
+            log.warn("⚠️ Agence non trouvée pour export: {}", agenceId);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
+        } catch (Exception e) {
+            log.error("❌ Erreur export Excel agence: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
+        }
+    }
+
+    /**
+     * 📊 EXPORT EXCEL RAPIDE (RÉSUMÉ)
+     */
+    @GetMapping("/export/excel/summary")
+    public ResponseEntity<ByteArrayResource> exportExcelSummary() {
+        log.info("📊 SuperAdmin - Export Excel résumé");
+
+        try {
+            // Configuration des filtres pour résumé
+            ExportExcelService.ExportFilters filters = new ExportExcelService.ExportFilters();
+            filters.setIncludeInactifs(false); // Seulement les actifs pour le résumé
+            filters.setMaxRecords(1000); // Limite pour performance
+
+            // Génération du fichier Excel
+            byte[] excelData = exportExcelService.exportCompleteData(filters);
+
+            // Nom du fichier
+            String timestamp = LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmm"));
+            String fileName = String.format("FOCEP_Export_Resume_%s.xlsx", timestamp);
+
+            ByteArrayResource resource = new ByteArrayResource(excelData);
+
+            return ResponseEntity.ok()
+                    .header("Content-Disposition", "attachment; filename=\"" + fileName + "\"")
+                    .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                    .contentLength(excelData.length)
+                    .body(resource);
+
+        } catch (Exception e) {
+            log.error("❌ Erreur export Excel résumé: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
+        }
+    }
+
+    // ================================
+    // CLASSES DTO POUR EXPORT
+    // ================================
+
+    /**
+     * 📋 DTO pour les paramètres d'export Excel
+     */
+    public static class ExportExcelRequest {
+        private Long agenceId;
+        private LocalDateTime dateDebut;
+        private LocalDateTime dateFin;
+        private Boolean includeInactifs = true;
+        private Integer maxRecords = 10000;
+        private String format = "excel"; // pour évolutions futures
+
+        // Getters et setters
+        public Long getAgenceId() { return agenceId; }
+        public void setAgenceId(Long agenceId) { this.agenceId = agenceId; }
+        
+        public LocalDateTime getDateDebut() { return dateDebut; }
+        public void setDateDebut(LocalDateTime dateDebut) { this.dateDebut = dateDebut; }
+        
+        public LocalDateTime getDateFin() { return dateFin; }
+        public void setDateFin(LocalDateTime dateFin) { this.dateFin = dateFin; }
+        
+        public Boolean getIncludeInactifs() { return includeInactifs; }
+        public void setIncludeInactifs(Boolean includeInactifs) { this.includeInactifs = includeInactifs; }
+        
+        public Integer getMaxRecords() { return maxRecords; }
+        public void setMaxRecords(Integer maxRecords) { this.maxRecords = maxRecords; }
+        
+        public String getFormat() { return format; }
+        public void setFormat(String format) { this.format = format; }
+
+        @Override
+        public String toString() {
+            return String.format("ExportExcelRequest{agenceId=%d, dateDebut=%s, dateFin=%s, includeInactifs=%s}", 
+                agenceId, dateDebut, dateFin, includeInactifs);
         }
     }
 }

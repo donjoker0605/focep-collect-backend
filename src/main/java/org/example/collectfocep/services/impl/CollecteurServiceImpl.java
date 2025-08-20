@@ -497,18 +497,39 @@ public class CollecteurServiceImpl implements CollecteurService {
             Long totalClientsCount = clientRepository.countByCollecteurId(collecteurId);
             Integer totalClients = totalClientsCount != null ? totalClientsCount.intValue() : 0;
 
-            // Calculer les totaux des mouvements pour le mois courant
-            LocalDateTime startOfMonth = LocalDate.now().withDayOfMonth(1).atStartOfDay();
+            // 🔥 NOUVEAU: Calculer depuis la dernière clôture au lieu du mois
             LocalDateTime now = LocalDateTime.now();
+            LocalDateTime startDate = getLastClosureDate(collecteurId);
+            
+            log.info("📅 Calcul depuis la dernière clôture: {} pour collecteur: {}", startDate, collecteurId);
 
             Double totalEpargne = mouvementRepository.sumEpargneByCollecteurIdAndDateOperationBetween(
-                    collecteurId, startOfMonth, now);
+                    collecteurId, startDate, now);
 
             Double totalRetraits = mouvementRepository.sumRetraitByCollecteurIdAndDateOperationBetween(
-                    collecteurId, startOfMonth, now);
+                    collecteurId, startDate, now);
 
-            Double soldeTotal = (totalEpargne != null ? totalEpargne : 0.0) -
+            // Solde quotidien = épargne collectée - retraits distribués depuis dernière clôture
+            Double soldeQuotidien = (totalEpargne != null ? totalEpargne : 0.0) -
                     (totalRetraits != null ? totalRetraits : 0.0);
+
+            // Conserver soldeTotal pour compatibilité (même valeur)
+            Double soldeTotal = soldeQuotidien;
+
+            // 🆕 NOUVEAU: Calculs mensuels (mois calendaire)
+            LocalDateTime startOfMonth = LocalDate.now().withDayOfMonth(1).atStartOfDay();
+            
+            Double epargneMensuelle = mouvementRepository.sumEpargneByCollecteurIdAndDateOperationBetween(
+                    collecteurId, startOfMonth, now);
+            
+            Double retraitsMensuels = mouvementRepository.sumRetraitByCollecteurIdAndDateOperationBetween(
+                    collecteurId, startOfMonth, now);
+            
+            Double soldeMensuel = (epargneMensuelle != null ? epargneMensuelle : 0.0) -
+                    (retraitsMensuels != null ? retraitsMensuels : 0.0);
+            
+            log.info("📊 Calculs mensuels pour collecteur {}: épargne={}, retraits={}, solde={}", 
+                    collecteurId, epargneMensuelle, retraitsMensuels, soldeMensuel);
 
             // Utiliser le bon type DTO
             List<CollecteurDashboardDTO.MouvementDTO> transactionsRecentes = List.of();
@@ -548,22 +569,26 @@ public class CollecteurServiceImpl implements CollecteurService {
                     .totalEpargne(totalEpargne != null ? totalEpargne : 0.0)
                     .totalRetraits(totalRetraits != null ? totalRetraits : 0.0)
                     .soldeTotal(soldeTotal)
+                    .soldeQuotidien(soldeQuotidien) // Depuis dernière clôture
+                    .epargneMensuelle(epargneMensuelle != null ? epargneMensuelle : 0.0) // 🆕 NOUVEAU
+                    .retraitsMensuels(retraitsMensuels != null ? retraitsMensuels : 0.0) // 🆕 NOUVEAU
+                    .soldeMensuel(soldeMensuel) // 🆕 NOUVEAU
                     .transactionsRecentes(transactionsRecentes)
                     .journalActuel(journalActuel)
                     .lastUpdate(LocalDateTime.now())
                     .transactionsAujourdhui(0L)
-                    .montantEpargneAujourdhui(0.0) // ✅ CORRIGÉ: Double au lieu de BigDecimal
-                    .montantRetraitAujourdhui(0.0) // ✅ CORRIGÉ: Double au lieu de BigDecimal
+                    .montantEpargneAujourdhui(0.0)
+                    .montantRetraitAujourdhui(0.0)
                     .nouveauxClientsAujourdhui(0L)
                     .montantEpargneSemaine(0.0)
                     .montantRetraitSemaine(0.0)
                     .transactionsSemaine(0L)
-                    .montantEpargneMois(totalEpargne != null ? totalEpargne : 0.0)
-                    .montantRetraitMois(totalRetraits != null ? totalRetraits : 0.0)
+                    .montantEpargneMois(epargneMensuelle != null ? epargneMensuelle : 0.0) // Cohérent
+                    .montantRetraitMois(retraitsMensuels != null ? retraitsMensuels : 0.0) // Cohérent
                     .transactionsMois(0L)
                     .objectifMensuel(collecteur.getMontantMaxRetrait() != null ?
                             collecteur.getMontantMaxRetrait().doubleValue() : 100000.0)
-                    .progressionObjectif(calculerProgressionObjectif(totalEpargne, collecteur.getMontantMaxRetrait()))
+                    .progressionObjectif(calculerProgressionObjectif(epargneMensuelle, collecteur.getMontantMaxRetrait()))
                     .commissionsMois(0.0)
                     .commissionsAujourdhui(0.0)
                     .clientsActifs(List.of())
@@ -852,6 +877,25 @@ public class CollecteurServiceImpl implements CollecteurService {
         if (variation > 10) return "CROISSANTE";
         if (variation < -10) return "DECROISSANTE";
         return "STABLE";
+    }
+
+    /**
+     * Récupère la date de la dernière clôture pour un collecteur
+     */
+    private LocalDateTime getLastClosureDate(Long collecteurId) {
+        try {
+            // Utiliser journalService pour récupérer la dernière date de clôture
+            Optional<LocalDate> lastClosureDateOpt = journalService.getLastClosureDateByCollecteur(collecteurId);
+            if (lastClosureDateOpt.isPresent()) {
+                return lastClosureDateOpt.get().atStartOfDay();
+            }
+        } catch (Exception e) {
+            log.warn("Impossible de récupérer la dernière date de clôture pour collecteur {}: {}", 
+                    collecteurId, e.getMessage());
+        }
+        
+        // Fallback: début du jour actuel si pas de clôture
+        return LocalDate.now().atStartOfDay();
     }
 
     /**

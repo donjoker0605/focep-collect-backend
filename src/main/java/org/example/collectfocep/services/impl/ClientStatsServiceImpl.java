@@ -16,7 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -49,10 +49,136 @@ public class ClientStatsServiceImpl implements ClientStatsService {
     public List<ClientSummaryDTO> enrichMultipleClientsWithStats(List<Client> clients) {
         log.debug("🔄 Enrichissement stats pour {} clients", clients.size());
         
-        // 🔥 CORRECTION: Avec @Transactional pour maintenir la session Hibernate
-        return clients.stream()
-            .map(this::enrichClientWithStats)
+        if (clients.isEmpty()) {
+            return new ArrayList<>();
+        }
+        
+        // 🔥 OPTIMISATION: Calculs batch au lieu de N+1
+        return enrichMultipleClientsOptimized(clients);
+    }
+    
+    /**
+     * 🚀 NOUVELLE MÉTHODE OPTIMISÉE - 2 requêtes au lieu de N*4
+     */
+    private List<ClientSummaryDTO> enrichMultipleClientsOptimized(List<Client> clients) {
+        List<Long> clientIds = clients.stream()
+            .map(Client::getId)
             .collect(Collectors.toList());
+            
+        // 🔥 REQUÊTE 1: Tous les stats d'épargne/retrait en une fois
+        Map<Long, ClientStatsData> statsMap = calculateBatchStats(clientIds);
+        
+        // 🔥 REQUÊTE 2: Toutes les transactions récentes en une fois  
+        Map<Long, List<MouvementDTO>> transactionsMap = getBatchRecentTransactions(clientIds, 20);
+        
+        // 🔥 ASSEMBLAGE: Créer les DTOs enrichis
+        return clients.stream()
+            .map(client -> buildEnrichedClientDTO(client, statsMap.get(client.getId()), 
+                                                 transactionsMap.get(client.getId())))
+            .collect(Collectors.toList());
+    }
+    
+    /**
+     * Calcule les stats pour tous les clients en 2 requêtes
+     */
+    private Map<Long, ClientStatsData> calculateBatchStats(List<Long> clientIds) {
+        // Requête optimisée pour épargne et retraits groupés
+        List<Object[]> results = mouvementRepository.getClientStatsOptimized(clientIds);
+        
+        Map<Long, ClientStatsData> statsMap = new HashMap<>();
+        
+        for (Object[] result : results) {
+            Long clientId = (Long) result[0];
+            String sens = (String) result[1];
+            Double total = ((Number) result[2]).doubleValue();
+            
+            statsMap.computeIfAbsent(clientId, k -> new ClientStatsData())
+                   .addStat(sens, total);
+        }
+        
+        // Initialiser les clients sans transactions
+        for (Long clientId : clientIds) {
+            statsMap.computeIfAbsent(clientId, k -> new ClientStatsData());
+        }
+        
+        return statsMap;
+    }
+    
+    /**
+     * Récupère les transactions récentes pour tous les clients
+     */
+    private Map<Long, List<MouvementDTO>> getBatchRecentTransactions(List<Long> clientIds, int limit) {
+        List<Mouvement> allTransactions = mouvementRepository.getRecentTransactionsBatch(clientIds, limit);
+        
+        return allTransactions.stream()
+            .map(mouvementMapper::toDTO)
+            .collect(Collectors.groupingBy(dto -> dto.getClient() != null ? dto.getClient().getId() : null))
+            .entrySet().stream()
+            .filter(entry -> entry.getKey() != null)
+            .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+    }
+    
+    /**
+     * Construit le DTO enrichi pour un client
+     */
+    private ClientSummaryDTO buildEnrichedClientDTO(Client client, ClientStatsData stats, 
+                                                   List<MouvementDTO> transactions) {
+        ClientSummaryDTO dto = ClientSummaryDTO.fromClient(client);
+        
+        // Stats financières
+        dto.setTotalEpargne(stats != null ? stats.getTotalEpargne() : 0.0);
+        dto.setTotalRetraits(stats != null ? stats.getTotalRetraits() : 0.0);
+        dto.setSoldeNet(dto.getTotalEpargne() - dto.getTotalRetraits());
+        
+        // Transactions récentes
+        dto.setTransactions(transactions != null ? transactions : new ArrayList<>());
+        dto.setNombreTransactions(dto.getTransactions().size());
+        
+        // Dernière transaction
+        if (!dto.getTransactions().isEmpty()) {
+            dto.setDerniereTransaction(dto.getTransactions().get(0).getDateOperation());
+        }
+        
+        // Compte client et paramètres commission
+        enrichWithAccountAndCommission(dto, client.getId());
+        
+        return dto;
+    }
+    
+    /**
+     * Enrichit avec compte et commission (garde l'ancien comportement)
+     */
+    private void enrichWithAccountAndCommission(ClientSummaryDTO dto, Long clientId) {
+        try {
+            // Paramètres de commission (utilise la méthode existante)
+            dto.setCommissionParameter(getCommissionParameters(clientId));
+            
+            // Note: CompteClient sera défini au niveau du mapping initial du client
+            
+        } catch (Exception e) {
+            log.warn("⚠️ Erreur enrichissement commission pour client {}: {}", 
+                    clientId, e.getMessage());
+            // Continuer sans bloquer
+        }
+    }
+    
+    /**
+     * Classe helper pour les stats
+     */
+    private static class ClientStatsData {
+        private double totalEpargne = 0.0;
+        private double totalRetraits = 0.0;
+        
+        public void addStat(String sens, Double montant) {
+            if ("EPARGNE".equalsIgnoreCase(sens)) {
+                totalEpargne += (montant != null ? montant : 0.0);
+            } else if ("RETRAIT".equalsIgnoreCase(sens)) {
+                totalRetraits += (montant != null ? montant : 0.0);
+            }
+        }
+        
+        public double getTotalEpargne() { return totalEpargne; }
+        public double getTotalRetraits() { return totalRetraits; }
     }
 
     @Override

@@ -26,10 +26,23 @@ public class DashboardStatsDTO {
     private Long clientsActifs;
     private Long clientsInactifs;
 
-    // DONNÉES FINANCIÈRES
+    // DONNÉES FINANCIÈRES (par période)
     private Double totalEpargne;
     private Double totalRetrait;
     private Double soldeTotal;
+
+    // 🆕 NOUVEAUX: Données par période configurables
+    private Double epargneAujourdhui;
+    private Double retraitsAujourdhui;
+    private Double soldeAujourdhui;
+    
+    private Double epargneSemaine;
+    private Double retraitsSemaine; 
+    private Double soldeSemaine;
+    
+    private Double epargneMois;
+    private Double retraitsMois;
+    private Double soldeMois;
 
     // COMMISSIONS
     private Long commissionsEnAttente;

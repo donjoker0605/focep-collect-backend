@@ -683,4 +683,73 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
     Page<Client> findByCollecteurIdAndCollecteurAgenceId(@Param("collecteurId") Long collecteurId, 
                                                          @Param("agenceId") Long agenceId, 
                                                          Pageable pageable);
+
+    // =====================================
+    // MÉTHODES POUR EXPORT EXCEL
+    // =====================================
+
+    /**
+     * 📊 Limite le nombre de clients pour l'export (performance)
+     */
+    @Query(value = "SELECT * FROM clients ORDER BY date_creation DESC LIMIT 5000", nativeQuery = true)
+    List<Client> findTop5000ByOrderByDateCreationDesc();
+
+    /**
+     * 📊 Calcule la somme des soldes par agence
+     */
+    @Query("SELECT COALESCE(SUM(cc.solde), 0.0) FROM CompteClient cc " +
+           "JOIN cc.client c WHERE c.agence.id = :agenceId AND c.valide = true")
+    Double sumSoldesByAgenceId(@Param("agenceId") Long agenceId);
+
+    /**
+     * 📊 Calcule la somme des soldes par collecteur
+     */
+    @Query("SELECT COALESCE(SUM(cc.solde), 0.0) FROM CompteClient cc " +
+           "JOIN cc.client c WHERE c.collecteur.id = :collecteurId AND c.valide = true")
+    Double sumSoldesByCollecteurId(@Param("collecteurId") Long collecteurId);
+
+    // =====================================
+    // 💰 MÉTHODES ENRICHIES POUR SUPERADMIN (AVEC DONNÉES COMPLÈTES)
+    // =====================================
+
+    /**
+     * 🏢 Récupère tous les clients avec données complètes (agence, collecteur, comptes, commission)
+     */
+    @EntityGraph("Client.full")
+    @Query("SELECT c FROM Client c ORDER BY c.dateCreation DESC")
+    List<Client> findAllWithFullData();
+
+    /**
+     * 🏢 Récupère tous les clients d'une agence avec données complètes
+     */
+    @EntityGraph("Client.full")
+    @Query("SELECT c FROM Client c WHERE c.agence.id = :agenceId ORDER BY c.dateCreation DESC")
+    List<Client> findByAgenceIdWithFullData(@Param("agenceId") Long agenceId);
+
+    /**
+     * 👨‍💼 Récupère tous les clients d'un collecteur avec données complètes
+     */
+    @EntityGraph("Client.full")
+    @Query("SELECT c FROM Client c WHERE c.collecteur.id = :collecteurId ORDER BY c.dateCreation DESC")
+    List<Client> findByCollecteurIdWithFullData(@Param("collecteurId") Long collecteurId);
+
+    /**
+     * 🔍 Récupère un client par ID avec toutes ses données (pour les détails complets)
+     */
+    @EntityGraph("Client.full")
+    @Query("SELECT c FROM Client c WHERE c.id = :clientId")
+    Optional<Client> findByIdWithCompleteData(@Param("clientId") Long clientId);
+
+    /**
+     * 📋 Récupère clients avec filtres et données complètes pour SuperAdmin
+     */
+    @EntityGraph("Client.full")
+    @Query("SELECT c FROM Client c WHERE " +
+           "(:agenceId IS NULL OR c.agence.id = :agenceId) AND " +
+           "(:collecteurId IS NULL OR c.collecteur.id = :collecteurId) AND " +
+           "(:active IS NULL OR c.valide = :active) " +
+           "ORDER BY c.dateCreation DESC")
+    List<Client> findClientsWithFullDataAndFilters(@Param("agenceId") Long agenceId,
+                                                   @Param("collecteurId") Long collecteurId,
+                                                   @Param("active") Boolean active);
 }

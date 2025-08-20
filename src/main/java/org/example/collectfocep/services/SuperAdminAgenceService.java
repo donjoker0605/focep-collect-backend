@@ -10,6 +10,7 @@ import org.example.collectfocep.dto.CreateAdminDTO;
 import org.example.collectfocep.dto.CreateCollecteurDTO;
 import org.example.collectfocep.dto.SuperAdminAdminDTO;
 import org.example.collectfocep.dto.JournalDTO;
+import org.example.collectfocep.dto.MouvementDTO;
 import org.example.collectfocep.entities.Agence;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -227,4 +228,14 @@ public interface SuperAdminAgenceService {
      * Récupère tous les clients avec filtres optionnels
      */
     List<ClientDTO> getAllClients(int page, int size, Long agenceId, Long collecteurId);
+
+    /**
+     * 💰 Récupère les détails complets d'un client (données financières, localisation, commission)
+     */
+    ClientDTO getClientDetailsComplete(Long clientId);
+
+    /**
+     * 💳 Récupère l'historique des transactions d'un client
+     */
+    List<MouvementDTO> getClientTransactions(Long clientId, int page, int size);
 }

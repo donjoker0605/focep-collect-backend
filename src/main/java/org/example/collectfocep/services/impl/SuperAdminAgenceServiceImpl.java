@@ -18,8 +18,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.function.Function;
+import java.util.Map;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
@@ -37,9 +41,19 @@ public class SuperAdminAgenceServiceImpl implements SuperAdminAgenceService {
     private final CollecteurRepository collecteurRepository;
     private final ClientRepository clientRepository;
     private final UtilisateurRepository utilisateurRepository;
+    private final MouvementRepository mouvementRepository;
     private final PasswordEncoder passwordEncoder;
     private final SuperAdminValidationService superAdminValidationService;
     private final CompteAgenceService compteAgenceService;
+    
+    // Repositories pour les comptes d'agence
+    private final CompteAgenceRepository compteAgenceRepository;
+    // TODO: Ajouter ces repositories quand nécessaire
+    // private final CompteProduitCollecteRepository compteProduitCollecteRepository;
+    // private final CompteChargeCollecteRepository compteChargeCollecteRepository;
+    // private final ComptePassageCommissionCollecteRepository comptePassageCommissionCollecteRepository;
+    // private final ComptePassageTaxeRepository comptePassageTaxeRepository;
+    // private final CompteTaxeRepository compteTaxeRepository;
 
     // ================================
     // CRUD AGENCES
@@ -566,18 +580,37 @@ public class SuperAdminAgenceServiceImpl implements SuperAdminAgenceService {
     public List<CollecteurDTO> getCollecteursByAgence(Long agenceId) {
         log.info("👥 SuperAdmin - Récupération collecteurs agence: {}", agenceId);
         
-        List<Collecteur> collecteurs = collecteurRepository.findByAgenceId(agenceId);
+        // Récupération des collecteurs avec comptes (première requête)
+        List<Collecteur> collecteurs = collecteurRepository.findByAgenceIdWithFullData(agenceId);
+        
+        // Récupération des collecteurs avec clients (deuxième requête) 
+        List<Collecteur> collecteursWithClients = collecteurRepository.findByAgenceIdWithClients(agenceId);
+        
+        // Fusion des données clients dans les collecteurs principaux
+        Map<Long, List<Client>> clientsMap = collecteursWithClients.stream()
+                .collect(Collectors.toMap(
+                    Collecteur::getId,
+                    c -> c.getClients() != null ? c.getClients() : new ArrayList<>()
+                ));
+        
+        // Assignation des clients aux collecteurs
+        collecteurs.forEach(c -> {
+            if (clientsMap.containsKey(c.getId())) {
+                c.setClients(clientsMap.get(c.getId()));
+            }
+        });
+        
         return collecteurs.stream()
-                .map(this::mapCollecteurToDTO)
+                .map(this::mapCollecteurToEnrichedDTO)
                 .collect(Collectors.toList());
     }
     
     @Override
     @Transactional(readOnly = true)
     public List<ClientDTO> getClientsByAgence(Long agenceId) {
-        log.info("👥 SuperAdmin - Récupération clients agence: {}", agenceId);
+        log.info("💰 SuperAdmin - Récupération clients agence avec données enrichies: {}", agenceId);
         
-        List<Client> clients = clientRepository.findByAgenceId(agenceId);
+        List<Client> clients = clientRepository.findByAgenceIdWithFullData(agenceId);
         return clients.stream()
                 .map(this::mapClientToDTO)
                 .collect(Collectors.toList());
@@ -586,9 +619,9 @@ public class SuperAdminAgenceServiceImpl implements SuperAdminAgenceService {
     @Override
     @Transactional(readOnly = true)
     public List<ClientDTO> getClientsByCollecteur(Long collecteurId) {
-        log.info("👥 SuperAdmin - Récupération clients collecteur: {}", collecteurId);
+        log.info("💰 SuperAdmin - Récupération clients collecteur avec données enrichies: {}", collecteurId);
         
-        List<Client> clients = clientRepository.findByCollecteurId(collecteurId);
+        List<Client> clients = clientRepository.findByCollecteurIdWithFullData(collecteurId);
         return clients.stream()
                 .map(this::mapClientToDTO)
                 .collect(Collectors.toList());
@@ -609,6 +642,9 @@ public class SuperAdminAgenceServiceImpl implements SuperAdminAgenceService {
         
         // Récupération des paramètres de commission
         List<ParametreCommissionDTO> parametresCommission = getAgenceCommissionParams(agenceId);
+        
+        // Récupération des soldes des comptes d'agence
+        Map<String, BigDecimal> soldesComptes = getSoldesComptesAgence(agenceId);
         
         // Calcul des statistiques
         long collecteursActifs = collecteurs.stream()
@@ -638,7 +674,89 @@ public class SuperAdminAgenceServiceImpl implements SuperAdminAgenceService {
                 .collecteurs(collecteurs)
                 .clients(clients)
                 .parametresCommission(parametresCommission)
+                .soldesComptes(soldesComptes)
                 .build();
+    }
+    
+    /**
+     * Récupère les soldes de tous les comptes d'agence
+     */
+    @Transactional(readOnly = true)
+    public Map<String, BigDecimal> getSoldesComptesAgence(Long agenceId) {
+        log.info("💰 SuperAdmin - Récupération soldes comptes agence: {}", agenceId);
+        
+        Map<String, BigDecimal> soldes = new HashMap<>();
+        
+        try {
+            // Compte Agence (C.A)
+            Optional<CompteAgence> compteAgenceOpt = compteAgenceRepository.findByAgenceId(agenceId);
+            if (compteAgenceOpt.isPresent()) {
+                CompteAgence compteAgence = compteAgenceOpt.get();
+                soldes.put("compte_agence", BigDecimal.valueOf(compteAgence.getSolde()));
+            } else {
+                soldes.put("compte_agence", BigDecimal.ZERO);
+            }
+            
+            // TODO: Réactiver quand les repositories seront disponibles
+            /*
+            // Compte Produit Collecte (C.P.C)
+            CompteProduitCollecte compteProduitCollecte = compteProduitCollecteRepository.findByAgenceId(agenceId);
+            if (compteProduitCollecte != null) {
+                soldes.put("compte_produit_collecte", BigDecimal.valueOf(compteProduitCollecte.getSolde()));
+            } else {
+                soldes.put("compte_produit_collecte", BigDecimal.ZERO);
+            }
+            
+            // Compte Charge Collecte (C.C.C)
+            CompteChargeCollecte compteChargeCollecte = compteChargeCollecteRepository.findByAgenceId(agenceId);
+            if (compteChargeCollecte != null) {
+                soldes.put("compte_charge_collecte", BigDecimal.valueOf(compteChargeCollecte.getSolde()));
+            } else {
+                soldes.put("compte_charge_collecte", BigDecimal.ZERO);
+            }
+            
+            // Compte Passage Commission Collecte (C.P.C.C)
+            ComptePassageCommissionCollecte comptePassageCommissionCollecte = 
+                comptePassageCommissionCollecteRepository.findByAgenceId(agenceId);
+            if (comptePassageCommissionCollecte != null) {
+                soldes.put("compte_passage_commission_collecte", 
+                    BigDecimal.valueOf(comptePassageCommissionCollecte.getSolde()));
+            } else {
+                soldes.put("compte_passage_commission_collecte", BigDecimal.ZERO);
+            }
+            
+            // Compte Passage Taxe (C.P.T)
+            ComptePassageTaxe comptePassageTaxe = comptePassageTaxeRepository.findByAgenceId(agenceId);
+            if (comptePassageTaxe != null) {
+                soldes.put("compte_passage_taxe", BigDecimal.valueOf(comptePassageTaxe.getSolde()));
+            } else {
+                soldes.put("compte_passage_taxe", BigDecimal.ZERO);
+            }
+            */
+            
+            /*
+            // Compte Taxe (C.T)
+            CompteTaxe compteTaxe = compteTaxeRepository.findByAgenceId(agenceId);
+            if (compteTaxe != null) {
+                soldes.put("compte_taxe", BigDecimal.valueOf(compteTaxe.getSolde()));
+            } else {
+                soldes.put("compte_taxe", BigDecimal.ZERO);
+            }
+            */
+            
+        } catch (Exception e) {
+            log.error("❌ Erreur lors de la récupération des soldes des comptes d'agence {}: {}", 
+                agenceId, e.getMessage());
+            // Retour des soldes à zéro en cas d'erreur
+            soldes.put("compte_agence", BigDecimal.ZERO);
+            soldes.put("compte_produit_collecte", BigDecimal.ZERO);
+            soldes.put("compte_charge_collecte", BigDecimal.ZERO);
+            soldes.put("compte_passage_commission_collecte", BigDecimal.ZERO);
+            soldes.put("compte_passage_taxe", BigDecimal.ZERO);
+            soldes.put("compte_taxe", BigDecimal.ZERO);
+        }
+        
+        return soldes;
     }
     
     // ================================
@@ -668,19 +786,227 @@ public class SuperAdminAgenceServiceImpl implements SuperAdminAgenceService {
                 .agenceId(collecteur.getAgence() != null ? collecteur.getAgence().getId() : null)
                 .build();
     }
+
+    /**
+     * 💰 Map Collecteur vers CollecteurDTO avec données enrichies (comptes, clients, ancienneté)
+     */
+    private CollecteurDTO mapCollecteurToEnrichedDTO(Collecteur collecteur) {
+        CollecteurDTO dto = new CollecteurDTO();
+        
+        // Données de base
+        dto.setId(collecteur.getId());
+        dto.setNom(collecteur.getNom());
+        dto.setPrenom(collecteur.getPrenom());
+        dto.setAdresseMail(collecteur.getAdresseMail());
+        dto.setTelephone(collecteur.getTelephone());
+        dto.setNumeroCni(collecteur.getNumeroCni());
+        dto.setActive(collecteur.getActive());
+        dto.setDateCreation(collecteur.getDateCreation());
+        dto.setDateModification(collecteur.getDateModification());
+        
+        // Nom complet
+        dto.setNomComplet(String.format("%s %s", collecteur.getPrenom(), collecteur.getNom()));
+        
+        // Montant max retrait
+        if (collecteur.getMontantMaxRetrait() != null) {
+            dto.setMontantMaxRetrait(collecteur.getMontantMaxRetrait());
+        }
+        
+        // Informations agence
+        if (collecteur.getAgence() != null) {
+            dto.setAgenceId(collecteur.getAgence().getId());
+            dto.setAgenceNom(collecteur.getAgence().getNomAgence());
+        }
+        
+        // Ancienneté et niveau
+        dto.setAncienneteEnMois(collecteur.getAncienneteEnMois());
+        dto.setNiveauAnciennete(collecteur.getNiveauAnciennete());
+        dto.setAncienneteSummary(collecteur.getAncienneteSummary());
+        dto.setCoefficientAnciennete(collecteur.getCoefficientAnciennete());
+        
+        // Comptes financiers
+        if (collecteur.getComptes() != null && !collecteur.getComptes().isEmpty()) {
+            // Calculer soldes par type de compte
+            double soldeSalaire = collecteur.getComptes().stream()
+                    .filter(compte -> "REMUNERATION".equals(compte.getTypeCompte()))
+                    .mapToDouble(compte -> compte.getSolde())
+                    .sum();
+            
+            double soldeManquant = collecteur.getComptes().stream()
+                    .filter(compte -> "MANQUANT".equals(compte.getTypeCompte()))
+                    .mapToDouble(compte -> compte.getSolde())
+                    .sum();
+            
+            double soldeService = collecteur.getComptes().stream()
+                    .filter(compte -> "SERVICE".equals(compte.getTypeCompte()))
+                    .mapToDouble(compte -> compte.getSolde())
+                    .sum();
+            
+            dto.setSoldeSalaire(soldeSalaire);
+            dto.setSoldeManquant(soldeManquant);
+            dto.setSoldeService(soldeService);
+            dto.setSoldeTotal(soldeSalaire + soldeManquant + soldeService);
+        }
+        
+        // Statistiques clients
+        if (collecteur.getClients() != null) {
+            dto.setNombreClients(collecteur.getClients().size());
+            dto.setNombreClientsActifs((int) collecteur.getClients().stream()
+                    .filter(client -> Boolean.TRUE.equals(client.getValide()))
+                    .count());
+            
+            // TODO: Calculer le solde total des clients via une requête séparée si nécessaire
+            dto.setSoldeTotalClients(0.0);
+        } else {
+            dto.setNombreClients(0);
+            dto.setNombreClientsActifs(0);
+            dto.setSoldeTotalClients(0.0);
+        }
+        
+        return dto;
+    }
     
+    /**
+     * 🎯 Map CollecteurOptimizedDTO vers CollecteurDTO (pour compatibilité avec l'API existante)
+     */
+    private CollecteurDTO mapOptimizedToCollecteurDTO(CollecteurOptimizedDTO optimized) {
+        CollecteurDTO dto = new CollecteurDTO();
+        
+        // Données de base
+        dto.setId(optimized.getId());
+        dto.setNom(optimized.getNom());
+        dto.setPrenom(optimized.getPrenom());
+        dto.setAdresseMail(optimized.getAdresseMail());
+        dto.setTelephone(optimized.getTelephone());
+        dto.setNumeroCni(optimized.getNumeroCni());
+        dto.setActive(optimized.getActive());
+        dto.setMontantMaxRetrait(optimized.getMontantMaxRetrait() != null 
+            ? BigDecimal.valueOf(optimized.getMontantMaxRetrait()) 
+            : null);
+        dto.setNomComplet(String.format("%s %s", optimized.getPrenom(), optimized.getNom()));
+        
+        // Ancienneté
+        dto.setAncienneteEnMois(optimized.getAncienneteEnMois());
+        
+        // Agence
+        if (optimized.getAgence() != null) {
+            dto.setAgenceId(optimized.getAgence().getId());
+            dto.setAgenceNom(optimized.getAgence().getNom());
+        }
+        
+        // Statistiques clients  
+        if (optimized.getStatistiques() != null) {
+            dto.setNombreClients(optimized.getStatistiques().getNombreClients().intValue());
+            dto.setNombreClientsActifs(optimized.getStatistiques().getNombreClientsActifs().intValue());
+        }
+        
+        // Soldes des comptes
+        if (optimized.getComptes() != null) {
+            dto.setSoldeService(optimized.getComptes().getSoldeCompteService());
+            dto.setSoldeSalaire(optimized.getComptes().getSoldeCompteSalaire());
+            dto.setSoldeManquant(optimized.getComptes().getSoldeCompteManquant());
+            dto.setSoldeTotal(optimized.getComptes().getSoldeTotalDisponible());
+        }
+        
+        // Performance (nouvelles données)
+        if (optimized.getPerformance() != null) {
+            dto.setSoldeTotalClients(optimized.getPerformance().getTotalEpargneCollectee());
+        }
+        
+        return dto;
+    }
+    
+    /**
+     * 💰 Map Client vers ClientDTO avec données enrichies (finances, localisation, commission)
+     */
     private ClientDTO mapClientToDTO(Client client) {
         ClientDTO dto = new ClientDTO();
+        
+        // Données de base
         dto.setId(client.getId());
         dto.setNom(client.getNom());
         dto.setPrenom(client.getPrenom());
         dto.setTelephone(client.getTelephone());
         dto.setNumeroCni(client.getNumeroCni());
+        dto.setVille(client.getVille());
+        dto.setQuartier(client.getQuartier());
+        dto.setPhotoPath(client.getPhotoPath());
         dto.setValide(client.getValide());
+        dto.setNumeroCompte(client.getNumeroCompte());
+        dto.setDateCreation(client.getDateCreation());
+        dto.setDateModification(client.getDateModification());
+        
+        // Relations principales
         dto.setCollecteurId(client.getCollecteur() != null ? client.getCollecteur().getId() : null);
         dto.setAgenceId(client.getAgence() != null ? client.getAgence().getId() : null);
-        dto.setDateCreation(client.getDateCreation());
+        
+        // 🌍 GÉOLOCALISATION
+        if (client.getLatitude() != null) {
+            dto.setLatitude(client.getLatitude().doubleValue());
+        }
+        if (client.getLongitude() != null) {
+            dto.setLongitude(client.getLongitude().doubleValue());
+        }
+        dto.setCoordonneesSaisieManuelle(client.getCoordonneesSaisieManuelle());
+        dto.setAdresseComplete(client.getAdresseComplete());
+        dto.setDateMajCoordonnees(client.getDateMajCoordonnees());
+        
+        // 💰 PARAMÈTRES DE COMMISSION
+        // Récupérer le premier paramètre de commission actif pour ce client
+        if (client.getCommissionParameters() != null && !client.getCommissionParameters().isEmpty()) {
+            client.getActiveCommissionParameters().stream()
+                    .findFirst()
+                    .ifPresent(param -> {
+                        CommissionParameterDTO commissionDTO = new CommissionParameterDTO();
+                        commissionDTO.setId(param.getId());
+                        commissionDTO.setType(param.getType());
+                        commissionDTO.setValeur(param.getValeur().doubleValue()); // Conversion BigDecimal vers Double
+                        commissionDTO.setCodeProduit(param.getCodeProduit()); // Utiliser le champ existant
+                        commissionDTO.setActive(param.getActive());
+                        commissionDTO.setValidFrom(param.getValidFrom()); // Utiliser les champs de date existants
+                        commissionDTO.setValidTo(param.getValidTo());
+                        dto.setCommissionParameter(commissionDTO);
+                    });
+        }
+        
+        // 💳 SOLDE DU COMPTE CLIENT - FIX POUR LES BALANCES À ZÉRO
+        if (client.getCompteClient() != null) {
+            dto.setSolde(client.getCompteClient().getSolde());
+        } else {
+            dto.setSolde(0.0); // Valeur par défaut si pas de compte
+        }
+        
         return dto;
+    }
+
+    /**
+     * 💳 Map Mouvement vers MouvementDTO avec données enrichies
+     */
+    private MouvementDTO mapMouvementToDTO(Mouvement mouvement) {
+        return MouvementDTO.builder()
+                .id(mouvement.getId())
+                .montant(mouvement.getMontant())
+                .libelle(mouvement.getLibelle())
+                .sens(mouvement.getSens())
+                .dateOperation(mouvement.getDateOperation())
+                .typeMouvement(mouvement.getTypeMouvement())
+                // Utiliser seulement les champs existants dans l'entité Mouvement
+                .journalId(mouvement.getJournal() != null ? mouvement.getJournal().getId() : null)
+                .compteSourceId(mouvement.getCompteSource() != null ? mouvement.getCompteSource().getId() : null)
+                .compteDestinationId(mouvement.getCompteDestination() != null ? mouvement.getCompteDestination().getId() : null)
+                // Mapper les relations client et collecteur (si disponibles)
+                .client(mouvement.getClient() != null ? ClientBasicDTO.builder()
+                        .id(mouvement.getClient().getId())
+                        .nom(mouvement.getClient().getNom())
+                        .prenom(mouvement.getClient().getPrenom())
+                        .numeroCompte(mouvement.getClient().getNumeroCompte())
+                        .build() : null)
+                .collecteur(mouvement.getCollecteur() != null ? CollecteurBasicDTO.builder()
+                        .id(mouvement.getCollecteur().getId())
+                        .nom(mouvement.getCollecteur().getNom())
+                        .prenom(mouvement.getCollecteur().getPrenom())
+                        .build() : null)
+                .build();
     }
     
     // ================================
@@ -753,23 +1079,69 @@ public class SuperAdminAgenceServiceImpl implements SuperAdminAgenceService {
     @Override
     @Transactional(readOnly = true)
     public List<CollecteurDTO> getAllCollecteurs() {
-        log.info("📋 SuperAdmin - Récupération de tous les collecteurs");
+        log.info("📋 SuperAdmin - Récupération de tous les collecteurs avec données enrichies (PROJECTION JPA)");
         
-        List<Collecteur> collecteurs = collecteurRepository.findAll();
-        return collecteurs.stream()
-                .map(this::mapCollecteurToDTO)
-                .collect(Collectors.toList());
+        try {
+            // 🎯 Utilisation de la projection JPA optimisée
+            List<CollecteurProjection> projections = collecteurRepository.findAllCollecteursWithData();
+            
+            return projections.stream()
+                    .map(projection -> {
+                        // Convertir la projection en DTO optimisé puis en CollecteurDTO
+                        CollecteurOptimizedDTO optimized = CollecteurOptimizedDTO.fromProjection(projection);
+                        return mapOptimizedToCollecteurDTO(optimized);
+                    })
+                    .collect(Collectors.toList());
+                    
+        } catch (Exception e) {
+            log.warn("⚠️ Échec projection JPA, fallback vers méthode classique: {}", e.getMessage());
+            
+            // FALLBACK: Ancienne méthode si la projection échoue
+            List<Collecteur> collecteursWithComptes = collecteurRepository.findAllWithComptes();
+            Map<Long, Collecteur> collecteurMap = collecteursWithComptes.stream()
+                    .collect(Collectors.toMap(Collecteur::getId, Function.identity()));
+            
+            List<Collecteur> collecteursWithClients = collecteurRepository.findAllWithClients();
+            
+            for (Collecteur collecteurWithClients : collecteursWithClients) {
+                Collecteur collecteurWithComptes = collecteurMap.get(collecteurWithClients.getId());
+                if (collecteurWithComptes != null) {
+                    collecteurWithComptes.setClients(collecteurWithClients.getClients());
+                }
+            }
+            
+            return collecteursWithComptes.stream()
+                    .map(this::mapCollecteurToEnrichedDTO)
+                    .collect(Collectors.toList());
+        }
     }
     
     @Override
     @Transactional(readOnly = true)
     public CollecteurDTO getCollecteurDetails(Long collecteurId) {
-        log.info("🔍 SuperAdmin - Détails collecteur: {}", collecteurId);
+        log.info("🔍 SuperAdmin - Détails collecteur avec données enrichies (PROJECTION): {}", collecteurId);
         
-        Collecteur collecteur = collecteurRepository.findById(collecteurId)
+        try {
+            // 🎯 Utiliser la projection JPA pour les détails 
+            CollecteurProjection projection = collecteurRepository.findCollecteurWithDataById(collecteurId);
+            if (projection != null) {
+                CollecteurOptimizedDTO optimized = CollecteurOptimizedDTO.fromProjection(projection);
+                return mapOptimizedToCollecteurDTO(optimized);
+            }
+        } catch (Exception e) {
+            log.warn("⚠️ Échec projection JPA pour collecteur {}, fallback: {}", collecteurId, e.getMessage());
+        }
+        
+        // FALLBACK: Ancienne méthode avec correction des soldes
+        Collecteur collecteurWithComptes = collecteurRepository.findByIdWithComptes(collecteurId)
                 .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé: " + collecteurId));
         
-        return mapCollecteurToDTO(collecteur);
+        Optional<Collecteur> collecteurWithClients = collecteurRepository.findByIdWithClients(collecteurId);
+        if (collecteurWithClients.isPresent()) {
+            collecteurWithComptes.setClients(collecteurWithClients.get().getClients());
+        }
+        
+        return mapCollecteurToEnrichedDTO(collecteurWithComptes);
     }
     
     @Override
@@ -882,21 +1254,72 @@ public class SuperAdminAgenceServiceImpl implements SuperAdminAgenceService {
     @Override
     @Transactional(readOnly = true)
     public List<ClientDTO> getAllClients(int page, int size, Long agenceId, Long collecteurId) {
-        log.info("📋 SuperAdmin - Récupération clients avec filtres: agence={}, collecteur={}", agenceId, collecteurId);
+        log.info("💰 SuperAdmin - Récupération clients avec données enrichies: agence={}, collecteur={}", agenceId, collecteurId);
         
         List<Client> clients;
         
+        // Utiliser les nouvelles méthodes avec EntityGraph pour récupérer toutes les données
         if (collecteurId != null) {
-            clients = clientRepository.findByCollecteurId(collecteurId);
+            log.debug("🔍 Récupération clients collecteur {} avec données complètes", collecteurId);
+            clients = clientRepository.findByCollecteurIdWithFullData(collecteurId);
         } else if (agenceId != null) {
-            clients = clientRepository.findByAgenceId(agenceId);
+            log.debug("🏢 Récupération clients agence {} avec données complètes", agenceId);
+            clients = clientRepository.findByAgenceIdWithFullData(agenceId);
         } else {
-            clients = clientRepository.findAll();
+            log.debug("📋 Récupération tous clients avec données complètes");
+            clients = clientRepository.findAllWithFullData();
         }
+        
+        log.info("✅ {} clients récupérés avec données financières complètes", clients.size());
         
         return clients.stream()
                 .map(this::mapClientToDTO)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ClientDTO getClientDetailsComplete(Long clientId) {
+        log.info("💎 SuperAdmin - Récupération détails complets client: {}", clientId);
+        
+        Client client = clientRepository.findByIdWithCompleteData(clientId)
+                .orElseThrow(() -> new ResourceNotFoundException("Client non trouvé: " + clientId));
+        
+        ClientDTO clientDTO = mapClientToDTO(client);
+        
+        log.info("✅ Détails complets récupérés pour client: {} - {} {}", 
+                clientId, client.getPrenom(), client.getNom());
+        
+        return clientDTO;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<MouvementDTO> getClientTransactions(Long clientId, int page, int size) {
+        log.info("💳 SuperAdmin - Récupération transactions client: {} (page={}, size={})", clientId, page, size);
+        
+        // Vérifier que le client existe
+        if (!clientRepository.existsById(clientId)) {
+            throw new ResourceNotFoundException("Client non trouvé: " + clientId);
+        }
+        
+        // Récupérer les mouvements avec toutes les relations
+        List<Mouvement> mouvements = mouvementRepository.findByClientIdWithAllRelations(clientId);
+        
+        // Limiter les résultats selon la pagination demandée
+        int fromIndex = page * size;
+        int toIndex = Math.min(fromIndex + size, mouvements.size());
+        
+        List<Mouvement> pagedMouvements = fromIndex < mouvements.size() ? 
+                mouvements.subList(fromIndex, toIndex) : List.of();
+        
+        List<MouvementDTO> transactionDTOs = pagedMouvements.stream()
+                .map(this::mapMouvementToDTO)
+                .collect(Collectors.toList());
+        
+        log.info("✅ {} transactions récupérées pour client {}", transactionDTOs.size(), clientId);
+        
+        return transactionDTOs;
     }
     
     // ================================

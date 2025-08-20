@@ -10,6 +10,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface JournalActiviteRepository extends JpaRepository<JournalActivite, Long> {
@@ -132,5 +133,27 @@ public interface JournalActiviteRepository extends JpaRepository<JournalActivite
             @Param("startDate") LocalDateTime startDate,
             @Param("endDate") LocalDateTime endDate,
             Pageable pageable);
+
+    /**
+     * 🔍 Trouve la dernière activité d'un utilisateur par type
+     * Utilisé pour le monitoring d'inactivité des collecteurs
+     */
+    @Query("SELECT j.timestamp FROM JournalActivite j " +
+            "WHERE j.userId = :userId " +
+            "AND j.userType = :userType " +
+            "ORDER BY j.timestamp DESC " +
+            "LIMIT 1")
+    Optional<LocalDateTime> findLastActivityByUserId(
+            @Param("userId") Long userId,
+            @Param("userType") String userType);
+
+    /**
+     * 🔍 Trouve la dernière activité d'un utilisateur (tous types)
+     */
+    @Query("SELECT j.timestamp FROM JournalActivite j " +
+            "WHERE j.userId = :userId " +
+            "ORDER BY j.timestamp DESC " +
+            "LIMIT 1")
+    Optional<LocalDateTime> findLastActivityByUserId(@Param("userId") Long userId);
 
 }

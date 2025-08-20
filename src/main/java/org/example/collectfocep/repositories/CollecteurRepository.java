@@ -3,8 +3,10 @@
 package org.example.collectfocep.repositories;
 
 import org.example.collectfocep.entities.Collecteur;
+import org.example.collectfocep.dto.CollecteurProjection;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -179,13 +181,11 @@ public interface CollecteurRepository extends JpaRepository<Collecteur, Long> {
     List<Collecteur> findAllActiveWithAgence();
 
     /**
-     * Collecteur par ID avec toutes ses relations
+     * Collecteur par ID avec ses clients seulement
      */
-    @Query("SELECT c FROM Collecteur c " +
-            "LEFT JOIN FETCH c.agence " +
-            "LEFT JOIN FETCH c.clients " +
-            "WHERE c.id = :id")
-    Optional<Collecteur> findByIdWithDetails(@Param("id") Long id);
+    @EntityGraph(attributePaths = {"agence", "clients"})
+    @Query("SELECT c FROM Collecteur c WHERE c.id = :id")
+    Optional<Collecteur> findByIdWithClients(@Param("id") Long id);
 
     /**
      * Collecteur par ID avec son agence
@@ -247,5 +247,138 @@ public interface CollecteurRepository extends JpaRepository<Collecteur, Long> {
      */
     @Query("SELECT c FROM Collecteur c WHERE c.active = false AND c.dateModificationMontantMax < :date")
     List<Collecteur> findInactiveSince(@Param("date") LocalDateTime date);
+
+    // =====================================
+    // MÉTHODES POUR EXPORT EXCEL
+    // =====================================
+
+    /**
+     * 📊 Compte le nombre de collecteurs supervisés par un admin (via agence)
+     */
+    @Query("SELECT COUNT(c) FROM Collecteur c JOIN Admin a ON c.agenceId = a.agence.id WHERE a.id = :adminId")
+    Long countByAdminId(@Param("adminId") Long adminId);
+
+    // =====================================
+    // ENTITY GRAPHS POUR DONNÉES ENRICHIES
+    // =====================================
+
+    /**
+     * Récupère un collecteur avec toutes ses données financières
+     */
+    @EntityGraph(attributePaths = {
+        "agence", 
+        "comptes", 
+        "clients", 
+        "clients.commissionParameters",
+        "clients.commissionParameters.tiers"
+    })
+    @Query("SELECT c FROM Collecteur c WHERE c.id = :collecteurId")
+    Optional<Collecteur> findByIdWithFullData(@Param("collecteurId") Long collecteurId);
+
+    /**
+     * Récupère tous les collecteurs d'une agence avec leurs données complètes
+     * Séparé en deux requêtes pour éviter MultipleBagFetchException
+     */
+    @EntityGraph(attributePaths = {"agence", "comptes"})
+    @Query("SELECT c FROM Collecteur c WHERE c.agence.id = :agenceId ORDER BY c.nom, c.prenom")
+    List<Collecteur> findByAgenceIdWithFullData(@Param("agenceId") Long agenceId);
+    
+    /**
+     * Récupère tous les collecteurs d'une agence avec leurs clients
+     */
+    @EntityGraph(attributePaths = {"agence", "clients"})
+    @Query("SELECT c FROM Collecteur c WHERE c.agence.id = :agenceId ORDER BY c.nom, c.prenom")
+    List<Collecteur> findByAgenceIdWithClients(@Param("agenceId") Long agenceId);
+
+    /**
+     * 🎯 PROJECTION JPA OPTIMISÉE - Avec vraies sous-requêtes pour les soldes
+     */
+    @Query("""
+        SELECT 
+            c.id as id,
+            c.nom as nom,
+            c.prenom as prenom,
+            c.adresseMail as adresseMail,
+            c.telephone as telephone,
+            c.numeroCni as numeroCni,
+            c.active as active,
+            c.ancienneteEnMois as ancienneteEnMois,
+            c.montantMaxRetrait as montantMaxRetrait,
+            
+            a.id as agenceId,
+            a.nomAgence as agenceNom,
+            a.codeAgence as agenceCode,
+            
+            (SELECT COUNT(cl.id) FROM Client cl WHERE cl.collecteur.id = c.id) as nombreClients,
+            (SELECT COUNT(cl.id) FROM Client cl WHERE cl.collecteur.id = c.id AND cl.valide = true) as nombreClientsActifs,
+            
+            (SELECT COALESCE(SUM(CAST(cc.solde AS double)), 0.0) FROM CompteCollecteur cc WHERE cc.collecteur.id = c.id AND cc.typeCompte = 'SERVICE') as soldeCompteService,
+            (SELECT COALESCE(SUM(CAST(cc.solde AS double)), 0.0) FROM CompteCollecteur cc WHERE cc.collecteur.id = c.id AND cc.typeCompte = 'REMUNERATION') as soldeCompteSalaire,
+            (SELECT COALESCE(SUM(CAST(cc.solde AS double)), 0.0) FROM CompteCollecteur cc WHERE cc.collecteur.id = c.id AND cc.typeCompte = 'MANQUANT') as soldeCompteManquant,
+            
+            0.0 as totalEpargneCollectee,
+            0.0 as totalCommissionsGagnees
+            
+        FROM Collecteur c
+        LEFT JOIN c.agence a
+        ORDER BY c.nom, c.prenom
+    """)
+    List<CollecteurProjection> findAllCollecteursWithData();
+    
+    /**
+     * 🎯 PROJECTION JPA OPTIMISÉE - Un collecteur spécifique avec vraies données
+     */
+    @Query("""
+        SELECT 
+            c.id as id,
+            c.nom as nom,
+            c.prenom as prenom,
+            c.adresseMail as adresseMail,
+            c.telephone as telephone,
+            c.numeroCni as numeroCni,
+            c.active as active,
+            c.ancienneteEnMois as ancienneteEnMois,
+            c.montantMaxRetrait as montantMaxRetrait,
+            
+            a.id as agenceId,
+            a.nomAgence as agenceNom,
+            a.codeAgence as agenceCode,
+            
+            (SELECT COUNT(cl.id) FROM Client cl WHERE cl.collecteur.id = c.id) as nombreClients,
+            (SELECT COUNT(cl.id) FROM Client cl WHERE cl.collecteur.id = c.id AND cl.valide = true) as nombreClientsActifs,
+            
+            (SELECT COALESCE(SUM(CAST(cc.solde AS double)), 0.0) FROM CompteCollecteur cc WHERE cc.collecteur.id = c.id AND cc.typeCompte = 'SERVICE') as soldeCompteService,
+            (SELECT COALESCE(SUM(CAST(cc.solde AS double)), 0.0) FROM CompteCollecteur cc WHERE cc.collecteur.id = c.id AND cc.typeCompte = 'REMUNERATION') as soldeCompteSalaire,
+            (SELECT COALESCE(SUM(CAST(cc.solde AS double)), 0.0) FROM CompteCollecteur cc WHERE cc.collecteur.id = c.id AND cc.typeCompte = 'MANQUANT') as soldeCompteManquant,
+            
+            0.0 as totalEpargneCollectee,
+            0.0 as totalCommissionsGagnees
+            
+        FROM Collecteur c
+        LEFT JOIN c.agence a
+        WHERE c.id = :collecteurId
+    """)
+    CollecteurProjection findCollecteurWithDataById(@Param("collecteurId") Long collecteurId);
+    
+    /**
+     * Récupère tous les collecteurs avec leurs comptes (étape 1/2) - FALLBACK
+     */
+    @EntityGraph(attributePaths = {"agence", "comptes"})
+    @Query("SELECT c FROM Collecteur c ORDER BY c.nom, c.prenom")
+    List<Collecteur> findAllWithComptes();
+    
+    /**
+     * Récupère tous les collecteurs avec leurs clients (étape 2/2) 
+     */
+    @EntityGraph(attributePaths = {"agence", "clients"})
+    @Query("SELECT c FROM Collecteur c ORDER BY c.nom, c.prenom") 
+    List<Collecteur> findAllWithClients();
+
+    /**
+     * Récupère un collecteur avec ses comptes seulement
+     */
+    @EntityGraph(attributePaths = {"comptes", "agence"})
+    @Query("SELECT c FROM Collecteur c WHERE c.id = :collecteurId")
+    Optional<Collecteur> findByIdWithComptes(@Param("collecteurId") Long collecteurId);
 
 }

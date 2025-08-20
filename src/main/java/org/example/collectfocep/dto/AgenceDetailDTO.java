@@ -6,8 +6,10 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 🏢 DTO pour les détails complets d'une agence avec tous ses utilisateurs
@@ -47,6 +49,9 @@ public class AgenceDetailDTO {
     
     // Paramètres de commission
     private List<ParametreCommissionDTO> parametresCommission;
+    
+    // Soldes des comptes d'agence
+    private Map<String, BigDecimal> soldesComptes;
     
     // Métriques calculées
     private Double tauxCollecteursActifs;

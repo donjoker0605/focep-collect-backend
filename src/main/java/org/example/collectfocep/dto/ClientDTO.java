@@ -48,6 +48,9 @@ public class ClientDTO {
     private String numeroCompte;
     private LocalDateTime dateCreation;
     private LocalDateTime dateModification;
+    
+    // CHAMP FINANCIER - Solde du compte client
+    private Double solde;
 
     // CHAMPS GÉOLOCALISATION
     @DecimalMin(value = "-90.0", message = "La latitude doit être supérieure ou égale à -90")

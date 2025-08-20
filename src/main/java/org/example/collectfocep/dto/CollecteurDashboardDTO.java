@@ -24,6 +24,14 @@ public class CollecteurDashboardDTO {
     private Double totalRetraits;
     private Double soldeTotal;
 
+    // Nouveau: Solde quotidien depuis dernière clôture
+    private Double soldeQuotidien;
+
+    // Nouveau: Données mensuelles (mois calendaire)
+    private Double epargneMensuelle;
+    private Double retraitsMensuels;
+    private Double soldeMensuel;
+
     // Statistiques du jour en Double (pas BigDecimal)
     private Long transactionsAujourdhui;
     private Double montantEpargneAujourdhui;

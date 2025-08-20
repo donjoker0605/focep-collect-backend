@@ -8,7 +8,7 @@ public class PasswordHashGenerator {
         Argon2PasswordEncoder encoder = new Argon2PasswordEncoder(16, 32, 1, 65536, 10);
 
         // Mot de passe que vous voulez hacher
-        String plainPassword = "password";
+        String plainPassword = "SuperAdmin123!";
 
         // Générer le hachage
         String hashedPassword = encoder.encode(plainPassword);

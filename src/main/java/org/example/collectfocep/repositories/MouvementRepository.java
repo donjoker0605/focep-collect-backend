@@ -855,6 +855,30 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
                                                          @Param("endDateTime") LocalDateTime endDateTime,
                                                          Pageable pageable);
 
+    // =====================================
+    // 🚀 NOUVELLES MÉTHODES BATCH OPTIMISÉES
+    // =====================================
+    
+    /**
+     * 🔥 OPTIMISATION: Calcule les stats pour tous les clients en une requête
+     */
+    @Query("SELECT m.client.id, UPPER(m.sens), COALESCE(SUM(m.montant), 0) " +
+           "FROM Mouvement m " +
+           "WHERE m.client.id IN :clientIds " +
+           "GROUP BY m.client.id, UPPER(m.sens)")
+    List<Object[]> getClientStatsOptimized(@Param("clientIds") List<Long> clientIds);
+    
+    /**
+     * 🔥 OPTIMISATION: Récupère les transactions récentes pour tous les clients
+     */
+    @Query(value = "SELECT * FROM (" +
+           "  SELECT *, ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY date_operation DESC) as rn " +
+           "  FROM mouvements " +
+           "  WHERE client_id IN :clientIds" +
+           ") ranked WHERE rn <= :limit", nativeQuery = true)
+    List<Mouvement> getRecentTransactionsBatch(@Param("clientIds") List<Long> clientIds, 
+                                              @Param("limit") int limit);
+
     /**
      * Somme par sens (EPARGNE/RETRAIT) - MÉTHODE MANQUANTE CRITIQUE
      */
@@ -912,5 +936,43 @@ public interface MouvementRepository extends JpaRepository<Mouvement, Long> {
            "ORDER BY m.montant DESC")
     List<Mouvement> findLargeTransactionsSince(@Param("since") LocalDateTime since, 
                                               @Param("minAmount") double minAmount);
+
+    // =====================================
+    // MÉTHODES POUR EXPORT EXCEL
+    // =====================================
+
+    /**
+     * 📊 Calcule le solde total d'un client
+     */
+    @Query("SELECT COALESCE(SUM(CASE WHEN m.sens = 'CREDIT' OR m.sens = 'EPARGNE' THEN m.montant ELSE -m.montant END), 0.0) " +
+           "FROM Mouvement m WHERE m.client.id = :clientId")
+    Double calculateSoldeByClientId(@Param("clientId") Long clientId);
+
+    /**
+     * 📊 Compte le nombre de transactions d'un client
+     */
+    @Query("SELECT COUNT(m) FROM Mouvement m WHERE m.client.id = :clientId")
+    Long countByClientId(@Param("clientId") Long clientId);
+
+    /**
+     * 📊 Trouve la date de la dernière transaction d'un client
+     */
+    @Query("SELECT MAX(m.dateOperation) FROM Mouvement m WHERE m.client.id = :clientId")
+    LocalDateTime findLastTransactionDateByClientId(@Param("clientId") Long clientId);
+
+    /**
+     * 📊 Mouvements par période pour export
+     */
+    @Query("SELECT m FROM Mouvement m WHERE m.dateOperation BETWEEN :dateDebut AND :dateFin ORDER BY m.dateOperation DESC")
+    List<Mouvement> findByDateMouvementBetweenOrderByDateMouvementDesc(
+        @Param("dateDebut") LocalDateTime dateDebut, 
+        @Param("dateFin") LocalDateTime dateFin
+    );
+
+    /**
+     * 📊 Derniers mouvements pour export (performance)
+     */
+    @Query(value = "SELECT * FROM mouvements ORDER BY date_operation DESC LIMIT 1000", nativeQuery = true)
+    List<Mouvement> findTop1000ByOrderByDateMouvementDesc();
 
 }

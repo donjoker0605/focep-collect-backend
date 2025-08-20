@@ -21,6 +21,31 @@ import java.util.List;
 @ToString(exclude = {"clients", "comptes", "agence", "rapport"})
 @EqualsAndHashCode(callSuper = true, exclude = {"clients", "comptes", "rapport"})
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler", "clients", "comptes"})
+@NamedEntityGraphs({
+    @NamedEntityGraph(
+        name = "Collecteur.full",
+        attributeNodes = {
+            @NamedAttributeNode("agence"),
+            @NamedAttributeNode(value = "comptes"),
+            @NamedAttributeNode(value = "clients", subgraph = "client-with-commission")
+        },
+        subgraphs = {
+            @NamedSubgraph(
+                name = "client-with-commission",
+                attributeNodes = {
+                    @NamedAttributeNode("commissionParameters")
+                }
+            )
+        }
+    ),
+    @NamedEntityGraph(
+        name = "Collecteur.withComptes",
+        attributeNodes = {
+            @NamedAttributeNode("agence"),
+            @NamedAttributeNode("comptes")
+        }
+    )
+})
 public class Collecteur extends Utilisateur {
 
     // 🔥 MODIFICATION: Collecteurs créés inactifs par défaut selon requirements
