@@ -36,7 +36,7 @@ public class SuperAdminValidationServiceImpl implements SuperAdminValidationServ
     );
     
     private static final Pattern PHONE_PATTERN = Pattern.compile(
-            "^(\\+221|221)?[0-9]{8,9}$"
+            "^(\\+237|237)?[0-9]{9}$"
     );
     
     private static final Pattern PASSWORD_PATTERN = Pattern.compile(

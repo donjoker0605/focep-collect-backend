@@ -687,11 +687,11 @@ public class SuperAdminController {
     }
 
     /**
-     * 🔍 DÉTAILS D'UN COLLECTEUR
+     * 👤 DÉTAILS D'UN COLLECTEUR SPÉCIFIQUE
      */
     @GetMapping("/collecteurs/{collecteurId}")
     public ResponseEntity<ApiResponse<CollecteurDTO>> getCollecteurDetails(@PathVariable Long collecteurId) {
-        log.info("🔍 SuperAdmin - Détails collecteur: {}", collecteurId);
+        log.info("👤 SuperAdmin - Détails collecteur: {}", collecteurId);
 
         try {
             superAdminValidationService.validateId(collecteurId, "Collecteur");
@@ -701,16 +701,14 @@ public class SuperAdminController {
             return ResponseEntity.ok(
                     ApiResponse.success(collecteur, "Collecteur récupéré avec succès")
             );
-        } catch (ResourceNotFoundException e) {
-            log.warn("⚠️ Collecteur non trouvé: {}", collecteurId);
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(ApiResponse.error(e.getMessage()));
         } catch (Exception e) {
-            log.error("❌ Erreur récupération collecteur: {}", e.getMessage(), e);
+            log.error("❌ Erreur récupération détails collecteur: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.error("Erreur lors de la récupération du collecteur: " + e.getMessage()));
+                    .body(ApiResponse.error("Erreur lors de la récupération des détails collecteur: " + e.getMessage()));
         }
     }
+
+
 
     /**
      * ✨ CRÉER UN NOUVEAU COLLECTEUR
@@ -763,6 +761,33 @@ public class SuperAdminController {
             log.error("❌ Erreur modification collecteur: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error("Erreur lors de la modification du collecteur: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * 🔒 RESET PASSWORD COLLECTEUR
+     */
+    @PostMapping("/collecteurs/{collecteurId}/reset-password")
+    public ResponseEntity<ApiResponse<String>> resetCollecteurPassword(
+            @PathVariable Long collecteurId,
+            @Valid @RequestBody PasswordResetRequest request) {
+
+        log.info("🔒 SuperAdmin - Reset password collecteur: {}", collecteurId);
+
+        try {
+            superAdminAgenceService.resetCollecteurPassword(collecteurId, request.getNewPassword());
+            
+            return ResponseEntity.ok(
+                    ApiResponse.success("OK", "Mot de passe du collecteur réinitialisé avec succès")
+            );
+        } catch (ResourceNotFoundException e) {
+            log.warn("⚠️ Collecteur non trouvé pour reset password: {}", collecteurId);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(ApiResponse.error(e.getMessage()));
+        } catch (Exception e) {
+            log.error("❌ Erreur reset password collecteur: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponse.error("Erreur lors de la réinitialisation du mot de passe: " + e.getMessage()));
         }
     }
 

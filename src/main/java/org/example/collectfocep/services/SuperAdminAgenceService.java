@@ -211,6 +211,11 @@ public interface SuperAdminAgenceService {
      */
     CollecteurDTO toggleCollecteurStatus(Long collecteurId);
     
+    /**
+     * Réinitialise le mot de passe d'un collecteur
+     */
+    void resetCollecteurPassword(Long collecteurId, String newPassword);
+    
     // ================================
     // JOURNAUX D'ACTIVITÉS
     // ================================

@@ -6,6 +6,7 @@ import org.example.collectfocep.dto.*;
 import org.example.collectfocep.entities.*;
 import org.example.collectfocep.repositories.*;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.example.collectfocep.exceptions.BusinessException;
 import org.example.collectfocep.exceptions.DuplicateResourceException;
 import org.example.collectfocep.exceptions.ResourceNotFoundException;
 import org.example.collectfocep.exceptions.ValidationException;
@@ -23,6 +24,7 @@ import java.util.Map;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -784,6 +786,7 @@ public class SuperAdminAgenceServiceImpl implements SuperAdminAgenceService {
                 .active(collecteur.getActive())
                 .montantMaxRetrait(collecteur.getMontantMaxRetrait())
                 .agenceId(collecteur.getAgence() != null ? collecteur.getAgence().getId() : null)
+                .adminId(collecteur.getAdminId()) // Inclure l'adminId
                 .build();
     }
 
@@ -1172,6 +1175,7 @@ public class SuperAdminAgenceServiceImpl implements SuperAdminAgenceService {
                 .montantMaxRetrait(createCollecteurDTO.getMontantMaxRetrait())
                 .active(createCollecteurDTO.getActive())
                 .agenceId(createCollecteurDTO.getAgenceId())
+                .adminId(createCollecteurDTO.getAdminId()) // ASSIGNATION OBLIGATOIRE DE L'ADMIN
                 .dateCreation(LocalDateTime.now())
                 .build();
         
@@ -1196,12 +1200,18 @@ public class SuperAdminAgenceServiceImpl implements SuperAdminAgenceService {
         // Validation business
         validateCollecteurUpdate(collecteurId, updateCollecteurDTO);
         
-        // Mise à jour des champs
+        // Mise à jour des champs basiques
         collecteur.setNom(updateCollecteurDTO.getNom());
         collecteur.setPrenom(updateCollecteurDTO.getPrenom());
         collecteur.setTelephone(updateCollecteurDTO.getTelephone());
         collecteur.setMontantMaxRetrait(updateCollecteurDTO.getMontantMaxRetrait());
         collecteur.setDateModification(LocalDateTime.now());
+        
+        // Mise à jour email si différent
+        if (!collecteur.getAdresseMail().equals(updateCollecteurDTO.getAdresseMail())) {
+            collecteur.setAdresseMail(updateCollecteurDTO.getAdresseMail());
+            log.info("📧 Email collecteur modifié: {} -> {}", collecteurId, updateCollecteurDTO.getAdresseMail());
+        }
         
         // Mise à jour agence si différente
         if (!collecteur.getAgenceId().equals(updateCollecteurDTO.getAgenceId())) {
@@ -1209,6 +1219,22 @@ public class SuperAdminAgenceServiceImpl implements SuperAdminAgenceService {
                 throw new ResourceNotFoundException("Agence non trouvée: " + updateCollecteurDTO.getAgenceId());
             }
             collecteur.setAgenceId(updateCollecteurDTO.getAgenceId());
+            log.info("🏢 Agence collecteur modifiée: {} -> {}", collecteurId, updateCollecteurDTO.getAgenceId());
+        }
+        
+        // Mise à jour admin si différent (pour SuperAdmin)
+        if (updateCollecteurDTO.getAdminId() != null && 
+            !Objects.equals(collecteur.getAdminId(), updateCollecteurDTO.getAdminId())) {
+            // Vérifier que l'admin existe et appartient à la même agence
+            Admin admin = adminRepository.findById(updateCollecteurDTO.getAdminId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Admin non trouvé: " + updateCollecteurDTO.getAdminId()));
+            
+            if (!admin.getAgence().getId().equals(updateCollecteurDTO.getAgenceId())) {
+                throw new BusinessException("L'admin sélectionné n'appartient pas à la même agence que le collecteur");
+            }
+            
+            collecteur.setAdminId(updateCollecteurDTO.getAdminId());
+            log.info("👤 Admin collecteur modifié: {} -> {}", collecteurId, updateCollecteurDTO.getAdminId());
         }
         
         Collecteur updatedCollecteur = collecteurRepository.save(collecteur);
@@ -1232,6 +1258,23 @@ public class SuperAdminAgenceServiceImpl implements SuperAdminAgenceService {
         
         log.info("✅ Status collecteur modifié: {} -> {}", collecteurId, newStatus ? "ACTIF" : "INACTIF");
         return mapCollecteurToDTO(updatedCollecteur);
+    }
+    
+    @Override
+    public void resetCollecteurPassword(Long collecteurId, String newPassword) {
+        log.info("🔑 SuperAdmin - Réinitialisation mot de passe collecteur: {}", collecteurId);
+        
+        Collecteur collecteur = collecteurRepository.findById(collecteurId)
+                .orElseThrow(() -> new ResourceNotFoundException("Collecteur non trouvé: " + collecteurId));
+        
+        // Hash le nouveau mot de passe avec Argon2
+        String hashedPassword = passwordEncoder.encode(newPassword);
+        collecteur.setPassword(hashedPassword);
+        collecteur.setDateModification(LocalDateTime.now());
+        
+        collecteurRepository.save(collecteur);
+        
+        log.info("✅ Mot de passe collecteur réinitialisé: {}", collecteurId);
     }
     
     // ================================

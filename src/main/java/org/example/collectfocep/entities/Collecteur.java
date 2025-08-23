@@ -26,6 +26,7 @@ import java.util.List;
         name = "Collecteur.full",
         attributeNodes = {
             @NamedAttributeNode("agence"),
+            @NamedAttributeNode("admin"),
             @NamedAttributeNode(value = "comptes"),
             @NamedAttributeNode(value = "clients", subgraph = "client-with-commission")
         },
@@ -56,6 +57,9 @@ public class Collecteur extends Utilisateur {
     @Column(name = "id_agence", nullable = false)
     private Long agenceId;
 
+    @Column(name = "admin_id", nullable = true) // Nullable pour permettre la migration
+    private Long adminId;
+
     @Column(name = "anciennete_en_mois", nullable = false)
     @Builder.Default
     private Integer ancienneteEnMois = 0;
@@ -77,6 +81,11 @@ public class Collecteur extends Utilisateur {
     @JoinColumn(name = "id_agence", insertable = false, updatable = false)
     @JsonIgnoreProperties({"collecteurs", "admins"})
     private Agence agence;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "admin_id", insertable = false, updatable = false)
+    @JsonIgnoreProperties({"collecteurs", "agence"})
+    private Admin admin;
 
     @OneToMany(mappedBy = "collecteur", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @JsonIgnoreProperties({"collecteur", "comptes"})

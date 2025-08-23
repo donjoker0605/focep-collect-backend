@@ -71,17 +71,24 @@ public class CollecteurServiceImpl implements CollecteurService {
 
             // SÉCURITÉ CRITIQUE: FORCER L'AGENCE DE L'ADMIN CONNECTÉ
             Long agenceIdFromAuth = securityService.getCurrentUserAgenceId();
+            Long adminIdFromAuth = securityService.getCurrentUserId();
 
             if (agenceIdFromAuth == null) {
                 log.error("❌ Impossible de déterminer l'agence de l'utilisateur connecté");
                 throw new UnauthorizedException("Accès non autorisé - agence non déterminée");
             }
 
-            // FORCER L'AGENCE DE L'ADMIN - IGNORER CELLE ENVOYÉE PAR LE CLIENT
-            dto.setAgenceId(agenceIdFromAuth);
+            if (adminIdFromAuth == null) {
+                log.error("❌ Impossible de déterminer l'ID de l'utilisateur connecté");
+                throw new UnauthorizedException("Accès non autorisé - utilisateur non identifié");
+            }
 
-            log.info("✅ Création d'un collecteur pour l'agence auto-assignée: {} par l'admin: {}",
-                    agenceIdFromAuth, securityService.getCurrentUsername());
+            // FORCER L'AGENCE ET L'ADMIN - IGNORER CEUX ENVOYÉS PAR LE CLIENT
+            dto.setAgenceId(agenceIdFromAuth);
+            // Le collecteur sera automatiquement assigné à l'admin qui le crée
+
+            log.info("✅ Création d'un collecteur pour l'agence: {} assigné à l'admin: {} par: {}",
+                    agenceIdFromAuth, adminIdFromAuth, securityService.getCurrentUsername());
 
             // Vérifier que l'agence existe
             Agence agence = agenceRepository.findById(dto.getAgenceId())
@@ -95,8 +102,9 @@ public class CollecteurServiceImpl implements CollecteurService {
             // Créer l'entité Collecteur via le mapper
             Collecteur collecteur = collecteurMapper.toEntity(dto);
 
-            // Définir l'agence managée
+            // Définir l'agence et l'admin responsable
             collecteur.setAgence(agence);
+            collecteur.setAdminId(adminIdFromAuth);
 
             // UTILISER LE MOT DE PASSE DU DTO
             if (dto.getPassword() != null && !dto.getPassword().trim().isEmpty()) {

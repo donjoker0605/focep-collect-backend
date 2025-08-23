@@ -40,6 +40,9 @@ public class CollecteurDTO {
     @Positive(message = "L'ID de l'agence doit être positif")
     private Long agenceId;
 
+    // ID de l'admin responsable du collecteur
+    private Long adminId;
+
     // BigDecimal au lieu de Double
     @NotNull(message = "Le montant maximum de retrait est obligatoire")
     @DecimalMin(value = "0.0", inclusive = true, message = "Le montant maximum doit être supérieur ou égal à 0")
